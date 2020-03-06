@@ -1,0 +1,8 @@
+# Copyright (c) 2018-2019 STMicroelectronics
+# SPDX-License-Identifier: Apache-2.0
+
+config INA230
+	bool "TI INA230 Current Voltage sensor"
+	depends on (I2C && HAS_DTS_I2C)
+	help
+	  Enable i2c driver for INA230 I2C-based Current and voltage sensor

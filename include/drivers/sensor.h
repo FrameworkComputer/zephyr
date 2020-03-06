@@ -123,7 +123,8 @@ enum sensor_channel {
 	SENSOR_CHAN_CURRENT,
 	/** Resistance , in Ohm **/
 	SENSOR_CHAN_RESISTANCE,
-
+	/** Power, in watts **/
+	SENSOR_CHAN_POWER,
 	/** Angular rotation, in degrees */
 	SENSOR_CHAN_ROTATION,
 

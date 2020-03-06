@@ -1,0 +1,78 @@
+# Copyright (c) 2020 Framework Computer LLC <ktl@frame.work>
+# SPDX-License-Identifier: Apache-2.0
+
+description: Texas Instruments INA230 I2C current-shunt and power monitor 
+
+compatible: "ti,ina230"
+
+include: i2c-device.yaml
+
+
+properties:
+    int-gpios:
+      type: phandle-array
+      required: false
+      description: interrupt pin from the sensor
+
+    averages:
+      type: int
+      required: false
+      default: 0
+      description: Number of averages raw register value
+        |
+        0 = 1 averages
+        1 = 4 averages
+        2 = 16 averages
+        3 = 64 averages
+        4 = 128 averages
+        5 = 256 averages
+        6 = 512 averages
+        7 = 1024 averages
+
+    shunt-conversion-time:
+      type: int
+      required: false
+      default: 4
+      description: Sampling time of adc
+        |
+        0 = 140µs
+        1 = 204µs
+        2 = 332µs
+        3 = 588µs
+        4 = 1.1ms
+        5 = 2.116ms
+        6 = 4.156ms
+        7 = 8.244ms
+
+    vbus-conversion-time:
+      type: int
+      required: false
+      default: 4
+      description: Sampling time of adc
+        |
+        0 = 140µs
+        1 = 204µs
+        2 = 332µs
+        3 = 588µs
+        4 = 1.1ms
+        5 = 2.116ms
+        6 = 4.156ms
+        7 = 8.244ms
+
+    mode:
+      type: int
+      required: false
+      default: 7
+      description: Device mode 
+        |
+        0 = Power-Down   
+        1 = Shunt Voltage, triggered 
+        2 = Bus Voltage, triggered 
+        3 = Shunt and Bus, triggered
+        4 = Power-Down   
+        5 = Shunt Voltage, continuous 
+        6 = Bus Voltage, continuous 
+        7 = Shunt and Bus, continuous
+
+    label:
+      required: true

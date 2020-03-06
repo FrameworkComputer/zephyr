@@ -51,6 +51,7 @@ const char *sensor_channel_name[SENSOR_CHAN_ALL] = {
 	[SENSOR_CHAN_VOC] =		"voc",
 	[SENSOR_CHAN_VOLTAGE] =		"voltage",
 	[SENSOR_CHAN_CURRENT] =		"current",
+	[SENSOR_CHAN_POWER] =		"power",
 	[SENSOR_CHAN_ROTATION] =	"rotation",
 };
 

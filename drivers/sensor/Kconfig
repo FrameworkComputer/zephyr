@@ -165,4 +165,7 @@ source "drivers/sensor/vl53l0x/Kconfig"
 
 source "drivers/sensor/nxp_kinetis_temp/Kconfig"
 
+source "drivers/sensor/ina230/Kconfig"
+
+
 endif # SENSOR
