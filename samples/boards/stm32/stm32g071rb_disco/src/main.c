@@ -4,11 +4,12 @@
 
 #include <drivers/gpio.h>
 
-#include <display/cfb.h>
-
 #include <shell/shell.h>
 #include <shell/shell_uart.h>
 #include <version.h>
+
+/* 1000 msec = 1 sec */
+#define SLEEP_TIME_MS   1000
 
 void main(void)
 {
@@ -27,7 +28,7 @@ void main(void)
         if (ret < 0) {
                 return;
         }
-
+        /* initial placeholder, blink LED */ 
         while (1) {
                 gpio_pin_set(dev, DT_ALIAS_LED0_GPIOS_PIN, (int)led_is_on);
                 led_is_on = !led_is_on;
