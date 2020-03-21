@@ -1,84 +1,90 @@
+/*
+ * Copyright (c) 2020 Framework Computer LLC. <ktl@frame.work>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /dts-v1/;
 
 #include <st/g0/stm32g071Xb.dtsi>
 
 / {
 
-        model = "STMicroelectronics STM32G071RB-DISCO board";
-        compatible = "st,stm32g071rb-disco", "st,stm32g071";
+		model = "STMicroelectronics STM32G071RB-DISCO board";
+		compatible = "st,stm32g071rb-disco", "st,stm32g071";
 
-        chosen {
-                zephyr,console = &usart3;
-                zephyr,shell-uart = &usart3;
-                zephyr,sram = &sram0;
-                zephyr,flash = &flash0;
-        };
+		chosen {
+				zephyr,console = &usart3;
+				zephyr,shell-uart = &usart3;
+				zephyr,sram = &sram0;
+				zephyr,flash = &flash0;
+		};
 
 
-        leds {
-                compatible = "gpio-leds";
-                rec_led_1: led_1 {
-                        gpios = <&gpiod 9 GPIO_INT_ACTIVE_LOW>;
-                        label = "LED_REC";
-                };
-                sink_led_2: led_2 { 
-                        gpios = <&gpioc 12 GPIO_INT_ACTIVE_LOW>; 
-                        label = "LED_SINK"; 
-                };
+		leds {
+				compatible = "gpio-leds";
+				rec_led_1: led_1 {
+						gpios = <&gpiod 9 GPIO_INT_ACTIVE_LOW>;
+						label = "LED_REC";
+				};
+				sink_led_2: led_2 { 
+						gpios = <&gpioc 12 GPIO_INT_ACTIVE_LOW>; 
+						label = "LED_SINK"; 
+				};
 
-                plug_led_4: led_3 { 
-                        gpios = <&gpiod 8 GPIO_INT_ACTIVE_LOW>; 
-                        label = "LED_PLUG"; 
-                };
-                source_led_5: led_4 { 
-                        gpios = <&gpiod 5 GPIO_INT_ACTIVE_LOW>; 
-                        label = "LED_SOURCE"; 
-                };
-        };
+				plug_led_4: led_3 { 
+						gpios = <&gpiod 8 GPIO_INT_ACTIVE_LOW>; 
+						label = "LED_PLUG"; 
+				};
+				source_led_5: led_4 { 
+						gpios = <&gpiod 5 GPIO_INT_ACTIVE_LOW>; 
+						label = "LED_SOURCE"; 
+				};
+		};
 
-        gpio_keys {
+		gpio_keys {
 		compatible = "gpio-keys";
 		sel_button: button0 {
 			label = "Select";
 			gpios = <&gpioc 0 GPIO_ACTIVE_LOW>;
 		};
-                left_button: button1 {
+				left_button: button1 {
 			label = "Left";
 			gpios = <&gpioc 1 GPIO_ACTIVE_LOW>;
 		};
-                down_button: button2 {
+				down_button: button2 {
 			label = "Down";
 			gpios = <&gpioc 2 GPIO_ACTIVE_LOW>;
 		};
-                right_button: button3 {
+				right_button: button3 {
 			label = "Right";
 			gpios = <&gpioc 3 GPIO_ACTIVE_LOW>;
 		};
-                up_button: button4 {
+				up_button: button4 {
 			label = "Up";
 			gpios = <&gpioc 4 GPIO_ACTIVE_LOW>;
 		};
-                door_sense: button5 {
+				door_sense: button5 {
 			label = "Door";
 			gpios = <&gpioc 8 GPIO_ACTIVE_LOW>;
 		};
 	};
 
-        aliases {
-                led0 = &rec_led_1;
-                led1 = &sink_led_2; 
-                sw0 = &sel_button;
-                sw1 = &left_button;
-                sw2 = &down_button;
-                sw3 = &right_button;
-                sw4 = &up_button;
-                sw5 = &door_sense;
-        };
+		aliases {
+				led0 = &rec_led_1;
+				led1 = &sink_led_2; 
+				sw0 = &sel_button;
+				sw1 = &left_button;
+				sw2 = &down_button;
+				sw3 = &right_button;
+				sw4 = &up_button;
+				sw5 = &door_sense;
+		};
 };
 
 &usart3 {
-        current-speed = <115200>;
-        status = "okay";
+		current-speed = <115200>;
+		status = "okay";
 };
 
 
