@@ -1,0 +1,16 @@
+identifier: disco_g071rb
+name: DISCO-G071RB
+type: mcu
+arch: arm
+toolchain:
+  - zephyr
+  - gnuarmemb
+  - xtools
+ram: 36
+flash: 128
+supported:
+  - uart
+  - gpio
+  - spi 
+  - i2c
+  

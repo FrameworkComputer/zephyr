@@ -1,0 +1,11 @@
+# STM32 G071RB Disco USB PD  development board with STM32G071RB MCU
+
+# Copyright (c) 2020 Framework Computer LLC. <ktl@frame.work>
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_STM32G071RB_DISCO
+
+config BOARD
+	default "stm32g071rb_disco"
+
+endif # BOARD_STM32G071RB_DISCO

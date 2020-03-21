@@ -1,0 +1,6 @@
+sample:
+  name: Board peripherals for st_stm32g071rb_disco usb c board
+tests:
+  sample.board.st_stm32g071rb_disco:
+    platform_whitelist: st_stm32g071rb_disco
+    tags: board
