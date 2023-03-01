@@ -427,8 +427,10 @@ static void host_shared_mem_region_init(void)
 	SET_FIELD(inst_shm->WIN_SIZE, NPCX_WIN_SIZE_RWIN2_SIZE_FIELD,
 		host_shd_mem_wnd_size_sl(win_size));
 	inst_shm->WIN_BASE2 = (uint32_t)shm_acpi_mmap;
+#if defined(CONFIG_ESPI_PERIPHERAL_ACPI_SHM_REGION_WRITE_PROTECT_ENABLE)
 	/* Enable write protect of Share memory window 2 */
 	inst_shm->WIN2_WR_PROT = 0xFF;
+#endif
 
 	/*
 	 * TODO: Initialize shm_acpi_mmap buffer for host command flags. We
