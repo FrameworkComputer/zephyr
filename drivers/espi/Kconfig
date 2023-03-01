@@ -128,6 +128,12 @@ config ESPI_PERIPHERAL_ACPI_SHM_REGION
 	  Enables shared memory region over eSPI peripheral channel to access
 	  the ACPI response data.
 
+config ESPI_PERIPHERAL_ACPI_SHM_REGION_WRITE_PROTECT_ENABLE
+	bool "Host peripheral device enable shared memory region write protect"
+	default y
+	help
+	  Enables shared memory region to write protect.
+
 config ESPI_PERIPHERAL_ACPI_SHM_REGION_PORT_NUM
 	hex "Host I/O peripheral port number for shared memory region"
 	depends on ESPI_PERIPHERAL_ACPI_SHM_REGION
