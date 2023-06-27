@@ -25,9 +25,9 @@ LOG_MODULE_REGISTER(net_ieee802154_mgmt, CONFIG_NET_L2_IEEE802154_LOG_LEVEL);
 
 #include "ieee802154_frame.h"
 #include "ieee802154_mgmt_priv.h"
+#include "ieee802154_priv.h"
 #include "ieee802154_security.h"
 #include "ieee802154_utils.h"
-#include "ieee802154_radio_utils.h"
 
 /**
  * Implements (part of) the MLME-BEACON.notify primitive, see section 8.2.5.2.
@@ -455,6 +455,7 @@ static int ieee802154_disassociate(uint32_t mgmt_request, struct net_if *iface,
 				   void *data, size_t len)
 {
 	struct ieee802154_context *ctx = net_if_l2_data(iface);
+	uint8_t ext_addr[IEEE802154_MAX_ADDR_LENGTH];
 	struct ieee802154_frame_params params;
 	struct ieee802154_command *cmd;
 	struct net_pkt *pkt;
@@ -477,6 +478,7 @@ static int ieee802154_disassociate(uint32_t mgmt_request, struct net_if *iface,
 		params.dst.short_addr = ctx->coord_short_addr;
 	} else {
 		params.dst.len = IEEE802154_EXT_ADDR_LENGTH;
+		params.dst.ext_addr = ext_addr;
 		sys_memcpy_swap(params.dst.ext_addr, ctx->coord_ext_addr,
 				IEEE802154_EXT_ADDR_LENGTH);
 	}

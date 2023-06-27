@@ -7,8 +7,7 @@
 #include <soc.h>
 #include <zephyr/kernel.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/bluetooth/bluetooth.h>
-#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_types.h>
 
 #include "hal/cpu.h"
 #include "hal/ccm.h"
@@ -252,7 +251,7 @@ uint8_t ll_big_create(uint8_t big_handle, uint8_t adv_handle, uint8_t num_bis,
 	 */
 	iso_interval_us = ((sdu_interval * lll_adv_iso->bn * sdu_per_event) /
 			   (bn * PERIODIC_INT_UNIT_US)) * PERIODIC_INT_UNIT_US;
-	lll_adv_iso->iso_interval = iso_interval_us;
+	lll_adv_iso->iso_interval = iso_interval_us / PERIODIC_INT_UNIT_US;
 
 	/* Immediate Repetition Count (IRC), Mandatory IRC = 1 */
 	lll_adv_iso->irc = rtn + 1U;
@@ -1269,6 +1268,7 @@ static void ticker_cb(uint32_t ticks_at_expire, uint32_t ticks_drift,
 {
 	static struct lll_prepare_param p;
 	struct ll_adv_iso_set *adv_iso = param;
+	uint32_t remainder_us;
 	uint32_t ret;
 	uint8_t ref;
 
@@ -1290,6 +1290,14 @@ static void ticker_cb(uint32_t ticks_at_expire, uint32_t ticks_drift,
 	ret = mayfly_enqueue(TICKER_USER_ID_ULL_HIGH, TICKER_USER_ID_LLL, 0,
 			     &mfy_lll_prepare);
 	LL_ASSERT(!ret);
+
+	/* Calculate the BIG reference point of current BIG event */
+	remainder_us = remainder;
+	hal_ticker_remove_jitter(&ticks_at_expire, &remainder_us);
+	ticks_at_expire &= HAL_TICKER_CNTR_MASK;
+	adv_iso->big_ref_point = isoal_get_wrapped_time_us(HAL_TICKER_TICKS_TO_US(ticks_at_expire),
+							   (remainder_us +
+							    EVENT_OVERHEAD_START_US));
 
 	DEBUG_RADIO_PREPARE_A(1);
 }

@@ -267,9 +267,16 @@ static void handle_wifi_twt_event(struct net_mgmt_event_callback *cb)
 	const struct wifi_twt_params *resp =
 		(const struct wifi_twt_params *)cb->info;
 
+	if (resp->operation == WIFI_TWT_TEARDOWN) {
+		print(context.sh, SHELL_NORMAL, "TWT teardown received for flow ID %d\n",
+		      resp->flow_id);
+		return;
+	}
+
 	if (resp->resp_status == WIFI_TWT_RESP_RECEIVED) {
 		print(context.sh, SHELL_NORMAL, "TWT response: %s\n",
 		      wifi_twt_setup_cmd2str[resp->setup_cmd]);
+		print(context.sh, SHELL_NORMAL, "== TWT negotiated parameters ==\n");
 		print_twt_params(resp->dialog_token,
 				 resp->flow_id,
 				 resp->negotiation_type,
@@ -717,7 +724,7 @@ static int cmd_wifi_twt_setup_quick(const struct shell *sh, size_t argc,
 	params.flow_id = 0;
 	params.setup.responder = 0;
 	params.setup.implicit = 1;
-	params.setup.trigger = 1;
+	params.setup.trigger = 0;
 	params.setup.announce = 0;
 
 	if (!parse_number(sh, (long *)&params.setup.twt_wake_interval, argv[idx++],
@@ -837,7 +844,7 @@ static int cmd_wifi_twt_teardown(const struct shell *sh, size_t argc,
 		return -ENOEXEC;
 	}
 
-	shell_fprintf(sh, SHELL_NORMAL, "TWT operation %s with dg: %d, flow_id: %d requested\n",
+	shell_fprintf(sh, SHELL_NORMAL, "TWT operation %s with dg: %d, flow_id: %d success\n",
 		wifi_twt_operation2str[params.operation],
 		params.dialog_token, params.flow_id);
 
@@ -864,7 +871,7 @@ static int cmd_wifi_twt_teardown_all(const struct shell *sh, size_t argc,
 		return -ENOEXEC;
 	}
 
-	shell_fprintf(sh, SHELL_NORMAL, "TWT operation %s all flows\n",
+	shell_fprintf(sh, SHELL_NORMAL, "TWT operation %s all flows success\n",
 		wifi_twt_operation2str[params.operation]);
 
 	return 0;

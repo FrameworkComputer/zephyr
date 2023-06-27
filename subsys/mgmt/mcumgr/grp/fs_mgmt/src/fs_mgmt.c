@@ -254,8 +254,6 @@ static int fs_mgmt_file_download(struct smp_streamer *ctxt)
 					      sizeof(file_access_data), &ret_rc, &ret_group);
 
 		if (status != MGMT_CB_OK) {
-			bool ok;
-
 			if (status == MGMT_CB_ERROR_RC) {
 				return ret_rc;
 			}
@@ -405,8 +403,6 @@ static int fs_mgmt_file_upload(struct smp_streamer *ctxt)
 					      sizeof(file_access_data), &ret_rc, &ret_group);
 
 		if (status != MGMT_CB_OK) {
-			bool ok;
-
 			if (status == MGMT_CB_ERROR_RC) {
 				return ret_rc;
 			}
@@ -609,8 +605,6 @@ static int fs_mgmt_file_status(struct smp_streamer *ctxt)
 				      sizeof(file_access_data), &ret_rc, &ret_group);
 
 	if (status != MGMT_CB_OK) {
-		bool ok;
-
 		if (status == MGMT_CB_ERROR_RC) {
 			return ret_rc;
 		}
@@ -718,8 +712,6 @@ static int fs_mgmt_file_hash_checksum(struct smp_streamer *ctxt)
 				      sizeof(file_access_data), &ret_rc, &ret_group);
 
 	if (status != MGMT_CB_OK) {
-		bool ok;
-
 		if (status == MGMT_CB_ERROR_RC) {
 			return ret_rc;
 		}
@@ -869,9 +861,12 @@ fs_mgmt_supported_hash_checksum(struct smp_streamer *ctxt)
 		.zse = zse,
 	};
 
-	itr_ctx.ok = zcbor_tstr_put_lit(zse, "types");
+	itr_ctx.ok = zcbor_tstr_put_lit(zse, "types") &&
+	    zcbor_map_start_encode(zse, CONFIG_MCUMGR_GRP_FS_CHECKSUM_HASH_SUPPORTED_MAX_TYPES);
 
-	zcbor_map_start_encode(zse, CONFIG_MCUMGR_GRP_FS_CHECKSUM_HASH_SUPPORTED_MAX_TYPES);
+	if (!itr_ctx.ok) {
+		return MGMT_ERR_EMSGSIZE;
+	}
 
 	fs_mgmt_hash_checksum_find_handlers(fs_mgmt_supported_hash_checksum_callback, &itr_ctx);
 

@@ -4,10 +4,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/kernel.h>
 #include <soc.h>
+#include <zephyr/kernel.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_types.h>
+#include <zephyr/bluetooth/buf.h>
 
 #include "hal/cpu.h"
 #include "hal/ccm.h"
@@ -176,9 +177,18 @@ uint8_t ll_read_iso_tx_sync(uint16_t handle, uint16_t *seq,
 		return BT_HCI_ERR_CMD_DISALLOWED;
 
 	} else if (IS_ADV_ISO_HANDLE(handle)) {
-		/* FIXME: Do something similar to connected */
+		const struct lll_adv_iso_stream *adv_stream;
+		uint16_t stream_handle;
 
-		return BT_HCI_ERR_CMD_DISALLOWED;
+		stream_handle = LL_BIS_ADV_IDX_FROM_HANDLE(handle);
+		adv_stream = ull_adv_iso_stream_get(stream_handle);
+		if (!adv_stream || !adv_stream->dp ||
+		    isoal_tx_get_sync_info(adv_stream->dp->source_hdl, seq,
+					   timestamp, offset) != ISOAL_STATUS_OK) {
+			return BT_HCI_ERR_CMD_DISALLOWED;
+		}
+
+		return BT_HCI_ERR_SUCCESS;
 	}
 
 	return BT_HCI_ERR_UNKNOWN_CONN_ID;
@@ -303,7 +313,7 @@ uint8_t ll_setup_iso_path(uint16_t handle, uint8_t path_dir, uint8_t path_id,
 		adv_iso = ull_adv_iso_by_stream_get(stream_handle);
 		lll_iso = &adv_iso->lll;
 
-		role = 0U; /* FIXME: Set role from LLL struct */
+		role = ISOAL_ROLE_BROADCAST_SOURCE;
 		iso_interval = lll_iso->iso_interval;
 		sdu_interval = lll_iso->sdu_interval;
 		burst_number = lll_iso->bn;
@@ -329,7 +339,7 @@ uint8_t ll_setup_iso_path(uint16_t handle, uint8_t path_dir, uint8_t path_id,
 		sync_iso = ull_sync_iso_by_stream_get(stream_handle);
 		lll_iso = &sync_iso->lll;
 
-		role = 1U; /* FIXME: Is this correct role value? */
+		role = ISOAL_ROLE_BROADCAST_SINK;
 		iso_interval = lll_iso->iso_interval;
 		sdu_interval = lll_iso->sdu_interval;
 		burst_number = lll_iso->bn;
@@ -1410,8 +1420,8 @@ static void iso_rx_cig_ref_point_update(struct ll_conn_iso_group *cig,
 			/* Update the CIG reference point based on the CIS
 			 * anchor point
 			 */
-			cig->cig_ref_point = meta->timestamp + cis_sync_delay -
-					     cig_sync_delay;
+			cig->cig_ref_point = isoal_get_wrapped_time_us(meta->timestamp,
+						cis_sync_delay - cig_sync_delay);
 		}
 	}
 }

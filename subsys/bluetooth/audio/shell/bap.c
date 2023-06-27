@@ -192,6 +192,15 @@ static int octets_per_frame;
 static int64_t lc3_start_time;
 static int32_t lc3_sdu_cnt;
 
+static void clear_lc3_sine_data(void)
+{
+	lc3_start_time = 0;
+	lc3_sdu_cnt = 0;
+	txing_stream = NULL;
+
+	(void)k_work_cancel(&audio_send_work);
+}
+
 /**
  * Use the math lib to generate a sine-wave using 16 bit samples into a buffer.
  *
@@ -322,7 +331,6 @@ static void lc3_audio_send_data(struct k_work *work)
 				lc3_sdu_cnt, tx_sdu_len);
 	}
 	lc3_sdu_cnt++;
-	seq_num++;
 }
 
 static K_WORK_DEFINE(audio_send_work, lc3_audio_send_data);
@@ -1086,7 +1094,7 @@ static int cmd_stream_qos(const struct shell *sh, size_t argc, char *argv[])
 			return -ENOEXEC;
 		}
 
-		if (!IN_RANGE(framing, BT_ISO_FRAMING_UNFRAMED, BT_ISO_FRAMING_FRAMED)) {
+		if (framing != BT_ISO_FRAMING_UNFRAMED && framing != BT_ISO_FRAMING_FRAMED) {
 			return -ENOEXEC;
 		}
 
@@ -1504,6 +1512,10 @@ static bool broadcast_scan_recv(const struct bt_le_scan_recv_info *info,
 {
 	char le_addr[BT_ADDR_LE_STR_LEN];
 
+	if (!passes_scan_filter(info, ad)) {
+		return false;
+	}
+
 	bt_addr_le_to_str(info->addr, le_addr, sizeof(le_addr));
 
 	shell_print(ctx_shell, "Found broadcaster with ID 0x%06X and addr %s",
@@ -1716,10 +1728,7 @@ static void stream_stopped_cb(struct bt_bap_stream *stream, uint8_t reason)
 
 #if defined(CONFIG_LIBLC3)
 	if (stream == default_stream) {
-		lc3_start_time = 0;
-		lc3_sdu_cnt = 0;
-
-		k_work_cancel(&audio_send_work);
+		clear_lc3_sine_data();
 	}
 #endif /* CONFIG_LIBLC3 */
 }
@@ -1768,10 +1777,7 @@ static void stream_released_cb(struct bt_bap_stream *stream)
 #if defined(CONFIG_LIBLC3)
 	/* stop sending */
 	if (stream == default_stream) {
-		lc3_start_time = 0;
-		lc3_sdu_cnt = 0;
-
-		k_work_cancel(&audio_send_work);
+		clear_lc3_sine_data();
 	}
 #endif /* CONFIG_LIBLC3 */
 }
@@ -2403,12 +2409,7 @@ static int cmd_start_sine(const struct shell *sh, size_t argc, char *argv[])
 
 static int cmd_stop_sine(const struct shell *sh, size_t argc, char *argv[])
 {
-	lc3_start_time = 0;
-	lc3_sdu_cnt = 0;
-
-	k_work_cancel(&audio_send_work);
-
-	txing_stream = NULL;
+	clear_lc3_sine_data();
 
 	return 0;
 }
@@ -2622,9 +2623,7 @@ static ssize_t nonconnectable_ad_data_add(struct bt_data *data_array,
 			return -1;
 		}
 
-		ad_bap_broadcast_announcement[2] = (uint8_t)(broadcast_id >> 16);
-		ad_bap_broadcast_announcement[3] = (uint8_t)(broadcast_id >> 8);
-		ad_bap_broadcast_announcement[4] = (uint8_t)(broadcast_id >> 0);
+		sys_put_le24(broadcast_id, &ad_bap_broadcast_announcement[2]);
 		data_array[ad_len].type = BT_DATA_SVC_DATA16;
 		data_array[ad_len].data_len = ARRAY_SIZE(ad_bap_broadcast_announcement);
 		data_array[ad_len].data = ad_bap_broadcast_announcement;

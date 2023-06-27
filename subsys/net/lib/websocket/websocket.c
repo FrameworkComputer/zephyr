@@ -425,8 +425,6 @@ static int websocket_interal_disconnect(struct websocket_context *ctx)
 		NET_ERR("[%p] Failed to send close message (err %d).", ctx, ret);
 	}
 
-	ret = close(ctx->real_sock);
-
 	websocket_context_unref(ctx);
 
 	return ret;
@@ -796,7 +794,7 @@ static int websocket_parse(struct websocket_context *ctx, struct websocket_buffe
 				break;
 			case WEBSOCKET_PARSER_STATE_EXT_LEN:
 				ctx->parser_remaining--;
-				ctx->message_len |= (data << (ctx->parser_remaining * 8));
+				ctx->message_len |= ((uint64_t)data << (ctx->parser_remaining * 8));
 				if (ctx->parser_remaining == 0) {
 					if (ctx->masked) {
 						ctx->masking_value = 0;

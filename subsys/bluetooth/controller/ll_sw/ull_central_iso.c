@@ -5,8 +5,9 @@
  */
 
 #include <zephyr/kernel.h>
-#include <zephyr/bluetooth/buf.h>
 #include <zephyr/sys/byteorder.h>
+
+#include <zephyr/bluetooth/addr.h>
 #include <zephyr/bluetooth/iso.h>
 
 #include "util/util.h"
@@ -49,7 +50,7 @@
 #include "ll.h"
 #include "ll_feat.h"
 
-#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_types.h>
 
 #include "hal/debug.h"
 
@@ -761,11 +762,18 @@ uint8_t ull_central_iso_setup(uint16_t cis_handle,
 
 		/* CIG is started. Use the CIG reference point and latest ticks_at_expire
 		 * for associated ACL, to calculate the offset.
+		 * NOTE: The following calculations are done in a 32-bit time
+		 * range with full consideration and expectation that the
+		 * controller clock does not support the full 32-bit range in
+		 * microseconds. However it is valid as the purpose is to
+		 * calculate the difference and the spare higher order bits will
+		 * ensure that no wrapping can occur before the termination
+		 * condition of the while loop is met. Using time wrapping will
+		 * complicate this.
 		 */
-		time_of_intant = isoal_get_wrapped_time_us(
-			HAL_TICKER_TICKS_TO_US(conn->llcp.prep.ticks_at_expire),
-			EVENT_OVERHEAD_START_US +
-			(instant - event_counter) * conn->lll.interval * CONN_INT_UNIT_US);
+		time_of_intant = HAL_TICKER_TICKS_TO_US(conn->llcp.prep.ticks_at_expire) +
+				EVENT_OVERHEAD_START_US +
+				((instant - event_counter) * conn->lll.interval * CONN_INT_UNIT_US);
 
 		cig_ref_point = cig->cig_ref_point;
 		while (cig_ref_point < time_of_intant) {
@@ -846,8 +854,7 @@ int ull_central_iso_cis_offset_get(uint16_t cis_handle,
 			  cig->sync_delay;
 
 	if (IS_ENABLED(CONFIG_BT_CTLR_JIT_SCHEDULING)) {
-		*cis_offset_min = MAX(400, EVENT_OVERHEAD_CIS_SETUP_US);
-
+		*cis_offset_min = MAX(CIS_MIN_OFFSET_MIN, EVENT_OVERHEAD_CIS_SETUP_US);
 		return 0;
 	}
 
@@ -900,13 +907,13 @@ static void mfy_cig_offset_get(void *param)
 	LL_ASSERT(!err);
 
 	offset_min_us = HAL_TICKER_TICKS_TO_US(ticks_to_expire) +
-			(EVENT_TICKER_RES_MARGIN_US << 1U);
+			(EVENT_TICKER_RES_MARGIN_US << 2U);
 	offset_min_us += cig->sync_delay - cis->sync_delay;
 
 	conn = ll_conn_get(cis->lll.acl_handle);
 
 	conn_interval_us = (uint32_t)conn->lll.interval * CONN_INT_UNIT_US;
-	while (offset_min_us > conn_interval_us) {
+	while (offset_min_us > (conn_interval_us + PDU_CIS_OFFSET_MIN_US)) {
 		offset_min_us -= conn_interval_us;
 	}
 
