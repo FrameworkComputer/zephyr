@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2016 Piotr Mienkowski
  * Copyright (c) 2018 Antmicro Ltd
+ * Copyright (c) 2023 Gerson Fernando Budke
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -33,6 +34,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/sys/__assert.h>
+#include <zephyr/sys/barrier.h>
 #include <zephyr/sys/util.h>
 #include <errno.h>
 #include <stdbool.h>
@@ -43,6 +45,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <ethernet/eth_stats.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/pinctrl.h>
+#include <zephyr/drivers/clock_control/atmel_sam_pmc.h>
 #include <soc.h>
 #include "eth_sam_gmac_priv.h"
 
@@ -477,7 +480,8 @@ static int rx_descriptors_init(Gmac *gmac, struct gmac_queue *queue)
 	rx_desc_list->tail = 0U;
 
 	for (int i = 0; i < rx_desc_list->len; i++) {
-		rx_buf = net_pkt_get_reserve_rx_data(K_NO_WAIT);
+		rx_buf = net_pkt_get_reserve_rx_data(CONFIG_NET_BUF_DATA_SIZE,
+						     K_NO_WAIT);
 		if (rx_buf == NULL) {
 			free_rx_bufs(rx_frag_list, rx_desc_list->len);
 			LOG_ERR("Failed to reserve data net buffers");
@@ -1217,6 +1221,10 @@ static int nonpriority_queue_init(Gmac *gmac, struct gmac_queue *queue)
 	gmac->GMAC_DCFGR =
 		/* Receive Buffer Size (defined in multiples of 64 bytes) */
 		GMAC_DCFGR_DRBS(CONFIG_NET_BUF_DATA_SIZE >> 6) |
+#if defined(GMAC_DCFGR_RXBMS)
+		/* Use full receive buffer size on parts where this is selectable */
+		GMAC_DCFGR_RXBMS(3) |
+#endif
 		/* Attempt to use INCR4 AHB bursts (Default) */
 		GMAC_DCFGR_FBLDO_INCR4 |
 		/* DMA Queue Flags */
@@ -1308,7 +1316,7 @@ static struct net_pkt *frame_get(struct gmac_queue *queue)
 			dcache_invalidate((uint32_t)frag_data, frag->size);
 
 			/* Get a new data net buffer from the buffer pool */
-			new_frag = net_pkt_get_frag(rx_frame, K_NO_WAIT);
+			new_frag = net_pkt_get_frag(rx_frame, CONFIG_NET_BUF_DATA_SIZE, K_NO_WAIT);
 			if (new_frag == NULL) {
 				queue->err_rx_frames_dropped++;
 				net_pkt_unref(rx_frame);
@@ -1331,7 +1339,7 @@ static struct net_pkt *frame_get(struct gmac_queue *queue)
 		/* Guarantee that status word is written before the address
 		 * word to avoid race condition.
 		 */
-		__DMB();  /* data memory barrier */
+		barrier_dmem_fence_full();
 		/* Update buffer descriptor address word */
 		wrap = (tail == rx_desc_list->len-1U ? GMAC_RXW0_WRAP : 0);
 		rx_desc->w0 = ((uint32_t)frag->data & GMAC_RXW0_ADDR) | wrap;
@@ -1576,7 +1584,7 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 	/* Guarantee that all the fragments have been written before removing
 	 * the used bit to avoid race condition.
 	 */
-	__DMB();  /* data memory barrier */
+	barrier_dmem_fence_full();
 
 	/* Remove the used bit of the first fragment to allow the controller
 	 * to process it and the following fragments.
@@ -1598,7 +1606,7 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 	/* Guarantee that the first fragment got its bit removed before starting
 	 * sending packets to avoid packets getting stuck.
 	 */
-	__DMB();  /* data memory barrier */
+	barrier_dmem_fence_full();
 
 	/* Start transmission */
 	gmac->GMAC_NCR |= GMAC_NCR_TSTART;
@@ -1775,8 +1783,8 @@ static int eth_initialize(const struct device *dev)
 
 #ifdef CONFIG_SOC_FAMILY_SAM
 	/* Enable GMAC module's clock */
-	soc_pmc_peripheral_enable(cfg->periph_id);
-
+	(void)clock_control_on(SAM_DT_PMC_CONTROLLER,
+			       (clock_control_subsys_t)&cfg->clock_cfg);
 #else
 	/* Enable MCLK clock on GMAC */
 	MCLK->AHBMASK.reg |= MCLK_AHBMASK_GMAC;
@@ -2211,7 +2219,7 @@ static const struct eth_sam_dev_cfg eth0_config = {
 	.regs = (Gmac *)DT_INST_REG_ADDR(0),
 	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0),
 #ifdef CONFIG_SOC_FAMILY_SAM
-	.periph_id = DT_INST_PROP_OR(0, peripheral_id, 0),
+	.clock_cfg = SAM_DT_INST_CLOCK_PMC_CFG(0),
 #endif
 	.config_func = eth0_irq_config,
 #if DT_NODE_EXISTS(DT_INST_CHILD(0, phy))

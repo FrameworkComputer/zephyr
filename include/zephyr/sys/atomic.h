@@ -5,6 +5,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/*
+ * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
+ * #line marks the *next* line, so it is off by one.
+ */
+#line 13
+
 #ifndef ZEPHYR_INCLUDE_SYS_ATOMIC_H_
 #define ZEPHYR_INCLUDE_SYS_ATOMIC_H_
 

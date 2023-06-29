@@ -256,7 +256,7 @@ class Filters:
             self.tag_options.extend(["-e", tag ])
 
         if exclude_tags:
-            logging.info(f'Potential tag based filters...')
+            logging.info(f'Potential tag based filters: {exclude_tags}')
 
     def find_excludes(self, skip=[]):
         with open("scripts/ci/twister_ignore.txt", "r") as twister_ignore:
@@ -293,7 +293,8 @@ class Filters:
 
 def parse_args():
     parser = argparse.ArgumentParser(
-                description="Generate twister argument files based on modified file")
+                description="Generate twister argument files based on modified file",
+                allow_abbrev=False)
     parser.add_argument('-c', '--commits', default=None,
             help="Commit range in the form: a..b")
     parser.add_argument('-m', '--modified-files', default=None,
@@ -358,19 +359,13 @@ if __name__ == "__main__":
         else:
             nodes = round(total_tests / args.tests_per_builder)
 
-        if total_tests % args.tests_per_builder != total_tests:
-            nodes = nodes + 1
-
-        if args.default_matrix > nodes > 5:
-            nodes = args.default_matrix
-
         tp.write(f"TWISTER_TESTS={total_tests}\n")
         tp.write(f"TWISTER_NODES={nodes}\n")
         tp.write(f"TWISTER_FULL={f.full_twister}\n")
         logging.info(f'Total nodes to launch: {nodes}')
 
     header = ['test', 'arch', 'platform', 'status', 'extra_args', 'handler',
-            'handler_time', 'ram_size', 'rom_size']
+            'handler_time', 'used_ram', 'used_rom']
 
     # write plan
     if dup_free:

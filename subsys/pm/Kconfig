@@ -90,8 +90,7 @@ config PM_DEVICE_POWER_DOMAIN
 
 config PM_DEVICE_POWER_DOMAIN_DYNAMIC
 	bool "Dynamically bind devices to a Power Pomain"
-	depends on PM_DEVICE_POWER_DOMAIN
-	select HAS_DYNAMIC_DEVICE_HANDLES
+	depends on PM_DEVICE_POWER_DOMAIN && DEVICE_DEPS_DYNAMIC
 	help
 	  Enable support for dynamically bind devices to a Power Domain.
 
@@ -104,6 +103,7 @@ config PM_DEVICE_POWER_DOMAIN_DYNAMIC_NUM
 
 config PM_DEVICE_RUNTIME
 	bool "Runtime Device Power Management"
+	select EVENTS
 	help
 	  Enable Runtime Power Management to save power. With device runtime PM
 	  enabled, devices can be suspended or resumed based on the device

@@ -5,9 +5,10 @@ arch: xtensa
 toolchain:
   - zephyr
   - xcc
+  - xt-clang
 supported:
   - dma
 testing:
-  only_tags:
-     - kernel
-     - sof
+  ignore_tags:
+    - net
+    - bluetooth

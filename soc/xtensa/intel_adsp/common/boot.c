@@ -9,8 +9,8 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/kernel.h>
 #include <zephyr/init.h>
-#include <soc.h>
-#include <zephyr/arch/xtensa/cache.h>
+#include <soc_util.h>
+#include <zephyr/cache.h>
 #include <adsp_shim.h>
 #include <adsp_memory.h>
 #include <cpu_init.h>
@@ -76,7 +76,6 @@ __asm__(".section .imr.z_boot_asm_entry, \"x\" \n\t"
 	"  movi  a1, " IMRSTACK    "\n\t"
 	"  call4 boot_core0   \n\t");
 
-
 static __imr void parse_module(struct sof_man_fw_header *hdr,
 			       struct sof_man_module *mod)
 {
@@ -123,13 +122,13 @@ __imr void parse_manifest(void)
 	struct sof_man_module *mod;
 	int i;
 
-	z_xtensa_cache_inv(hdr, sizeof(*hdr));
+	sys_cache_data_invd_range(hdr, sizeof(*hdr));
 
 	/* copy module to SRAM  - skip bootloader module */
 	for (i = MAN_SKIP_ENTRIES; i < hdr->num_module_entries; i++) {
 		mod = desc->man_module + i;
 
-		z_xtensa_cache_inv(mod, sizeof(*mod));
+		sys_cache_data_invd_range(mod, sizeof(*mod));
 		parse_module(hdr, mod);
 	}
 }
@@ -153,7 +152,9 @@ __imr void boot_core0(void)
 	hp_sram_init(L2_SRAM_SIZE);
 	lp_sram_init();
 	parse_manifest();
-	z_xtensa_cache_flush_all();
+	sys_cache_data_flush_all();
+
+	xtensa_vecbase_lock();
 
 	/* Zephyr! */
 	extern FUNC_NORETURN void z_cstart(void);

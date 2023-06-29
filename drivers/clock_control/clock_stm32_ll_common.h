@@ -22,8 +22,16 @@
 	#define MCO1_SOURCE		LL_RCC_MCO1SOURCE_LSE
 #elif CONFIG_CLOCK_STM32_MCO1_SRC_HSE
 	#define MCO1_SOURCE		LL_RCC_MCO1SOURCE_HSE
+#elif CONFIG_CLOCK_STM32_MCO1_SRC_LSI
+	#define MCO1_SOURCE		LL_RCC_MCO1SOURCE_LSI
+#elif CONFIG_CLOCK_STM32_MCO1_SRC_MSI
+	#define MCO1_SOURCE		LL_RCC_MCO1SOURCE_MSI
 #elif CONFIG_CLOCK_STM32_MCO1_SRC_HSI
 	#define MCO1_SOURCE		LL_RCC_MCO1SOURCE_HSI
+#elif CONFIG_CLOCK_STM32_MCO1_SRC_HSI16
+	#define MCO1_SOURCE		LL_RCC_MCO1SOURCE_HSI
+#elif CONFIG_CLOCK_STM32_MCO1_SRC_HSI48
+	#define MCO1_SOURCE		LL_RCC_MCO1SOURCE_HSI48
 #elif CONFIG_CLOCK_STM32_MCO1_SRC_PLLCLK
 	#define MCO1_SOURCE		LL_RCC_MCO1SOURCE_PLLCLK
 #elif CONFIG_CLOCK_STM32_MCO1_SRC_PLLCLK_DIV2
@@ -61,6 +69,16 @@
 #define z_pllr(v) LL_RCC_PLLR_DIV_ ## v
 #define pllr(v) z_pllr(v)
 
+#define z_plli2s_m(v) LL_RCC_PLLI2SM_DIV_ ## v
+#define plli2sm(v) z_plli2s_m(v)
+
+#define z_plli2s_r(v) LL_RCC_PLLI2SR_DIV_ ## v
+#define plli2sr(v) z_plli2s_r(v)
+
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 #if defined(STM32_PLL_ENABLED)
 void config_pll_sysclock(void);
 uint32_t get_pllout_frequency(void);
@@ -69,9 +87,16 @@ uint32_t get_pllsrc_frequency(void);
 #if defined(STM32_PLL2_ENABLED)
 void config_pll2(void);
 #endif
+#if defined(STM32_PLLI2S_ENABLED)
+void config_plli2s(void);
+#endif
 void config_enable_default_clocks(void);
 
 /* function exported to the soc power.c */
 int stm32_clock_control_init(const struct device *dev);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* ZEPHYR_DRIVERS_CLOCK_CONTROL_STM32_LL_CLOCK_H_ */

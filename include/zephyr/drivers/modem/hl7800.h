@@ -26,8 +26,8 @@ extern "C" {
 #define MDM_HL7800_IMEI_SIZE 16
 #define MDM_HL7800_IMEI_STRLEN (MDM_HL7800_IMEI_SIZE - 1)
 
-#define MDM_HL7800_ICCID_SIZE 21
-#define MDM_HL7800_ICCID_STRLEN (MDM_HL7800_ICCID_SIZE - 1)
+#define MDM_HL7800_ICCID_MAX_SIZE 21
+#define MDM_HL7800_ICCID_MAX_STRLEN (MDM_HL7800_ICCID_MAX_SIZE - 1)
 
 #define MDM_HL7800_SERIAL_NUMBER_SIZE 15
 #define MDM_HL7800_SERIAL_NUMBER_STRLEN (MDM_HL7800_SERIAL_NUMBER_SIZE - 1)
@@ -354,15 +354,19 @@ bool mdm_hl7800_valid_rat(uint8_t value);
  * Multiple users registering for callbacks is supported.
  *
  * @param agent event callback agent
+ *
+ * @retval 0 on success, negative on failure
  */
-void mdm_hl7800_register_event_callback(struct mdm_hl7800_callback_agent *agent);
+int mdm_hl7800_register_event_callback(struct mdm_hl7800_callback_agent *agent);
 
 /**
  * @brief Unregister a callback event function
  *
  * @param agent event callback agent
+ *
+ * @retval 0 on success, negative on failure
  */
-void mdm_hl7800_unregister_event_callback(struct mdm_hl7800_callback_agent *agent);
+int mdm_hl7800_unregister_event_callback(struct mdm_hl7800_callback_agent *agent);
 
 /**
  * @brief Force modem module to generate status events.
@@ -514,7 +518,8 @@ void mdm_hl7800_register_gpio6_callback(void (*func)(int state));
 void mdm_hl7800_register_cts_callback(void (*func)(int state));
 
 /**
- * @brief Set the bands available for the LTE connection
+ * @brief Set the bands available for the LTE connection.
+ * NOTE: This will cause the modem to reboot. This call returns before the reboot.
  *
  * @param bands Band bitmap in hexadecimal format without the 0x prefix.
  * Leading 0's for the value can be ommited.

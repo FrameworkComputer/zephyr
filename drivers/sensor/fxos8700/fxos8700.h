@@ -5,10 +5,18 @@
  */
 
 #include <zephyr/drivers/sensor.h>
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
+#include <zephyr/drivers/spi.h>
+#endif
+
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
 #include <zephyr/drivers/i2c.h>
+#endif
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/kernel.h>
 
+#define FXOS8700_BUS_I2C			(1<<0)
+#define FXOS8700_BUS_SPI			(1<<1)
 #define FXOS8700_REG_STATUS			0x00
 #define FXOS8700_REG_OUTXMSB			0x01
 #define FXOS8700_REG_INT_SOURCE			0x0c
@@ -125,8 +133,36 @@ enum fxos_trigger_type {
 	FXOS8700_TRIG_M_VECM,
 };
 
-struct fxos8700_config {
+struct fxos8700_io_ops {
+	int (*read)(const struct device *dev,
+		    uint8_t reg,
+		    void *data,
+		    size_t length);
+	int (*byte_read)(const struct device *dev,
+			 uint8_t reg,
+			 uint8_t *byte);
+	int (*byte_write)(const struct device *dev,
+			  uint8_t reg,
+			  uint8_t byte);
+	int (*reg_field_update)(const struct device *dev,
+				uint8_t reg,
+				uint8_t mask,
+				uint8_t val);
+};
+
+union fxos8700_bus_cfg {
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
+	struct spi_dt_spec spi;
+#endif
+
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
 	struct i2c_dt_spec i2c;
+#endif
+};
+
+struct fxos8700_config {
+	const union fxos8700_bus_cfg bus_cfg;
+	const struct fxos8700_io_ops *ops;
 #ifdef CONFIG_FXOS8700_TRIGGER
 	struct gpio_dt_spec int_gpio;
 #endif
@@ -148,6 +184,7 @@ struct fxos8700_config {
 	uint8_t mag_vecm_cfg;
 	uint8_t mag_vecm_ths[2];
 #endif
+	uint8_t inst_on_bus;
 };
 
 struct fxos8700_data {
@@ -156,16 +193,21 @@ struct fxos8700_data {
 	const struct device *dev;
 	struct gpio_callback gpio_cb;
 	sensor_trigger_handler_t drdy_handler;
+	const struct sensor_trigger *drdy_trig;
 #endif
 #ifdef CONFIG_FXOS8700_PULSE
 	sensor_trigger_handler_t tap_handler;
+	const struct sensor_trigger *tap_trig;
 	sensor_trigger_handler_t double_tap_handler;
+	const struct sensor_trigger *double_tap_trig;
 #endif
 #ifdef CONFIG_FXOS8700_MOTION
 	sensor_trigger_handler_t motion_handler;
+	const struct sensor_trigger *motion_trig;
 #endif
 #ifdef CONFIG_FXOS8700_MAG_VECM
 	sensor_trigger_handler_t m_vecm_handler;
+	const struct sensor_trigger *m_vecm_trig;
 #endif
 #ifdef CONFIG_FXOS8700_TRIGGER_OWN_THREAD
 	K_KERNEL_STACK_MEMBER(thread_stack, CONFIG_FXOS8700_THREAD_STACK_SIZE);
@@ -185,6 +227,44 @@ struct fxos8700_data {
 int fxos8700_get_power(const struct device *dev, enum fxos8700_power *power);
 int fxos8700_set_power(const struct device *dev, enum fxos8700_power power);
 
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(spi)
+int fxos8700_byte_write_spi(const struct device *dev,
+			    uint8_t reg,
+			    uint8_t byte);
+
+int fxos8700_byte_read_spi(const struct device *dev,
+			   uint8_t reg,
+			   uint8_t *byte);
+
+int fxos8700_reg_field_update_spi(const struct device *dev,
+				  uint8_t reg,
+				  uint8_t mask,
+				  uint8_t val);
+
+int fxos8700_read_spi(const struct device *dev,
+		      uint8_t reg,
+		      void *data,
+		      size_t length);
+#endif
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(i2c)
+int fxos8700_byte_write_i2c(const struct device *dev,
+			    uint8_t reg,
+			    uint8_t byte);
+
+int fxos8700_byte_read_i2c(const struct device *dev,
+			   uint8_t reg,
+			   uint8_t *byte);
+
+int fxos8700_reg_field_update_i2c(const struct device *dev,
+				  uint8_t reg,
+				  uint8_t mask,
+				  uint8_t val);
+
+int fxos8700_read_i2c(const struct device *dev,
+		      uint8_t reg,
+		      void *data,
+		      size_t length);
+#endif
 #if CONFIG_FXOS8700_TRIGGER
 int fxos8700_trigger_init(const struct device *dev);
 int fxos8700_trigger_set(const struct device *dev,

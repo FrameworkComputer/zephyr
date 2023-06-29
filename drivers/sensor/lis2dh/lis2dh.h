@@ -87,8 +87,12 @@
 #define LIS2DH_ODR_MASK			(BIT_MASK(4) << LIS2DH_ODR_SHIFT)
 
 #define LIS2DH_REG_CTRL2		0x21
+#define LIS2DH_HPIS1_EN_BIT		BIT(0)
 #define LIS2DH_HPIS2_EN_BIT		BIT(1)
 #define LIS2DH_FDS_EN_BIT		BIT(3)
+
+#define LIS2DH_HPIS_EN_SHIFT		0
+#define LIS2DH_HPIS_EN_MASK		BIT_MASK(2) << LIS2DH_HPIS_EN_SHIFT
 
 #define LIS2DH_REG_CTRL3		0x22
 #define LIS2DH_EN_DRDY1_INT1_SHIFT	4
@@ -253,7 +257,9 @@ struct lis2dh_data {
 	struct gpio_callback gpio_int2_cb;
 
 	sensor_trigger_handler_t handler_drdy;
+	const struct sensor_trigger *trig_drdy;
 	sensor_trigger_handler_t handler_anymotion;
+	const struct sensor_trigger *trig_anymotion;
 	atomic_t trig_flags;
 	enum sensor_channel chan_drdy;
 
@@ -283,6 +289,11 @@ int lis2dh_init_interrupt(const struct device *dev);
 int lis2dh_acc_slope_config(const struct device *dev,
 			    enum sensor_attribute attr,
 			    const struct sensor_value *val);
+#endif
+
+#ifdef CONFIG_LIS2DH_ACCEL_HP_FILTERS
+int lis2dh_acc_hp_filter_set(const struct device *dev,
+			     int32_t val);
 #endif
 
 int lis2dh_spi_init(const struct device *dev);

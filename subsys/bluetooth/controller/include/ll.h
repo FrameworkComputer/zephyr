@@ -106,6 +106,8 @@ uint8_t ll_adv_enable(uint8_t handle, uint8_t enable,
 uint8_t ll_adv_enable(uint8_t enable);
 #endif /* !CONFIG_BT_CTLR_ADV_EXT || !CONFIG_BT_HCI_MESH_EXT */
 
+uint8_t ll_adv_disable_all(void);
+
 uint8_t ll_big_create(uint8_t big_handle, uint8_t adv_handle, uint8_t num_bis,
 		      uint32_t sdu_interval, uint16_t max_sdu,
 		      uint16_t max_latency, uint8_t rtn, uint8_t phy,
@@ -147,9 +149,8 @@ uint8_t ll_cig_parameters_open(uint8_t cig_id,
 uint8_t ll_cis_parameters_set(uint8_t cis_id,
 			      uint16_t c_sdu, uint16_t p_sdu,
 			      uint8_t c_phy, uint8_t p_phy,
-			      uint8_t c_rtn, uint8_t p_rtn,
-			      uint16_t *handle);
-uint8_t ll_cig_parameters_commit(uint8_t cig_id);
+			      uint8_t c_rtn, uint8_t p_rtn);
+uint8_t ll_cig_parameters_commit(uint8_t cig_id, uint16_t *handles);
 uint8_t ll_cig_parameters_test_open(uint8_t cig_id,
 				    uint32_t c_interval,
 				    uint32_t p_interval,
@@ -160,12 +161,12 @@ uint8_t ll_cig_parameters_test_open(uint8_t cig_id,
 				    uint8_t packing,
 				    uint8_t framing,
 				    uint8_t num_cis);
-uint8_t ll_cis_parameters_test_set(uint8_t cis_id,
+uint8_t ll_cis_parameters_test_set(uint8_t cis_id, uint8_t nse,
 				   uint16_t c_sdu, uint16_t p_sdu,
 				   uint16_t c_pdu, uint16_t p_pdu,
 				   uint8_t c_phy, uint8_t p_phy,
-				   uint8_t c_bn, uint8_t p_bn,
-				   uint16_t *handle);
+				   uint8_t c_bn, uint8_t p_bn);
+/* Must be implemented by vendor if vendor-specific data path is supported */
 uint8_t ll_configure_data_path(uint8_t data_path_dir,
 			       uint8_t data_path_id,
 			       uint8_t vs_config_len,
@@ -326,8 +327,13 @@ void ll_iso_tx_mem_release(void *tx);
 int ll_iso_tx_mem_enqueue(uint16_t handle, void *tx, void *link);
 void ll_iso_link_tx_release(void *link);
 
+uint8_t ll_conn_iso_accept_timeout_get(uint16_t *timeout);
+uint8_t ll_conn_iso_accept_timeout_set(uint16_t timeout);
+
 /* External co-operation */
 void ll_timeslice_ticker_id_get(uint8_t * const instance_index,
+				uint8_t * const ticker_id);
+void ll_coex_ticker_id_get(uint8_t * const instance_index,
 				uint8_t * const ticker_id);
 void ll_radio_state_abort(void);
 uint32_t ll_radio_state_is_idle(void);

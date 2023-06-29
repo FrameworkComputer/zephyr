@@ -67,10 +67,9 @@
 #include <zephyr/usb/usb_device.h>
 #include <usb_descriptor.h>
 #include <zephyr/usb/class/usb_audio.h>
-
-#define LOG_LEVEL CONFIG_USB_DEVICE_LOG_LEVEL
+#include <zephyr/sys/iterable_sections.h>
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(usb_device);
+LOG_MODULE_REGISTER(usb_device, CONFIG_USB_DEVICE_LOG_LEVEL);
 
 #include <zephyr/usb/bos.h>
 #include <os_desc.h>
@@ -135,6 +134,10 @@ static struct usb_dev_priv {
 	uint8_t alt_setting[CONFIG_USB_MAX_ALT_SETTING];
 	/** Remote wakeup feature status */
 	bool remote_wakeup;
+	/** Tracks whether set_endpoint() had been called on an EP */
+	uint32_t ep_bm;
+	/** Maximum Packet Size (MPS) of control endpoint */
+	uint8_t mps0;
 } usb_dev;
 
 /* Setup packet definition used to read raw data from USB line */
@@ -145,6 +148,8 @@ struct usb_setup_packet_packed {
 	uint16_t wIndex;
 	uint16_t wLength;
 } __packed;
+
+static bool reset_endpoint(const struct usb_ep_descriptor *ep_desc);
 
 /*
  * @brief print the contents of a setup packet
@@ -252,7 +257,7 @@ static void usb_data_to_host(void)
 		if (!usb_dev.data_buf_residue && chunk &&
 		    usb_dev.setup.wLength > usb_dev.data_buf_len) {
 			/* Send less data as requested during the Setup stage */
-			if (!(usb_dev.data_buf_len % USB_MAX_CTRL_MPS)) {
+			if (!(usb_dev.data_buf_len % usb_dev.mps0)) {
 				/* Transfers a zero-length packet */
 				LOG_DBG("ZLP, requested %u , length %u ",
 					usb_dev.setup.wLength,
@@ -509,6 +514,37 @@ static bool usb_get_descriptor(struct usb_setup_packet *setup,
 }
 
 /*
+ * @brief Get 32-bit endpoint bitmask from index
+ *
+ * In the returned 32-bit word, the bit positions in the lower 16 bits
+ * indicate OUT endpoints, while the upper 16 bits indicate IN
+ * endpoints
+ *
+ * @param [in]  ep Endpoint of interest
+ *
+ * @return 32-bit bitmask
+ */
+static uint32_t get_ep_bm_from_addr(uint8_t ep)
+{
+	uint32_t ep_bm = 0;
+	uint8_t ep_idx;
+
+	ep_idx = ep & (~USB_EP_DIR_IN);
+	if (ep_idx > 15) {
+		LOG_ERR("Endpoint 0x%02x is invalid", ep);
+		goto done;
+	}
+
+	if (ep & USB_EP_DIR_IN) {
+		ep_bm = BIT(ep_idx + 16);
+	} else {
+		ep_bm = BIT(ep_idx);
+	}
+done:
+	return ep_bm;
+}
+
+/*
  * @brief configure and enable endpoint
  *
  * This function sets endpoint configuration according to one specified in USB
@@ -521,6 +557,7 @@ static bool usb_get_descriptor(struct usb_setup_packet *setup,
 static bool set_endpoint(const struct usb_ep_descriptor *ep_desc)
 {
 	struct usb_dc_ep_cfg_data ep_cfg;
+	uint32_t ep_bm;
 	int ret;
 
 	ep_cfg.ep_addr = ep_desc->bEndpointAddress;
@@ -529,6 +566,16 @@ static bool set_endpoint(const struct usb_ep_descriptor *ep_desc)
 
 	LOG_DBG("Set endpoint 0x%x type %u MPS %u",
 		ep_cfg.ep_addr, ep_cfg.ep_type, ep_cfg.ep_mps);
+
+	/* if endpoint is has been set() previously, reset() it first */
+	ep_bm = get_ep_bm_from_addr(ep_desc->bEndpointAddress);
+	if (ep_bm & usb_dev.ep_bm) {
+		reset_endpoint(ep_desc);
+		/* allow any canceled transfers to terminate */
+		if (!k_is_in_isr()) {
+			k_usleep(150);
+		}
+	}
 
 	ret = usb_dc_ep_configure(&ep_cfg);
 	if (ret == -EALREADY) {
@@ -551,8 +598,29 @@ static bool set_endpoint(const struct usb_ep_descriptor *ep_desc)
 	}
 
 	usb_dev.configured = true;
+	usb_dev.ep_bm |= ep_bm;
 
 	return true;
+}
+
+static int disable_endpoint(uint8_t ep_addr)
+{
+	uint32_t ep_bm;
+	int ret;
+
+	ret = usb_dc_ep_disable(ep_addr);
+	if (ret == -EALREADY) {
+		LOG_WRN("Endpoint 0x%02x already disabled", ep_addr);
+	} else if (ret) {
+		LOG_ERR("Failed to disable endpoint 0x%02x", ep_addr);
+		return ret;
+	}
+
+	/* clear endpoint mask */
+	ep_bm = get_ep_bm_from_addr(ep_addr);
+	usb_dev.ep_bm &= ~ep_bm;
+
+	return 0;
 }
 
 /*
@@ -568,7 +636,6 @@ static bool set_endpoint(const struct usb_ep_descriptor *ep_desc)
 static bool reset_endpoint(const struct usb_ep_descriptor *ep_desc)
 {
 	struct usb_dc_ep_cfg_data ep_cfg;
-	int ret;
 
 	ep_cfg.ep_addr = ep_desc->bEndpointAddress;
 	ep_cfg.ep_type = ep_desc->bmAttributes & USB_EP_TRANSFER_TYPE_MASK;
@@ -578,17 +645,7 @@ static bool reset_endpoint(const struct usb_ep_descriptor *ep_desc)
 
 	usb_cancel_transfer(ep_cfg.ep_addr);
 
-	ret = usb_dc_ep_disable(ep_cfg.ep_addr);
-	if (ret == -EALREADY) {
-		LOG_WRN("Endpoint 0x%02x already disabled", ep_cfg.ep_addr);
-	} else if (ret) {
-		LOG_ERR("Failed to disable endpoint 0x%02x", ep_cfg.ep_addr);
-		return false;
-	} else {
-		;
-	}
-
-	return true;
+	return disable_endpoint(ep_cfg.ep_addr) ? false : true;
 }
 
 static bool usb_eps_reconfigure(struct usb_ep_descriptor *ep_desc,
@@ -1175,7 +1232,16 @@ static int foreach_ep(int (* endpoint_callback)(const struct usb_ep_cfg_data *))
 
 static int disable_interface_ep(const struct usb_ep_cfg_data *ep_data)
 {
-	return usb_dc_ep_disable(ep_data->ep_addr);
+	uint32_t ep_bm;
+	int ret;
+
+	ret = usb_dc_ep_disable(ep_data->ep_addr);
+
+	/* clear endpoint mask */
+	ep_bm = get_ep_bm_from_addr(ep_data->ep_addr);
+	usb_dev.ep_bm &= ~ep_bm;
+
+	return ret;
 }
 
 static void forward_status_cb(enum usb_dc_status_code status, const uint8_t *param)
@@ -1184,13 +1250,11 @@ static void forward_status_cb(enum usb_dc_status_code status, const uint8_t *par
 		usb_reset_alt_setting();
 	}
 
-	if (status == USB_DC_DISCONNECTED || status == USB_DC_SUSPEND || status == USB_DC_RESET) {
+	if (status == USB_DC_DISCONNECTED || status == USB_DC_RESET) {
 		if (usb_dev.configured) {
 			usb_cancel_transfers();
-			if (status == USB_DC_DISCONNECTED || status == USB_DC_RESET) {
-				foreach_ep(disable_interface_ep);
-				usb_dev.configured = false;
-			}
+			foreach_ep(disable_interface_ep);
+			usb_dev.configured = false;
 		}
 	}
 
@@ -1293,6 +1357,22 @@ int usb_disable(void)
 	ret = usb_dc_detach();
 	if (ret < 0) {
 		return ret;
+	}
+
+	usb_cancel_transfers();
+	for (uint8_t i = 0; i <= 15; i++) {
+		if (usb_dev.ep_bm & BIT(i)) {
+			ret = disable_endpoint(i);
+			if (ret < 0) {
+				return ret;
+			}
+		}
+		if (usb_dev.ep_bm & BIT(i + 16)) {
+			ret = disable_endpoint(USB_EP_DIR_IN | i);
+			if (ret < 0) {
+				return ret;
+			}
+		}
 	}
 
 	/* Disable VBUS if needed */
@@ -1515,6 +1595,7 @@ int usb_enable(usb_dc_status_callback status_cb)
 {
 	int ret;
 	struct usb_dc_ep_cfg_data ep0_cfg;
+	struct usb_device_descriptor *dev_desc = (void *)usb_dev.descriptors;
 
 	/* Prevent from calling usb_enable form different context.
 	 * This should only be called once.
@@ -1548,8 +1629,16 @@ int usb_enable(usb_dc_status_callback status_cb)
 		goto out;
 	}
 
+	if (dev_desc->bDescriptorType != USB_DESC_DEVICE ||
+	    dev_desc->bMaxPacketSize0 == 0) {
+		LOG_ERR("Erroneous device descriptor or bMaxPacketSize0");
+		ret = -EINVAL;
+		goto out;
+	}
+
 	/* Configure control EP */
-	ep0_cfg.ep_mps = USB_MAX_CTRL_MPS;
+	usb_dev.mps0 = dev_desc->bMaxPacketSize0;
+	ep0_cfg.ep_mps = usb_dev.mps0;
 	ep0_cfg.ep_type = USB_DC_EP_CONTROL;
 
 	ep0_cfg.ep_addr = USB_CONTROL_EP_OUT;
@@ -1588,11 +1677,13 @@ int usb_enable(usb_dc_status_callback status_cb)
 	if (ret < 0) {
 		goto out;
 	}
+	usb_dev.ep_bm |= get_ep_bm_from_addr(USB_CONTROL_EP_OUT);
 
 	ret = usb_dc_ep_enable(USB_CONTROL_EP_IN);
 	if (ret < 0) {
 		goto out;
 	}
+	usb_dev.ep_bm |= get_ep_bm_from_addr(USB_CONTROL_EP_IN);
 
 	usb_dev.enabled = true;
 	ret = 0;
@@ -1606,7 +1697,7 @@ out:
  * This function configures the USB device stack based on USB descriptor and
  * usb_cfg_data.
  */
-static int usb_device_init(const struct device *dev)
+static int usb_device_init(void)
 {
 	uint8_t *device_descriptor;
 

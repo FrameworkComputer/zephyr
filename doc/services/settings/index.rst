@@ -84,7 +84,7 @@ Zephyr Storage Backends
 
 Zephyr has three storage backends: a Flash Circular Buffer
 (:kconfig:option:`CONFIG_SETTINGS_FCB`), a file in the filesystem
-(:kconfig:option:`CONFIG_SETTINGS_FS`), or non-volatile storage
+(:kconfig:option:`CONFIG_SETTINGS_FILE`), or non-volatile storage
 (:kconfig:option:`CONFIG_SETTINGS_NVS`).
 
 You can declare multiple sources for settings; settings from
@@ -110,8 +110,8 @@ partition with label "storage" by default. A different partition can be
 selected by setting the ``zephyr,settings-partition`` property of the
 chosen node in the devicetree.
 
-The file path used by the file system backend to store settings
-is selected via the option ``CONFIG_SETTINGS_FS_FILE``.
+The file path used by the file backend to store settings is selected via the
+option ``CONFIG_SETTINGS_FILE_PATH``.
 
 Loading data from persisted storage
 ***********************************
@@ -122,7 +122,7 @@ After all data is loaded, the ``h_commit`` handler is issued,
 signalling the application that the settings were successfully
 retrieved.
 
-Technically FCB and filesystem backends may store some history of the entities.
+Technically FCB and file backends may store some history of the entities.
 This means that the newest data entity is stored after any
 older existing data entities.
 Starting with Zephyr 2.1, the back-end must filter out all old entities and
@@ -138,7 +138,7 @@ settings data to the storage medium. A call to ``settings_save()`` uses an
 A key need to be covered by a ``h_export`` only if it is supposed to be stored
 by ``settings_save()`` call.
 
-For both FCB and filesystem back-end only storage requests with data which
+For both FCB and file back-end only storage requests with data which
 changes most actual key's value are stored, therefore there is no need to check
 whether a value changed by the application. Such a storage mechanism implies
 that storage can contain multiple value assignments for a key , while only the
@@ -146,7 +146,7 @@ last is the current value for the key.
 
 Garbage collection
 ==================
-When storage becomes full (FCB) or consumes too much space (file system),
+When storage becomes full (FCB) or consumes too much space (file),
 the backend removes non-recent key-value pairs records and unnecessary
 key-delete records.
 
@@ -263,7 +263,7 @@ up from where it was before restart.
         .h_set = foo_settings_set
     };
 
-    void main(void)
+    int main(void)
     {
         settings_subsys_init();
         settings_register(&my_conf);
@@ -286,7 +286,8 @@ handler (:kconfig:option:`CONFIG_SETTINGS_CUSTOM`).
 
 .. code-block:: c
 
-    static int settings_custom_load(struct settings_store *cs)
+    static int settings_custom_load(struct settings_store *cs,
+                                    const struct settings_load_arg *arg)
     {
         //...
     }
@@ -306,7 +307,7 @@ handler (:kconfig:option:`CONFIG_SETTINGS_CUSTOM`).
     /* custom backend node */
     static struct settings_store settings_custom_store = {
         .cs_itf = &settings_custom_itf
-    }
+    };
 
     int settings_backend_init(void)
     {

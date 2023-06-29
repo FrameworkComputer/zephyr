@@ -17,20 +17,24 @@
 #ifdef CONFIG_HARVARD
 	#define ROMABLE_REGION ICCM
 	#define RAMABLE_REGION DCCM
+	#define ROM_RAM_IN_SAME_REGION 0
 #else
 	#if defined(CONFIG_XIP) && (FLASH_SIZE != 0)
 		#define ROMABLE_REGION FLASH
 		#define RAMABLE_REGION SRAM
+		#define ROM_RAM_IN_SAME_REGION 0
 	#else
 		#define ROMABLE_REGION SRAM
 		#define RAMABLE_REGION SRAM
+		#define ROM_RAM_IN_SAME_REGION 1
 	#endif
 #endif
 
 #ifdef CONFIG_ARC_MPU_ENABLE
 	#if CONFIG_ARC_MPU_VER == 2
 		#define MPU_MIN_SIZE 2048
-	#elif (CONFIG_ARC_MPU_VER == 3) ||  (CONFIG_ARC_MPU_VER == 4) || (CONFIG_ARC_MPU_VER == 6)
+	#elif (CONFIG_ARC_MPU_VER == 3) ||  (CONFIG_ARC_MPU_VER == 4) || \
+			(CONFIG_ARC_MPU_VER == 6) || (CONFIG_ARC_MPU_VER == 8)
 		#define MPU_MIN_SIZE 32
 	#endif
 	#define MPU_MIN_SIZE_ALIGN . = ALIGN(MPU_MIN_SIZE);
@@ -63,6 +67,12 @@ MEMORY {
 #ifdef DCCM_START
 	DCCM  (rw)  : ORIGIN = DCCM_START,  LENGTH = DCCM_SIZE
 #endif
+#ifdef XCCM_START
+	XCCM  (rw)  : ORIGIN = XCCM_START,  LENGTH = XCCM_SIZE
+#endif
+#ifdef YCCM_START
+	YCCM  (rw)  : ORIGIN = YCCM_START,  LENGTH = YCCM_SIZE
+#endif
 	/* Used by and documented in include/linker/intlist.ld */
 	IDT_LIST  (wx)      : ORIGIN = 0xFFFFF7FF, LENGTH = 2K
 }
@@ -92,10 +102,24 @@ SECTIONS {
 	__rodata_region_start = .;
 
 #include <zephyr/linker/common-rom.ld>
-#include <zephyr/linker/thread-local-storage.ld>
 #ifdef __MWDT_LINKER_CMD__
+	SECTION_DATA_PROLOGUE(tdata,,)
+	{
+		*(.tls .tls.*);
+	} GROUP_ROM_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
+
+	#ifdef CONFIG_XIP
+		/* The "primary copy" of tls should be only in flash on XIP systems */
+		PROVIDE(_arcmwdt_tls_start = LOADADDR(tdata));
+	#else
+		PROVIDE(_arcmwdt_tls_start = ADDR(tdata));
+	#endif
+
+	PROVIDE(_arcmwdt_tls_size = SIZEOF(tdata));
+
 /* TODO: add mwdt specific ROM C++ sections */
 #else
+#include <zephyr/linker/thread-local-storage.ld>
 #include <zephyr/linker/cplusplus-rom.ld>
 #endif /* __MWDT_LINKER_CMD__ */
 
@@ -110,14 +134,20 @@ SECTIONS {
 #include <snippets-rodata.ld>
 #include <zephyr/linker/kobject-rom.ld>
 
-#if defined(CONFIG_CPLUSPLUS) && !defined(CONFIG_CPP_STATIC_INIT_GNU) && defined(__MWDT_LINKER_CMD__)
+#if defined(CONFIG_CPP) && !defined(CONFIG_CPP_STATIC_INIT_GNU) && defined(__MWDT_LINKER_CMD__)
 		. = ALIGN(4);
 		_fctors = .;
 		KEEP(*(.ctors*))
 		_ectors = .;
-#endif /* CONFIG_CPLUSPLUS && !CONFIG_CPP_STATIC_INIT_GNU && __MWDT_LINKER_CMD__ */
+#endif /* CONFIG_CPP && !CONFIG_CPP_STATIC_INIT_GNU && __MWDT_LINKER_CMD__ */
 
+/* This extra MPU alignment of RAMABLE_REGION is only required if we put ROMABLE_REGION and
+ * RAMABLE_REGION into the same (continuous) memory - otherwise we can get beginning of the
+ * RAMABLE_REGION in the end of ROMABLE_REGION MPU aperture.
+ */
+#if ROM_RAM_IN_SAME_REGION
 		MPU_ALIGN(ABSOLUTE(.) - __rom_region_start);
+#endif
 	} GROUP_LINK_IN(ROMABLE_REGION)
 
 	__rodata_region_end = .;
@@ -232,6 +262,22 @@ SECTIONS {
 	_estack = .;
 #endif /* __MWDT_LINKER_CMD__ */
 
+#ifdef CONFIG_ARC_XY_ENABLE
+	SECTION_PROLOGUE(xdata,,)
+	{
+		__xdata_start = .;
+		*(.Xdata*)
+		__xdata_end = .;
+	} GROUP_DATA_LINK_IN(XCCM, RAMABLE_REGION)
+
+	SECTION_PROLOGUE(ydata,,)
+	{
+		__ydata_start = .;
+		*(.Ydata*)
+		__ydata_end = .;
+	} GROUP_DATA_LINK_IN(YCCM, RAMABLE_REGION)
+#endif
+
 	GROUP_END(RAMABLE_REGION)
 
 /* Located in generated directory. This file is populated by the
@@ -257,11 +303,11 @@ SECTIONS {
 #endif
 
 	/DISCARD/ : {
-#if defined(CONFIG_CPLUSPLUS) && !defined(CONFIG_CPP_STATIC_INIT_GNU) && defined(__MWDT_LINKER_CMD__)
+#if defined(CONFIG_CPP) && !defined(CONFIG_CPP_STATIC_INIT_GNU) && defined(__MWDT_LINKER_CMD__)
 		*(.dtors*)
 		*(.fini*)
 		*(.eh_frame*)
-#endif /* CONFIG_CPLUSPLUS && !CONFIG_CPP_STATIC_INIT_GNU && __MWDT_LINKER_CMD__ */
+#endif /* CONFIG_CPP && !CONFIG_CPP_STATIC_INIT_GNU && __MWDT_LINKER_CMD__ */
 		*(.note.GNU-stack)
 		*(.got.plt)
 		*(.igot.plt)

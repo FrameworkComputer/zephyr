@@ -260,7 +260,7 @@ SECTIONS {
 #endif
 
   .text : {
-    _text_start = .;
+    __text_region_start = .;
     *(.iram1 .iram1.*)
     *(.entry.text)
     *(.init.literal)
@@ -271,12 +271,12 @@ SECTIONS {
     *(.fini.literal)
     KEEP(*(.fini))
     *(.gnu.version)
-    _text_end = .;
+    __text_region_end = .;
   } >RAM
 
   .rodata : ALIGN(4096)
   {
-    _rodata_start = .;
+    __rodata_region_start = .;
     *(.rodata)
     *(.rodata.*)
     *(.gnu.linkonce.r.*)
@@ -311,7 +311,7 @@ SECTIONS {
     LONG(_bss_start)
     LONG(_bss_end)
     _bss_table_end = .;
-    _rodata_end = .;
+    __rodata_region_end = .;
   } >RAM
 
   .module_init : {

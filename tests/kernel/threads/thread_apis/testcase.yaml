@@ -1,10 +1,15 @@
+common:
+  ignore_faults: true
+  tags:
+    - kernel
+    - threads
+    - userspace
 tests:
   kernel.threads.apis:
-    tags: kernel threads userspace ignore_faults
     min_flash: 34
   kernel.threads.apis.pinonly:
-    tags: kernel threads userspace ignore_faults
     min_flash: 34
-    filter: CONFIG_SMP
+    depends_on:
+      - smp
     extra_configs:
       - CONFIG_SCHED_CPU_MASK_PIN_ONLY=y

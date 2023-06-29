@@ -4,12 +4,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/types.h>
+#include <zephyr/kernel.h>
 
-#include <zephyr/bluetooth/hci.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/slist.h>
 #include <zephyr/sys/util.h>
+
+#include <zephyr/bluetooth/hci_types.h>
 
 #include "hal/ccm.h"
 
@@ -18,7 +19,10 @@
 #include "util/memq.h"
 #include "util/dbuf.h"
 
+#include "pdu_df.h"
+#include "lll/pdu_vendor.h"
 #include "pdu.h"
+
 #include "ll.h"
 #include "ll_settings.h"
 
@@ -41,9 +45,6 @@
 
 #include "ll_feat.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_ctlr_ull_llcp_pdu
-#include "common/log.h"
 #include <soc.h>
 #include "hal/debug.h"
 
@@ -136,13 +137,13 @@ void llcp_pdu_encode_feature_req(struct ll_conn *conn, struct pdu_data *pdu)
 #endif /* CONFIG_BT_CTLR_PER_INIT_FEAT_XCHG && CONFIG_BT_PERIPHERAL */
 
 	p = &pdu->llctrl.feature_req;
-	sys_put_le64(LL_FEAT, p->features);
+	sys_put_le64(ll_feat_get(), p->features);
 }
 
 void llcp_pdu_encode_feature_rsp(struct ll_conn *conn, struct pdu_data *pdu)
 {
 	struct pdu_data_llctrl_feature_rsp *p;
-	uint64_t feature_rsp = LL_FEAT;
+	uint64_t feature_rsp = ll_feat_get();
 
 	pdu->ll_id = PDU_DATA_LLID_CTRL;
 	pdu->len = PDU_DATA_LLCTRL_LEN(feature_rsp);
@@ -171,12 +172,26 @@ void llcp_ntf_encode_feature_rsp(struct ll_conn *conn, struct pdu_data *pdu)
 	sys_put_le64(conn->llcp.fex.features_peer, p->features);
 }
 
+static uint64_t features_used(uint64_t featureset)
+{
+	uint64_t x;
+
+	/* swap bits for role specific features */
+	x = ((featureset >> BT_LE_FEAT_BIT_CIS_CENTRAL) ^
+	     (featureset >> BT_LE_FEAT_BIT_CIS_PERIPHERAL)) & 0x01;
+	x = (x << BT_LE_FEAT_BIT_CIS_CENTRAL) |
+	    (x << BT_LE_FEAT_BIT_CIS_PERIPHERAL);
+	x ^= featureset;
+
+	return ll_feat_get() & x;
+}
+
 void llcp_pdu_decode_feature_req(struct ll_conn *conn, struct pdu_data *pdu)
 {
 	uint64_t featureset;
 
 	feature_filter(pdu->llctrl.feature_req.features, &featureset);
-	conn->llcp.fex.features_used = LL_FEAT & featureset;
+	conn->llcp.fex.features_used = features_used(featureset);
 
 	featureset &= (FEAT_FILT_OCTET0 | conn->llcp.fex.features_used);
 	conn->llcp.fex.features_peer = featureset;
@@ -189,8 +204,7 @@ void llcp_pdu_decode_feature_rsp(struct ll_conn *conn, struct pdu_data *pdu)
 	uint64_t featureset;
 
 	feature_filter(pdu->llctrl.feature_rsp.features, &featureset);
-	conn->llcp.fex.features_used = LL_FEAT & featureset;
-
+	conn->llcp.fex.features_used = features_used(featureset);
 	conn->llcp.fex.features_peer = featureset;
 	conn->llcp.fex.valid = 1;
 }
@@ -226,17 +240,6 @@ void llcp_pdu_decode_min_used_chans_ind(struct ll_conn *conn, struct pdu_data *p
  * Termination Procedure Helper
  */
 void llcp_pdu_encode_terminate_ind(struct proc_ctx *ctx, struct pdu_data *pdu)
-{
-	struct pdu_data_llctrl_terminate_ind *p;
-
-	pdu->ll_id = PDU_DATA_LLID_CTRL;
-	pdu->len = PDU_DATA_LLCTRL_LEN(terminate_ind);
-	pdu->llctrl.opcode = PDU_DATA_LLCTRL_TYPE_TERMINATE_IND;
-	p = &pdu->llctrl.terminate_ind;
-	p->error_code = ctx->data.term.error_code;
-}
-
-void llcp_ntf_encode_terminate_ind(struct proc_ctx *ctx, struct pdu_data *pdu)
 {
 	struct pdu_data_llctrl_terminate_ind *p;
 
@@ -310,8 +313,8 @@ static int csrand_get(void *buf, size_t len)
 	}
 }
 
-#if defined(CONFIG_BT_CENTRAL)
-void llcp_pdu_encode_enc_req(struct proc_ctx *ctx, struct pdu_data *pdu)
+#if defined(CONFIG_BT_CENTRAL) || defined(CONFIG_BT_PERIPHERAL)
+static void encode_enc_req(struct proc_ctx *ctx, struct pdu_data *pdu)
 {
 	struct pdu_data_llctrl_enc_req *p;
 
@@ -323,7 +326,18 @@ void llcp_pdu_encode_enc_req(struct proc_ctx *ctx, struct pdu_data *pdu)
 	memcpy(p->rand, ctx->data.enc.rand, sizeof(p->rand));
 	p->ediv[0] = ctx->data.enc.ediv[0];
 	p->ediv[1] = ctx->data.enc.ediv[1];
+}
+#endif /* CONFIG_BT_CENTRAL || CONFIG_BT_PERIPHERAL */
+
+#if defined(CONFIG_BT_CENTRAL)
+void llcp_pdu_encode_enc_req(struct proc_ctx *ctx, struct pdu_data *pdu)
+{
+	struct pdu_data_llctrl_enc_req *p;
+
+	encode_enc_req(ctx, pdu);
+
 	/* Optimal getting random data, p->ivm is packed right after p->skdm */
+	p = &pdu->llctrl.enc_req;
 	BUILD_ASSERT(offsetof(struct pdu_data_llctrl_enc_req, ivm) ==
 		     offsetof(struct pdu_data_llctrl_enc_req, skdm) + sizeof(p->skdm),
 		     "Member IVM must be after member SKDM");
@@ -335,16 +349,7 @@ void llcp_pdu_encode_enc_req(struct proc_ctx *ctx, struct pdu_data *pdu)
 #if defined(CONFIG_BT_PERIPHERAL)
 void llcp_ntf_encode_enc_req(struct proc_ctx *ctx, struct pdu_data *pdu)
 {
-	struct pdu_data_llctrl_enc_req *p;
-
-	pdu->ll_id = PDU_DATA_LLID_CTRL;
-	pdu->len = PDU_DATA_LLCTRL_LEN(enc_req);
-	pdu->llctrl.opcode = PDU_DATA_LLCTRL_TYPE_ENC_REQ;
-
-	p = &pdu->llctrl.enc_req;
-	memcpy(p->rand, ctx->data.enc.rand, sizeof(p->rand));
-	p->ediv[0] = ctx->data.enc.ediv[0];
-	p->ediv[1] = ctx->data.enc.ediv[1];
+	encode_enc_req(ctx, pdu);
 }
 
 void llcp_pdu_encode_enc_rsp(struct pdu_data *pdu)
@@ -490,15 +495,15 @@ void llcp_pdu_decode_phy_rsp(struct proc_ctx *ctx, struct pdu_data *pdu)
 /*
  * Connection Update Procedure Helper
  */
-void llcp_pdu_encode_conn_param_req(struct proc_ctx *ctx, struct pdu_data *pdu)
+static void encode_conn_param_req_rsp_common(struct proc_ctx *ctx, struct pdu_data *pdu,
+					     struct pdu_data_llctrl_conn_param_req_rsp_common *p,
+					     uint8_t opcode)
 {
-	struct pdu_data_llctrl_conn_param_req *p;
-
 	pdu->ll_id = PDU_DATA_LLID_CTRL;
-	pdu->len = PDU_DATA_LLCTRL_LEN(conn_param_req);
-	pdu->llctrl.opcode = PDU_DATA_LLCTRL_TYPE_CONN_PARAM_REQ;
+	/* The '+ 1U' is to count in opcode octet, the first member of struct pdu_data_llctrl */
+	pdu->len = sizeof(struct pdu_data_llctrl_conn_param_req_rsp_common) + 1U;
+	pdu->llctrl.opcode = opcode;
 
-	p = (void *)&pdu->llctrl.conn_param_req;
 	p->interval_min = sys_cpu_to_le16(ctx->data.cu.interval_min);
 	p->interval_max = sys_cpu_to_le16(ctx->data.cu.interval_max);
 	p->latency = sys_cpu_to_le16(ctx->data.cu.latency);
@@ -511,67 +516,50 @@ void llcp_pdu_encode_conn_param_req(struct proc_ctx *ctx, struct pdu_data *pdu)
 	p->offset3 = sys_cpu_to_le16(ctx->data.cu.offsets[3]);
 	p->offset4 = sys_cpu_to_le16(ctx->data.cu.offsets[4]);
 	p->offset5 = sys_cpu_to_le16(ctx->data.cu.offsets[5]);
+}
+
+
+void llcp_pdu_encode_conn_param_req(struct proc_ctx *ctx, struct pdu_data *pdu)
+{
+	encode_conn_param_req_rsp_common(ctx, pdu,
+		(struct pdu_data_llctrl_conn_param_req_rsp_common *)&pdu->llctrl.conn_param_req,
+		PDU_DATA_LLCTRL_TYPE_CONN_PARAM_REQ);
 }
 
 void llcp_pdu_encode_conn_param_rsp(struct proc_ctx *ctx, struct pdu_data *pdu)
 {
-	struct pdu_data_llctrl_conn_param_req *p;
+	encode_conn_param_req_rsp_common(ctx, pdu,
+		(struct pdu_data_llctrl_conn_param_req_rsp_common *)&pdu->llctrl.conn_param_rsp,
+		PDU_DATA_LLCTRL_TYPE_CONN_PARAM_RSP);
+}
 
-	pdu->ll_id = PDU_DATA_LLID_CTRL;
-	pdu->len = PDU_DATA_LLCTRL_LEN(conn_param_rsp);
-	pdu->llctrl.opcode = PDU_DATA_LLCTRL_TYPE_CONN_PARAM_RSP;
-
-	p = (void *)&pdu->llctrl.conn_param_rsp;
-	p->interval_min = sys_cpu_to_le16(ctx->data.cu.interval_min);
-	p->interval_max = sys_cpu_to_le16(ctx->data.cu.interval_max);
-	p->latency = sys_cpu_to_le16(ctx->data.cu.latency);
-	p->timeout = sys_cpu_to_le16(ctx->data.cu.timeout);
-	p->preferred_periodicity = ctx->data.cu.preferred_periodicity;
-	p->reference_conn_event_count = sys_cpu_to_le16(ctx->data.cu.reference_conn_event_count);
-	p->offset0 = sys_cpu_to_le16(ctx->data.cu.offsets[0]);
-	p->offset1 = sys_cpu_to_le16(ctx->data.cu.offsets[1]);
-	p->offset2 = sys_cpu_to_le16(ctx->data.cu.offsets[2]);
-	p->offset3 = sys_cpu_to_le16(ctx->data.cu.offsets[3]);
-	p->offset4 = sys_cpu_to_le16(ctx->data.cu.offsets[4]);
-	p->offset5 = sys_cpu_to_le16(ctx->data.cu.offsets[5]);
+static void decode_conn_param_req_rsp_common(struct proc_ctx *ctx,
+					     struct pdu_data_llctrl_conn_param_req_rsp_common *p)
+{
+	ctx->data.cu.interval_min = sys_le16_to_cpu(p->interval_min);
+	ctx->data.cu.interval_max = sys_le16_to_cpu(p->interval_max);
+	ctx->data.cu.latency = sys_le16_to_cpu(p->latency);
+	ctx->data.cu.timeout = sys_le16_to_cpu(p->timeout);
+	ctx->data.cu.preferred_periodicity = p->preferred_periodicity;
+	ctx->data.cu.reference_conn_event_count = sys_le16_to_cpu(p->reference_conn_event_count);
+	ctx->data.cu.offsets[0] = sys_le16_to_cpu(p->offset0);
+	ctx->data.cu.offsets[1] = sys_le16_to_cpu(p->offset1);
+	ctx->data.cu.offsets[2] = sys_le16_to_cpu(p->offset2);
+	ctx->data.cu.offsets[3] = sys_le16_to_cpu(p->offset3);
+	ctx->data.cu.offsets[4] = sys_le16_to_cpu(p->offset4);
+	ctx->data.cu.offsets[5] = sys_le16_to_cpu(p->offset5);
 }
 
 void llcp_pdu_decode_conn_param_req(struct proc_ctx *ctx, struct pdu_data *pdu)
 {
-	struct pdu_data_llctrl_conn_param_req *p;
-
-	p = (void *)&pdu->llctrl.conn_param_req;
-	ctx->data.cu.interval_min = sys_le16_to_cpu(p->interval_min);
-	ctx->data.cu.interval_max = sys_le16_to_cpu(p->interval_max);
-	ctx->data.cu.latency = sys_le16_to_cpu(p->latency);
-	ctx->data.cu.timeout = sys_le16_to_cpu(p->timeout);
-	ctx->data.cu.preferred_periodicity = p->preferred_periodicity;
-	ctx->data.cu.reference_conn_event_count = sys_le16_to_cpu(p->reference_conn_event_count);
-	ctx->data.cu.offsets[0] = sys_le16_to_cpu(p->offset0);
-	ctx->data.cu.offsets[1] = sys_le16_to_cpu(p->offset1);
-	ctx->data.cu.offsets[2] = sys_le16_to_cpu(p->offset2);
-	ctx->data.cu.offsets[3] = sys_le16_to_cpu(p->offset3);
-	ctx->data.cu.offsets[4] = sys_le16_to_cpu(p->offset4);
-	ctx->data.cu.offsets[5] = sys_le16_to_cpu(p->offset5);
+	decode_conn_param_req_rsp_common(ctx,
+		(struct pdu_data_llctrl_conn_param_req_rsp_common *)&pdu->llctrl.conn_param_req);
 }
 
 void llcp_pdu_decode_conn_param_rsp(struct proc_ctx *ctx, struct pdu_data *pdu)
 {
-	struct pdu_data_llctrl_conn_param_rsp *p;
-
-	p = (void *)&pdu->llctrl.conn_param_req;
-	ctx->data.cu.interval_min = sys_le16_to_cpu(p->interval_min);
-	ctx->data.cu.interval_max = sys_le16_to_cpu(p->interval_max);
-	ctx->data.cu.latency = sys_le16_to_cpu(p->latency);
-	ctx->data.cu.timeout = sys_le16_to_cpu(p->timeout);
-	ctx->data.cu.preferred_periodicity = p->preferred_periodicity;
-	ctx->data.cu.reference_conn_event_count = sys_le16_to_cpu(p->reference_conn_event_count);
-	ctx->data.cu.offsets[0] = sys_le16_to_cpu(p->offset0);
-	ctx->data.cu.offsets[1] = sys_le16_to_cpu(p->offset1);
-	ctx->data.cu.offsets[2] = sys_le16_to_cpu(p->offset2);
-	ctx->data.cu.offsets[3] = sys_le16_to_cpu(p->offset3);
-	ctx->data.cu.offsets[4] = sys_le16_to_cpu(p->offset4);
-	ctx->data.cu.offsets[5] = sys_le16_to_cpu(p->offset5);
+	decode_conn_param_req_rsp_common(ctx,
+		(struct pdu_data_llctrl_conn_param_req_rsp_common *)&pdu->llctrl.conn_param_rsp);
 }
 #endif /* defined(CONFIG_BT_CTLR_CONN_PARAM_REQ) */
 
@@ -630,43 +618,43 @@ void llcp_pdu_decode_chan_map_update_ind(struct proc_ctx *ctx, struct pdu_data *
 /*
  * Data Length Update Procedure Helpers
  */
+static void encode_length_req_rsp_common(struct pdu_data *pdu,
+					 struct pdu_data_llctrl_length_req_rsp_common *p,
+					 const uint8_t opcode,
+					 const struct data_pdu_length *dle)
+{
+	pdu->ll_id = PDU_DATA_LLID_CTRL;
+	/* The '+ 1U' is to count in opcode octet, the first member of struct pdu_data_llctrl */
+	pdu->len = sizeof(struct pdu_data_llctrl_length_req_rsp_common) + 1U;
+	pdu->llctrl.opcode = opcode;
+	p->max_rx_octets = sys_cpu_to_le16(dle->max_rx_octets);
+	p->max_tx_octets = sys_cpu_to_le16(dle->max_tx_octets);
+	p->max_rx_time = sys_cpu_to_le16(dle->max_rx_time);
+	p->max_tx_time = sys_cpu_to_le16(dle->max_tx_time);
+}
+
 void llcp_pdu_encode_length_req(struct ll_conn *conn, struct pdu_data *pdu)
 {
-	struct pdu_data_llctrl_length_req *p = &pdu->llctrl.length_req;
-
-	pdu->ll_id = PDU_DATA_LLID_CTRL;
-	pdu->len = PDU_DATA_LLCTRL_LEN(length_req);
-	pdu->llctrl.opcode = PDU_DATA_LLCTRL_TYPE_LENGTH_REQ;
-	p->max_rx_octets = sys_cpu_to_le16(conn->lll.dle.local.max_rx_octets);
-	p->max_tx_octets = sys_cpu_to_le16(conn->lll.dle.local.max_tx_octets);
-	p->max_rx_time = sys_cpu_to_le16(conn->lll.dle.local.max_rx_time);
-	p->max_tx_time = sys_cpu_to_le16(conn->lll.dle.local.max_tx_time);
+	encode_length_req_rsp_common(pdu,
+		(struct pdu_data_llctrl_length_req_rsp_common *)&pdu->llctrl.length_req,
+		PDU_DATA_LLCTRL_TYPE_LENGTH_REQ,
+		&conn->lll.dle.local);
 }
 
 void llcp_pdu_encode_length_rsp(struct ll_conn *conn, struct pdu_data *pdu)
 {
-	struct pdu_data_llctrl_length_rsp *p = &pdu->llctrl.length_rsp;
-
-	pdu->ll_id = PDU_DATA_LLID_CTRL;
-	pdu->len = PDU_DATA_LLCTRL_LEN(length_rsp);
-	pdu->llctrl.opcode = PDU_DATA_LLCTRL_TYPE_LENGTH_RSP;
-	p->max_rx_octets = sys_cpu_to_le16(conn->lll.dle.local.max_rx_octets);
-	p->max_tx_octets = sys_cpu_to_le16(conn->lll.dle.local.max_tx_octets);
-	p->max_rx_time = sys_cpu_to_le16(conn->lll.dle.local.max_rx_time);
-	p->max_tx_time = sys_cpu_to_le16(conn->lll.dle.local.max_tx_time);
+	encode_length_req_rsp_common(pdu,
+		(struct pdu_data_llctrl_length_req_rsp_common *)&pdu->llctrl.length_rsp,
+		PDU_DATA_LLCTRL_TYPE_LENGTH_RSP,
+		&conn->lll.dle.local);
 }
 
 void llcp_ntf_encode_length_change(struct ll_conn *conn, struct pdu_data *pdu)
 {
-	struct pdu_data_llctrl_length_rsp *p = &pdu->llctrl.length_rsp;
-
-	pdu->ll_id = PDU_DATA_LLID_CTRL;
-	pdu->len = PDU_DATA_LLCTRL_LEN(length_rsp);
-	pdu->llctrl.opcode = PDU_DATA_LLCTRL_TYPE_LENGTH_RSP;
-	p->max_rx_octets = sys_cpu_to_le16(conn->lll.dle.eff.max_rx_octets);
-	p->max_tx_octets = sys_cpu_to_le16(conn->lll.dle.eff.max_tx_octets);
-	p->max_rx_time = sys_cpu_to_le16(conn->lll.dle.eff.max_rx_time);
-	p->max_tx_time = sys_cpu_to_le16(conn->lll.dle.eff.max_tx_time);
+	encode_length_req_rsp_common(pdu,
+		(struct pdu_data_llctrl_length_req_rsp_common *)&pdu->llctrl.length_rsp,
+		PDU_DATA_LLCTRL_TYPE_LENGTH_RSP,
+		&conn->lll.dle.eff);
 }
 
 static bool dle_remote_valid(const struct data_pdu_length *remote)
@@ -705,10 +693,9 @@ static bool dle_remote_valid(const struct data_pdu_length *remote)
 
 	return true;
 }
-
-void llcp_pdu_decode_length_req(struct ll_conn *conn, struct pdu_data *pdu)
+static void decode_length_req_rsp_common(struct ll_conn *conn,
+					 struct pdu_data_llctrl_length_req_rsp_common *p)
 {
-	struct pdu_data_llctrl_length_req *p = &pdu->llctrl.length_req;
 	struct data_pdu_length remote;
 
 	remote.max_rx_octets = sys_le16_to_cpu(p->max_rx_octets);
@@ -723,21 +710,16 @@ void llcp_pdu_decode_length_req(struct ll_conn *conn, struct pdu_data *pdu)
 	conn->lll.dle.remote = remote;
 }
 
+void llcp_pdu_decode_length_req(struct ll_conn *conn, struct pdu_data *pdu)
+{
+	decode_length_req_rsp_common(conn,
+		(struct pdu_data_llctrl_length_req_rsp_common *)&pdu->llctrl.length_req);
+}
+
 void llcp_pdu_decode_length_rsp(struct ll_conn *conn, struct pdu_data *pdu)
 {
-	struct pdu_data_llctrl_length_rsp *p = &pdu->llctrl.length_rsp;
-	struct data_pdu_length remote;
-
-	remote.max_rx_octets = sys_le16_to_cpu(p->max_rx_octets);
-	remote.max_tx_octets = sys_le16_to_cpu(p->max_tx_octets);
-	remote.max_rx_time = sys_le16_to_cpu(p->max_rx_time);
-	remote.max_tx_time = sys_le16_to_cpu(p->max_tx_time);
-
-	if (!dle_remote_valid(&remote)) {
-		return;
-	}
-
-	conn->lll.dle.remote = remote;
+	decode_length_req_rsp_common(conn,
+		(struct pdu_data_llctrl_length_req_rsp_common *)&pdu->llctrl.length_rsp);
 }
 #endif /* CONFIG_BT_CTLR_DATA_LENGTH */
 
@@ -761,7 +743,7 @@ void llcp_pdu_encode_cte_req(struct proc_ctx *ctx, struct pdu_data *pdu)
 
 void llcp_pdu_decode_cte_rsp(struct proc_ctx *ctx, const struct pdu_data *pdu)
 {
-	if (pdu->cp == 0U || pdu->cte_info.time == 0U) {
+	if (pdu->cp == 0U || pdu->octet3.cte_info.time == 0U) {
 		ctx->data.cte_remote_rsp.has_cte = false;
 	} else {
 		ctx->data.cte_remote_rsp.has_cte = true;
@@ -796,8 +778,8 @@ void llcp_pdu_encode_cte_rsp(const struct proc_ctx *ctx, struct pdu_data *pdu)
 	pdu->cp = 1U;
 	pdu->rfu = 0U;
 
-	pdu->cte_info.time = ctx->data.cte_remote_req.min_cte_len;
-	pdu->cte_info.type = ctx->data.cte_remote_req.cte_type;
+	pdu->octet3.cte_info.time = ctx->data.cte_remote_req.min_cte_len;
+	pdu->octet3.cte_info.type = ctx->data.cte_remote_req.cte_type;
 }
 #endif /* CONFIG_BT_CTLR_DF_CONN_CTE_RSP */
 
@@ -810,6 +792,7 @@ void llcp_pdu_decode_cis_req(struct proc_ctx *ctx, struct pdu_data *pdu)
 	ctx->data.cis_create.cis_offset_max = sys_get_le24(pdu->llctrl.cis_req.cis_offset_max);
 	ctx->data.cis_create.conn_event_count =
 		sys_le16_to_cpu(pdu->llctrl.cis_req.conn_event_count);
+	ctx->data.cis_create.iso_interval = sys_le16_to_cpu(pdu->llctrl.cis_req.iso_interval);
 	/* The remainder of the req is decoded by ull_peripheral_iso_acquire, so
 	 *  no need to do it here too
 	ctx->data.cis_create.c_phy	= pdu->llctrl.cis_req.c_phy;
@@ -827,8 +810,16 @@ void llcp_pdu_decode_cis_req(struct proc_ctx *ctx, struct pdu_data *pdu)
 	ctx->data.cis_create.c_bn	= pdu->llctrl.cis_req.c_bn;
 	ctx->data.cis_create.c_ft	= pdu->llctrl.cis_req.c_ft;
 	ctx->data.cis_create.p_ft	= pdu->llctrl.cis_req.p_ft;
-	ctx->data.cis_create.iso_interval = sys_le16_to_cpu(pdu->llctrl.cis_req.iso_interval);
 	*/
+}
+
+void llcp_pdu_decode_cis_ind(struct proc_ctx *ctx, struct pdu_data *pdu)
+{
+	ctx->data.cis_create.conn_event_count =
+		sys_le16_to_cpu(pdu->llctrl.cis_ind.conn_event_count);
+	/* The remainder of the cis ind is decoded by ull_peripheral_iso_setup, so
+	 * no need to do it here too
+	 */
 }
 
 void llcp_pdu_encode_cis_rsp(struct proc_ctx *ctx, struct pdu_data *pdu)
@@ -845,6 +836,92 @@ void llcp_pdu_encode_cis_rsp(struct proc_ctx *ctx, struct pdu_data *pdu)
 	p->conn_event_count = sys_cpu_to_le16(ctx->data.cis_create.conn_event_count);
 }
 #endif /* defined(CONFIG_BT_CTLR_PERIPHERAL_ISO) */
+
+#if defined(CONFIG_BT_CTLR_CENTRAL_ISO)
+void llcp_pdu_encode_cis_req(struct proc_ctx *ctx, struct pdu_data *pdu)
+{
+	struct pdu_data_llctrl_cis_req *p;
+
+	pdu->ll_id = PDU_DATA_LLID_CTRL;
+	pdu->len = offsetof(struct pdu_data_llctrl, cis_req) +
+			    sizeof(struct pdu_data_llctrl_cis_req);
+	pdu->llctrl.opcode = PDU_DATA_LLCTRL_TYPE_CIS_REQ;
+
+	p = &pdu->llctrl.cis_req;
+
+	p->cig_id = ctx->data.cis_create.cig_id;
+	p->cis_id = ctx->data.cis_create.cis_id;
+	p->c_phy = ctx->data.cis_create.c_phy;
+	p->p_phy = ctx->data.cis_create.p_phy;
+	p->nse = ctx->data.cis_create.nse;
+	p->c_bn = ctx->data.cis_create.c_bn;
+	p->p_bn = ctx->data.cis_create.p_bn;
+	p->c_ft = ctx->data.cis_create.c_ft;
+	p->p_ft = ctx->data.cis_create.p_ft;
+
+	sys_put_le24(ctx->data.cis_create.c_sdu_interval, p->c_sdu_interval);
+	sys_put_le24(ctx->data.cis_create.p_sdu_interval, p->p_sdu_interval);
+	sys_put_le24(ctx->data.cis_create.cis_offset_max, p->cis_offset_max);
+	sys_put_le24(ctx->data.cis_create.cis_offset_min, p->cis_offset_min);
+	sys_put_le24(ctx->data.cis_create.sub_interval, p->sub_interval);
+
+	p->c_max_pdu = sys_cpu_to_le16(ctx->data.cis_create.c_max_pdu);
+	p->p_max_pdu = sys_cpu_to_le16(ctx->data.cis_create.p_max_pdu);
+	p->iso_interval = sys_cpu_to_le16(ctx->data.cis_create.iso_interval);
+	p->conn_event_count = sys_cpu_to_le16(ctx->data.cis_create.conn_event_count);
+
+	p->c_max_sdu_packed[0] = ctx->data.cis_create.c_max_sdu & 0xFF;
+	p->c_max_sdu_packed[1] = ((ctx->data.cis_create.c_max_sdu >> 8) & 0x0F) |
+				  (ctx->data.cis_create.framed << 7);
+	p->p_max_sdu[0] = ctx->data.cis_create.p_max_sdu & 0xFF;
+	p->p_max_sdu[1] = (ctx->data.cis_create.p_max_sdu >> 8) & 0x0F;
+}
+
+void llcp_pdu_decode_cis_rsp(struct proc_ctx *ctx, struct pdu_data *pdu)
+{
+	/* Limit response to valid range */
+	uint32_t cis_offset_min = sys_get_le24(pdu->llctrl.cis_rsp.cis_offset_min);
+	uint32_t cis_offset_max = sys_get_le24(pdu->llctrl.cis_rsp.cis_offset_max);
+
+	/* TODO: Fail procedure if offsets are invalid? */
+	if (cis_offset_min <= cis_offset_max &&
+	    cis_offset_min >= ctx->data.cis_create.cis_offset_min &&
+	    cis_offset_min <= ctx->data.cis_create.cis_offset_max &&
+	    cis_offset_max <= ctx->data.cis_create.cis_offset_max &&
+	    cis_offset_max >= ctx->data.cis_create.cis_offset_min) {
+		/* Offsets are valid */
+		ctx->data.cis_create.cis_offset_min = cis_offset_min;
+		ctx->data.cis_create.cis_offset_max = cis_offset_max;
+	}
+
+	ctx->data.cis_create.conn_event_count =
+		sys_le16_to_cpu(pdu->llctrl.cis_rsp.conn_event_count);
+}
+
+void llcp_pdu_encode_cis_ind(struct proc_ctx *ctx, struct pdu_data *pdu)
+{
+	struct pdu_data_llctrl_cis_ind *p;
+
+	pdu->ll_id = PDU_DATA_LLID_CTRL;
+	pdu->len = offsetof(struct pdu_data_llctrl, cis_ind) +
+			    sizeof(struct pdu_data_llctrl_cis_ind);
+	pdu->llctrl.opcode = PDU_DATA_LLCTRL_TYPE_CIS_IND;
+
+	p = &pdu->llctrl.cis_ind;
+
+	p->aa[0] = ctx->data.cis_create.aa[0];
+	p->aa[1] = ctx->data.cis_create.aa[1];
+	p->aa[2] = ctx->data.cis_create.aa[2];
+	p->aa[3] = ctx->data.cis_create.aa[3];
+
+	sys_put_le24(ctx->data.cis_create.cis_offset_min, p->cis_offset);
+	sys_put_le24(ctx->data.cis_create.cig_sync_delay, p->cig_sync_delay);
+	sys_put_le24(ctx->data.cis_create.cis_sync_delay, p->cis_sync_delay);
+
+	p->conn_event_count = sys_cpu_to_le16(ctx->data.cis_create.conn_event_count);
+}
+#endif /* CONFIG_BT_CTLR_CENTRAL_ISO */
+
 #if defined(CONFIG_BT_CTLR_CENTRAL_ISO) || defined(CONFIG_BT_CTLR_PERIPHERAL_ISO)
 void llcp_pdu_encode_cis_terminate_ind(struct proc_ctx *ctx, struct pdu_data *pdu)
 {

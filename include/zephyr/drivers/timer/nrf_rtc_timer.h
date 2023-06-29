@@ -127,10 +127,41 @@ uint32_t z_nrf_rtc_timer_compare_read(int32_t chan);
  * @retval 0 if the compare channel was set successfully.
  * @retval -EINVAL if provided target time was further than
  *         @c NRF_RTC_TIMER_MAX_SCHEDULE_SPAN ticks in the future.
+ *
+ * @sa @ref z_nrf_rtc_timer_exact_set
  */
 int z_nrf_rtc_timer_set(int32_t chan, uint64_t target_time,
 			 z_nrf_rtc_timer_compare_handler_t handler,
 			 void *user_data);
+
+/** @brief Try to set compare channel exactly to given value.
+ *
+ * @note This function is similar to @ref z_nrf_rtc_timer_set, but the compare
+ * channel will be set to expected value only when it can be guaranteed that
+ * the hardware event will be generated exactly at expected @c target_time in
+ * the future. If the @c target_time is in the past or so close in the future
+ * that the reliable generation of event would require adjustment of compare
+ * value (as would @ref z_nrf_rtc_timer_set function do), neither the hardware
+ * event nor interrupt will be generated and the function fails.
+ *
+ * @param chan Channel ID between 1 and CONFIG_NRF_RTC_TIMER_USER_CHAN_COUNT.
+ *
+ * @param target_time Absolute target time in ticks.
+ *
+ * @param handler User function called in the context of the RTC interrupt.
+ *
+ * @param user_data Data passed to the handler.
+ *
+ * @retval 0 if the compare channel was set successfully.
+ * @retval -EINVAL if provided target time was further than
+ *         @c NRF_RTC_TIMER_MAX_SCHEDULE_SPAN ticks in the future
+ *         or the target time is in the past or is so close in the future that
+ *         event generation could not be guaranteed without adjusting
+ *         compare value of that channel.
+ */
+int z_nrf_rtc_timer_exact_set(int32_t chan, uint64_t target_time,
+			      z_nrf_rtc_timer_compare_handler_t handler,
+			      void *user_data);
 
 /** @brief Abort a timer requested with @ref z_nrf_rtc_timer_set.
  *
@@ -166,6 +197,22 @@ uint64_t z_nrf_rtc_timer_get_ticks(k_timeout_t t);
  * @retval -EBUSY if synchronization is not yet completed.
  */
 int z_nrf_rtc_timer_nrf53net_offset_get(void);
+
+/** @brief Move RTC counter forward using TRIGOVRFLW hardware feature.
+ *
+ * RTC has a hardware feature which can force counter to jump to 0xFFFFF0 value
+ * which is close to overflow. Function is using this feature and updates
+ * driver internal to perform time shift to the future. Operation can only be
+ * performed when there are no active alarms set. It should be used for testing
+ * only.
+ *
+ * @retval 0 on successful shift.
+ * @retval -EBUSY if there are active alarms.
+ * @retval -EAGAIN if current counter value is too close to overflow.
+ * @retval -ENOTSUP if option is disabled in Kconfig or additional channels are enabled.
+ */
+int z_nrf_rtc_timer_trigger_overflow(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -136,7 +136,7 @@ static uint8_t *upipe_rx(uint8_t *buf, size_t *off)
 			goto flush;
 		}
 
-		frag = net_pkt_get_frag(pkt, K_NO_WAIT);
+		frag = net_pkt_get_frag(pkt, upipe->rx_len, K_NO_WAIT);
 		if (!frag) {
 			LOG_DBG("No fragment available");
 			goto out;
@@ -154,7 +154,7 @@ static uint8_t *upipe_rx(uint8_t *buf, size_t *off)
 		}
 #endif
 
-		if (ieee802154_radio_handle_ack(upipe->iface, pkt) == NET_OK) {
+		if (ieee802154_handle_ack(upipe->iface, pkt) == NET_OK) {
 			LOG_DBG("ACK packet handled");
 			goto out;
 		}

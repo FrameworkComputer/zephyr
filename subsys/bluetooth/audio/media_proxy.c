@@ -13,11 +13,11 @@
 #include <zephyr/bluetooth/audio/mcc.h>
 
 #include "media_proxy_internal.h"
+#include "mcs_internal.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_MCTL_DEBUG)
-#define LOG_MODULE_NAME media_proxy
-#include "common/log.h"
+#include <zephyr/logging/log.h>
 
+LOG_MODULE_REGISTER(media_proxy, CONFIG_MCTL_LOG_LEVEL);
 
 /* Media player */
 struct media_player {
@@ -233,47 +233,47 @@ uint8_t media_proxy_sctrl_get_content_ctrl_id(void)
 static void mcc_discover_mcs_cb(struct bt_conn *conn, int err)
 {
 	if (err) {
-		BT_ERR("Discovery failed (%d)", err);
+		LOG_ERR("Discovery failed (%d)", err);
 	}
 
-	BT_DBG("Disovered player");
+	LOG_DBG("Disovered player");
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->discover_player) {
 		mprx.ctrlr.cbs->discover_player(&mprx.remote_player, err);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_read_player_name_cb(struct bt_conn *conn, int err, const char *name)
 {
 	/* Debug statements for at least a couple of the callbacks, to show flow */
-	BT_DBG("MCC player name callback");
+	LOG_DBG("MCC player name callback");
 
 	if (err) {
-		BT_ERR("Player name failed");
+		LOG_ERR("Player name failed");
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->player_name_recv) {
 		mprx.ctrlr.cbs->player_name_recv(&mprx.remote_player, err, name);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 #ifdef CONFIG_MCTL_REMOTE_PLAYER_CONTROL_OBJECTS
 static void mcc_read_icon_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
-	BT_DBG("Icon Object ID callback");
+	LOG_DBG("Icon Object ID callback");
 
 	if (err) {
-		BT_ERR("Icon Object ID read failed (%d)", err);
+		LOG_ERR("Icon Object ID read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->icon_id_recv) {
 		mprx.ctrlr.cbs->icon_id_recv(&mprx.remote_player, err, id);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 #endif /* CONFIG_MCTL_REMOTE_PLAYER_CONTROL_OBJECTS */
@@ -281,118 +281,118 @@ static void mcc_read_icon_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 static void mcc_read_icon_url_cb(struct bt_conn *conn, int err, const char *url)
 {
 	if (err) {
-		BT_ERR("Icon URL read failed (%d)", err);
+		LOG_ERR("Icon URL read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->icon_url_recv) {
 		mprx.ctrlr.cbs->icon_url_recv(&mprx.remote_player, err, url);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_track_changed_ntf_cb(struct bt_conn *conn, int err)
 {
 	if (err) {
-		BT_ERR("Track change notification failed (%d)", err);
+		LOG_ERR("Track change notification failed (%d)", err);
 		return;
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->track_changed_recv) {
 		mprx.ctrlr.cbs->track_changed_recv(&mprx.remote_player, err);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_read_track_title_cb(struct bt_conn *conn, int err, const char *title)
 {
 	if (err) {
-		BT_ERR("Track title read failed (%d)", err);
+		LOG_ERR("Track title read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->track_title_recv) {
 		mprx.ctrlr.cbs->track_title_recv(&mprx.remote_player, err, title);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_read_track_duration_cb(struct bt_conn *conn, int err, int32_t dur)
 {
 	if (err) {
-		BT_ERR("Track duration read failed (%d)", err);
+		LOG_ERR("Track duration read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->track_duration_recv) {
 		mprx.ctrlr.cbs->track_duration_recv(&mprx.remote_player, err, dur);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_read_track_position_cb(struct bt_conn *conn, int err, int32_t pos)
 {
 	if (err) {
-		BT_ERR("Track position read failed (%d)", err);
+		LOG_ERR("Track position read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->track_position_recv) {
 		mprx.ctrlr.cbs->track_position_recv(&mprx.remote_player, err, pos);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_set_track_position_cb(struct bt_conn *conn, int err, int32_t pos)
 {
 	if (err) {
-		BT_ERR("Track Position set failed (%d)", err);
+		LOG_ERR("Track Position set failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->track_position_write) {
 		mprx.ctrlr.cbs->track_position_write(&mprx.remote_player, err, pos);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_read_playback_speed_cb(struct bt_conn *conn, int err, int8_t speed)
 {
 	if (err) {
-		BT_ERR("Playback speed read failed (%d)", err);
+		LOG_ERR("Playback speed read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->playback_speed_recv) {
 		mprx.ctrlr.cbs->playback_speed_recv(&mprx.remote_player, err, speed);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_set_playback_speed_cb(struct bt_conn *conn, int err, int8_t speed)
 {
 	if (err) {
-		BT_ERR("Playback speed set failed (%d)", err);
+		LOG_ERR("Playback speed set failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->playback_speed_write) {
 		mprx.ctrlr.cbs->playback_speed_write(&mprx.remote_player, err, speed);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_read_seeking_speed_cb(struct bt_conn *conn, int err, int8_t speed)
 {
 	if (err) {
-		BT_ERR("Seeking speed read failed (%d)", err);
+		LOG_ERR("Seeking speed read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->seeking_speed_recv) {
 		mprx.ctrlr.cbs->seeking_speed_recv(&mprx.remote_player, err, speed);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
@@ -400,26 +400,26 @@ static void mcc_read_seeking_speed_cb(struct bt_conn *conn, int err, int8_t spee
 static void mcc_read_segments_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
 	if (err) {
-		BT_ERR("Track Segments Object ID read failed (%d)", err);
+		LOG_ERR("Track Segments Object ID read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->track_segments_id_recv) {
 		mprx.ctrlr.cbs->track_segments_id_recv(&mprx.remote_player, err, id);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_read_current_track_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
 	if (err) {
-		BT_ERR("Current Track Object ID read failed (%d)", err);
+		LOG_ERR("Current Track Object ID read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->current_track_id_recv) {
 		mprx.ctrlr.cbs->current_track_id_recv(&mprx.remote_player, err, id);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
@@ -428,13 +428,13 @@ static void mcc_read_current_track_obj_id_cb(struct bt_conn *conn, int err, uint
 static void mcc_read_next_track_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
 	if (err) {
-		BT_ERR("Next Track Object ID read failed (%d)", err);
+		LOG_ERR("Next Track Object ID read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->next_track_id_recv) {
 		mprx.ctrlr.cbs->next_track_id_recv(&mprx.remote_player, err, id);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
@@ -443,26 +443,26 @@ static void mcc_read_next_track_obj_id_cb(struct bt_conn *conn, int err, uint64_
 static void mcc_read_parent_group_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
 	if (err) {
-		BT_ERR("Parent Group Object ID read failed (%d)", err);
+		LOG_ERR("Parent Group Object ID read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->parent_group_id_recv) {
 		mprx.ctrlr.cbs->parent_group_id_recv(&mprx.remote_player, err, id);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_read_current_group_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
 	if (err) {
-		BT_ERR("Current Group Object ID read failed (%d)", err);
+		LOG_ERR("Current Group Object ID read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->current_group_id_recv) {
 		mprx.ctrlr.cbs->current_group_id_recv(&mprx.remote_player, err, id);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
@@ -473,66 +473,66 @@ static void mcc_read_current_group_obj_id_cb(struct bt_conn *conn, int err, uint
 static void mcc_read_playing_order_cb(struct bt_conn *conn, int err, uint8_t order)
 {
 	if (err) {
-		BT_ERR("Playing order read failed (%d)", err);
+		LOG_ERR("Playing order read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->playing_order_recv) {
 		mprx.ctrlr.cbs->playing_order_recv(&mprx.remote_player, err, order);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_set_playing_order_cb(struct bt_conn *conn, int err, uint8_t order)
 {
 	if (err) {
-		BT_ERR("Playing order set failed (%d)", err);
+		LOG_ERR("Playing order set failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->playing_order_write) {
 		mprx.ctrlr.cbs->playing_order_write(&mprx.remote_player, err, order);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_read_playing_orders_supported_cb(struct bt_conn *conn, int err, uint16_t orders)
 {
 	if (err) {
-		BT_ERR("Playing orders supported read failed (%d)", err);
+		LOG_ERR("Playing orders supported read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->playing_orders_supported_recv) {
 		mprx.ctrlr.cbs->playing_orders_supported_recv(&mprx.remote_player, err, orders);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_read_media_state_cb(struct bt_conn *conn, int err, uint8_t state)
 {
 	if (err) {
-		BT_ERR("Media State read failed (%d)", err);
+		LOG_ERR("Media State read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->media_state_recv) {
 		mprx.ctrlr.cbs->media_state_recv(&mprx.remote_player, err, state);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_send_cmd_cb(struct bt_conn *conn, int err, const struct mpl_cmd *cmd)
 {
 	if (err) {
-		BT_ERR("Command send failed (%d) - opcode: %d, param: %d",
-		       err, cmd->opcode, cmd->param);
+		LOG_ERR("Command send failed (%d) - opcode: %d, param: %d", err, cmd->opcode,
+			cmd->param);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->command_send) {
 		mprx.ctrlr.cbs->command_send(&mprx.remote_player, err, cmd);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
@@ -540,27 +540,27 @@ static void mcc_cmd_ntf_cb(struct bt_conn *conn, int err,
 			   const struct mpl_cmd_ntf *ntf)
 {
 	if (err) {
-		BT_ERR("Command notification error (%d) - command opcode: %d, result: %d",
-		       err, ntf->requested_opcode, ntf->result_code);
+		LOG_ERR("Command notification error (%d) - command opcode: %d, result: %d", err,
+			ntf->requested_opcode, ntf->result_code);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->command_recv) {
 		mprx.ctrlr.cbs->command_recv(&mprx.remote_player, err, ntf);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_read_opcodes_supported_cb(struct bt_conn *conn, int err, uint32_t opcodes)
 {
 	if (err) {
-		BT_ERR("Opcodes supported read failed (%d)", err);
+		LOG_ERR("Opcodes supported read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->commands_supported_recv) {
 		mprx.ctrlr.cbs->commands_supported_recv(&mprx.remote_player, err, opcodes);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
@@ -568,40 +568,39 @@ static void mcc_read_opcodes_supported_cb(struct bt_conn *conn, int err, uint32_
 static void mcc_send_search_cb(struct bt_conn *conn, int err, const struct mpl_search *search)
 {
 	if (err) {
-		BT_ERR("Search send failed (%d)", err);
+		LOG_ERR("Search send failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->search_send) {
 		mprx.ctrlr.cbs->search_send(&mprx.remote_player, err, search);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_search_ntf_cb(struct bt_conn *conn, int err, uint8_t result_code)
 {
 	if (err) {
-		BT_ERR("Search notification error (%d), result code: %d",
-		       err, result_code);
+		LOG_ERR("Search notification error (%d), result code: %d", err, result_code);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->search_recv) {
 		mprx.ctrlr.cbs->search_recv(&mprx.remote_player, err, result_code);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
 static void mcc_read_search_results_obj_id_cb(struct bt_conn *conn, int err, uint64_t id)
 {
 	if (err) {
-		BT_ERR("Search Results Object ID read failed (%d)", err);
+		LOG_ERR("Search Results Object ID read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->search_results_id_recv) {
 		mprx.ctrlr.cbs->search_results_id_recv(&mprx.remote_player, err, id);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 #endif /* CONFIG_MCTL_REMOTE_PLAYER_CONTROL_OBJECTS */
@@ -609,13 +608,13 @@ static void mcc_read_search_results_obj_id_cb(struct bt_conn *conn, int err, uin
 static void mcc_read_content_control_id_cb(struct bt_conn *conn, int err, uint8_t ccid)
 {
 	if (err) {
-		BT_ERR("Content Control ID read failed (%d)", err);
+		LOG_ERR("Content Control ID read failed (%d)", err);
 	}
 
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->content_ctrl_id_recv) {
 		mprx.ctrlr.cbs->content_ctrl_id_recv(&mprx.remote_player, err, ccid);
 	} else {
-		BT_DBG("No callback");
+		LOG_DBG("No callback");
 	}
 }
 
@@ -628,7 +627,7 @@ static void mcc_read_content_control_id_cb(struct bt_conn *conn, int err, uint8_
 int media_proxy_ctrl_register(struct media_proxy_ctrl_cbs *ctrl_cbs)
 {
 	CHECKIF(ctrl_cbs == NULL) {
-		BT_DBG("NULL callback pointer");
+		LOG_DBG("NULL callback pointer");
 		return -EINVAL;
 	}
 
@@ -663,7 +662,7 @@ int media_proxy_ctrl_discover_player(struct bt_conn *conn)
 	int err;
 
 	CHECKIF(!conn) {
-		BT_DBG("NUll conn pointer");
+		LOG_DBG("NUll conn pointer");
 		return -EINVAL;
 	}
 
@@ -705,14 +704,14 @@ int media_proxy_ctrl_discover_player(struct bt_conn *conn)
 
 	err = bt_mcc_init(&mprx.mcc_cbs);
 	if (err) {
-		BT_ERR("Failed to initialize MCC");
+		LOG_ERR("Failed to initialize MCC");
 		return err;
 	}
 
 	/* Start discovery of remote MCS, subscribe to notifications */
 	err = bt_mcc_discover_mcs(conn, 1);
 	if (err) {
-		BT_ERR("Discovery failed");
+		LOG_ERR("Discovery failed");
 		return err;
 	}
 
@@ -731,33 +730,33 @@ int media_proxy_ctrl_discover_player(struct bt_conn *conn)
 int media_proxy_ctrl_get_player_name(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
 #if defined(CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL)
 	if (mprx.local_player.registered && player == &mprx.local_player) {
-		BT_DBG("Local player");
+		LOG_DBG("Local player");
 		if (mprx.local_player.calls->get_player_name) {
 			if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->player_name_recv) {
 				const char *name = mprx.local_player.calls->get_player_name();
 
 				mprx.ctrlr.cbs->player_name_recv(&mprx.local_player, 0, name);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
 
 #if defined(CONFIG_MCTL_REMOTE_PLAYER_CONTROL)
 	if (mprx.remote_player.registered && player == &mprx.remote_player) {
-		BT_DBG("Remote player");
+		LOG_DBG("Remote player");
 		return bt_mcc_read_player_name(mprx.remote_player.conn);
 	}
 #endif /* CONFIG_MCTL_REMOTE_PLAYER_CONTROL */
@@ -768,7 +767,7 @@ int media_proxy_ctrl_get_player_name(struct media_player *player)
 int media_proxy_ctrl_get_icon_id(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -780,13 +779,13 @@ int media_proxy_ctrl_get_icon_id(struct media_player *player)
 
 				mprx.ctrlr.cbs->icon_id_recv(&mprx.local_player, 0, id);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -803,7 +802,7 @@ int media_proxy_ctrl_get_icon_id(struct media_player *player)
 int media_proxy_ctrl_get_icon_url(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -815,13 +814,13 @@ int media_proxy_ctrl_get_icon_url(struct media_player *player)
 
 				mprx.ctrlr.cbs->icon_url_recv(player, 0, url);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -838,7 +837,7 @@ int media_proxy_ctrl_get_icon_url(struct media_player *player)
 int media_proxy_ctrl_get_track_title(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -850,13 +849,13 @@ int media_proxy_ctrl_get_track_title(struct media_player *player)
 				const char *title = mprx.local_player.calls->get_track_title();
 				mprx.ctrlr.cbs->track_title_recv(player, 0, title);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -873,7 +872,7 @@ int media_proxy_ctrl_get_track_title(struct media_player *player)
 int media_proxy_ctrl_get_track_duration(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -886,13 +885,13 @@ int media_proxy_ctrl_get_track_duration(struct media_player *player)
 
 				mprx.ctrlr.cbs->track_duration_recv(player, 0, duration);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -909,7 +908,7 @@ int media_proxy_ctrl_get_track_duration(struct media_player *player)
 int media_proxy_ctrl_get_track_position(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -922,13 +921,13 @@ int media_proxy_ctrl_get_track_position(struct media_player *player)
 
 				mprx.ctrlr.cbs->track_position_recv(player, 0, position);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -945,7 +944,7 @@ int media_proxy_ctrl_get_track_position(struct media_player *player)
 int media_proxy_ctrl_set_track_position(struct media_player *player, int32_t position)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -957,13 +956,13 @@ int media_proxy_ctrl_set_track_position(struct media_player *player, int32_t pos
 			if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->track_position_write) {
 				mprx.ctrlr.cbs->track_position_write(player, 0, position);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -980,7 +979,7 @@ int media_proxy_ctrl_set_track_position(struct media_player *player, int32_t pos
 int media_proxy_ctrl_get_playback_speed(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -992,13 +991,13 @@ int media_proxy_ctrl_get_playback_speed(struct media_player *player)
 
 				mprx.ctrlr.cbs->playback_speed_recv(player, 0, speed);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1015,7 +1014,7 @@ int media_proxy_ctrl_get_playback_speed(struct media_player *player)
 int media_proxy_ctrl_set_playback_speed(struct media_player *player, int8_t speed)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1027,13 +1026,13 @@ int media_proxy_ctrl_set_playback_speed(struct media_player *player, int8_t spee
 			if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->playback_speed_write) {
 				mprx.ctrlr.cbs->playback_speed_write(player, 0, speed);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1050,7 +1049,7 @@ int media_proxy_ctrl_set_playback_speed(struct media_player *player, int8_t spee
 int media_proxy_ctrl_get_seeking_speed(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1062,13 +1061,13 @@ int media_proxy_ctrl_get_seeking_speed(struct media_player *player)
 
 				mprx.ctrlr.cbs->seeking_speed_recv(player, 0, speed);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1085,7 +1084,7 @@ int media_proxy_ctrl_get_seeking_speed(struct media_player *player)
 int media_proxy_ctrl_get_track_segments_id(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1098,13 +1097,13 @@ int media_proxy_ctrl_get_track_segments_id(struct media_player *player)
 
 				mprx.ctrlr.cbs->track_segments_id_recv(player, 0, id);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1121,7 +1120,7 @@ int media_proxy_ctrl_get_track_segments_id(struct media_player *player)
 int media_proxy_ctrl_get_current_track_id(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1133,13 +1132,13 @@ int media_proxy_ctrl_get_current_track_id(struct media_player *player)
 
 				mprx.ctrlr.cbs->current_track_id_recv(player, 0, id);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1156,13 +1155,14 @@ int media_proxy_ctrl_get_current_track_id(struct media_player *player)
 int media_proxy_ctrl_set_current_track_id(struct media_player *player, uint64_t id)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
 #if defined(CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL)
-	CHECKIF(id < BT_OTS_OBJ_ID_MIN || id > BT_OTS_OBJ_ID_MAX) {
-		BT_DBG("Object ID invalid");
+	CHECKIF(!BT_MCS_VALID_OBJ_ID(id)) {
+		LOG_DBG("Object ID 0x%016llx invalid", id);
+
 		return -EINVAL;
 	}
 
@@ -1173,13 +1173,13 @@ int media_proxy_ctrl_set_current_track_id(struct media_player *player, uint64_t 
 			if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->current_track_id_write) {
 				mprx.ctrlr.cbs->current_track_id_write(player, 0, id);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1197,7 +1197,7 @@ int media_proxy_ctrl_set_current_track_id(struct media_player *player, uint64_t 
 int media_proxy_ctrl_get_next_track_id(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1209,13 +1209,13 @@ int media_proxy_ctrl_get_next_track_id(struct media_player *player)
 
 				mprx.ctrlr.cbs->next_track_id_recv(player, 0, id);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1232,13 +1232,14 @@ int media_proxy_ctrl_get_next_track_id(struct media_player *player)
 int media_proxy_ctrl_set_next_track_id(struct media_player *player, uint64_t id)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
 #if defined(CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL)
-	CHECKIF(id < BT_OTS_OBJ_ID_MIN || id > BT_OTS_OBJ_ID_MAX) {
-		BT_DBG("Object ID invalid");
+	CHECKIF(!BT_MCS_VALID_OBJ_ID(id)) {
+		LOG_DBG("Object ID 0x%016llx invalid", id);
+
 		return -EINVAL;
 	}
 
@@ -1249,13 +1250,13 @@ int media_proxy_ctrl_set_next_track_id(struct media_player *player, uint64_t id)
 			if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->next_track_id_write) {
 				mprx.ctrlr.cbs->next_track_id_write(player, 0, id);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1273,7 +1274,7 @@ int media_proxy_ctrl_set_next_track_id(struct media_player *player, uint64_t id)
 int media_proxy_ctrl_get_parent_group_id(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1285,13 +1286,13 @@ int media_proxy_ctrl_get_parent_group_id(struct media_player *player)
 
 				mprx.ctrlr.cbs->parent_group_id_recv(player, 0, id);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1308,7 +1309,7 @@ int media_proxy_ctrl_get_parent_group_id(struct media_player *player)
 int media_proxy_ctrl_get_current_group_id(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1320,13 +1321,13 @@ int media_proxy_ctrl_get_current_group_id(struct media_player *player)
 
 				mprx.ctrlr.cbs->current_group_id_recv(player, 0, id);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1343,13 +1344,14 @@ int media_proxy_ctrl_get_current_group_id(struct media_player *player)
 int media_proxy_ctrl_set_current_group_id(struct media_player *player, uint64_t id)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
 #if defined(CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL)
-	CHECKIF(id < BT_OTS_OBJ_ID_MIN || id > BT_OTS_OBJ_ID_MAX) {
-		BT_DBG("Object ID invalid");
+	CHECKIF(!BT_MCS_VALID_OBJ_ID(id)) {
+		LOG_DBG("Object ID 0x%016llx invalid", id);
+
 		return -EINVAL;
 	}
 
@@ -1360,13 +1362,13 @@ int media_proxy_ctrl_set_current_group_id(struct media_player *player, uint64_t 
 			if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->current_group_id_write) {
 				mprx.ctrlr.cbs->current_group_id_write(player, 0, id);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1384,7 +1386,7 @@ int media_proxy_ctrl_set_current_group_id(struct media_player *player, uint64_t 
 int media_proxy_ctrl_get_playing_order(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1396,20 +1398,20 @@ int media_proxy_ctrl_get_playing_order(struct media_player *player)
 
 				mprx.ctrlr.cbs->playing_order_recv(player, 0, order);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
 
 #if defined(CONFIG_MCTL_REMOTE_PLAYER_CONTROL)
 	if (mprx.remote_player.registered && player == &mprx.remote_player) {
-		BT_DBG("Remote player");
+		LOG_DBG("Remote player");
 		return bt_mcc_read_playing_order(mprx.remote_player.conn);
 	}
 #endif /* CONFIG_MCTL_REMOTE_PLAYER_CONTROL */
@@ -1420,7 +1422,7 @@ int media_proxy_ctrl_get_playing_order(struct media_player *player)
 int media_proxy_ctrl_set_playing_order(struct media_player *player, uint8_t order)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1432,13 +1434,13 @@ int media_proxy_ctrl_set_playing_order(struct media_player *player, uint8_t orde
 			if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->playing_order_write) {
 				mprx.ctrlr.cbs->playing_order_write(player, 0, order);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1455,7 +1457,7 @@ int media_proxy_ctrl_set_playing_order(struct media_player *player, uint8_t orde
 int media_proxy_ctrl_get_playing_orders_supported(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1468,13 +1470,13 @@ int media_proxy_ctrl_get_playing_orders_supported(struct media_player *player)
 
 				mprx.ctrlr.cbs->playing_orders_supported_recv(player, 0, orders);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1491,7 +1493,7 @@ int media_proxy_ctrl_get_playing_orders_supported(struct media_player *player)
 int media_proxy_ctrl_get_media_state(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1503,13 +1505,13 @@ int media_proxy_ctrl_get_media_state(struct media_player *player)
 
 				mprx.ctrlr.cbs->media_state_recv(player, 0, state);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1526,7 +1528,7 @@ int media_proxy_ctrl_get_media_state(struct media_player *player)
 int media_proxy_ctrl_send_command(struct media_player *player, const struct mpl_cmd *cmd)
 {
 	CHECKIF(player == NULL || cmd == NULL) {
-		BT_DBG("NULL pointer");
+		LOG_DBG("NULL pointer");
 		return -EINVAL;
 	}
 
@@ -1538,13 +1540,13 @@ int media_proxy_ctrl_send_command(struct media_player *player, const struct mpl_
 			if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->command_send) {
 				mprx.ctrlr.cbs->command_send(player, 0, cmd);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1561,7 +1563,7 @@ int media_proxy_ctrl_send_command(struct media_player *player, const struct mpl_
 int media_proxy_ctrl_get_commands_supported(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1574,13 +1576,13 @@ int media_proxy_ctrl_get_commands_supported(struct media_player *player)
 
 				mprx.ctrlr.cbs->commands_supported_recv(player, 0, opcodes);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1597,7 +1599,7 @@ int media_proxy_ctrl_get_commands_supported(struct media_player *player)
 int media_proxy_ctrl_send_search(struct media_player *player, const struct mpl_search *search)
 {
 	CHECKIF(player == NULL || search == NULL) {
-		BT_DBG("NULL pointer");
+		LOG_DBG("NULL pointer");
 		return -EINVAL;
 	}
 
@@ -1609,13 +1611,13 @@ int media_proxy_ctrl_send_search(struct media_player *player, const struct mpl_s
 			if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->search_send) {
 				mprx.ctrlr.cbs->search_send(player, 0, search);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1632,7 +1634,7 @@ int media_proxy_ctrl_send_search(struct media_player *player, const struct mpl_s
 int media_proxy_ctrl_get_search_results_id(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1645,13 +1647,13 @@ int media_proxy_ctrl_get_search_results_id(struct media_player *player)
 
 				mprx.ctrlr.cbs->search_results_id_recv(player, 0, id);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1668,7 +1670,7 @@ int media_proxy_ctrl_get_search_results_id(struct media_player *player)
 uint8_t media_proxy_ctrl_get_content_ctrl_id(struct media_player *player)
 {
 	CHECKIF(player == NULL) {
-		BT_DBG("player is NULL");
+		LOG_DBG("player is NULL");
 		return -EINVAL;
 	}
 
@@ -1680,13 +1682,13 @@ uint8_t media_proxy_ctrl_get_content_ctrl_id(struct media_player *player)
 
 				mprx.ctrlr.cbs->content_ctrl_id_recv(player, 0, ccid);
 			} else {
-				BT_DBG("No callback");
+				LOG_DBG("No callback");
 			}
 
 			return 0;
 		}
 
-		BT_DBG("No call");
+		LOG_DBG("No call");
 		return -EOPNOTSUPP;
 	}
 #endif /* CONFIG_MCTL_LOCAL_PLAYER_LOCAL_CONTROL */
@@ -1709,148 +1711,148 @@ uint8_t media_proxy_ctrl_get_content_ctrl_id(struct media_player *player)
 static bool pl_calls_is_valid(const struct media_proxy_pl_calls *pl_calls)
 {
 	if (pl_calls == NULL) {
-		BT_DBG("pl_calls is NULL");
+		LOG_DBG("pl_calls is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_player_name == NULL) {
-		BT_DBG("get_player_name is NULL");
+		LOG_DBG("get_player_name is NULL");
 		return false;
 	}
 
 #ifdef CONFIG_BT_MPL_OBJECTS
 	if (pl_calls->get_icon_id == NULL) {
-		BT_DBG("get_icon_id is NULL");
+		LOG_DBG("get_icon_id is NULL");
 		return false;
 	}
 #endif /* CONFIG_BT_MPL_OBJECTS */
 
 	if (pl_calls->get_icon_url == NULL) {
-		BT_DBG("get_icon_url is NULL");
+		LOG_DBG("get_icon_url is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_track_title == NULL) {
-		BT_DBG("get_track_title is NULL");
+		LOG_DBG("get_track_title is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_track_duration == NULL) {
-		BT_DBG("get_track_duration is NULL");
+		LOG_DBG("get_track_duration is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_track_position == NULL) {
-		BT_DBG("get_track_position is NULL");
+		LOG_DBG("get_track_position is NULL");
 		return false;
 	}
 
 	if (pl_calls->set_track_position == NULL) {
-		BT_DBG("set_track_position is NULL");
+		LOG_DBG("set_track_position is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_playback_speed == NULL) {
-		BT_DBG("get_playback_speed is NULL");
+		LOG_DBG("get_playback_speed is NULL");
 		return false;
 	}
 
 	if (pl_calls->set_playback_speed == NULL) {
-		BT_DBG("set_playback_speed is NULL");
+		LOG_DBG("set_playback_speed is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_seeking_speed == NULL) {
-		BT_DBG("get_seeking_speed is NULL");
+		LOG_DBG("get_seeking_speed is NULL");
 		return false;
 	}
 
 #ifdef CONFIG_BT_MPL_OBJECTS
 	if (pl_calls->get_track_segments_id == NULL) {
-		BT_DBG("get_track_segments_id is NULL");
+		LOG_DBG("get_track_segments_id is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_current_track_id == NULL) {
-		BT_DBG("get_current_track_id is NULL");
+		LOG_DBG("get_current_track_id is NULL");
 		return false;
 	}
 
 	if (pl_calls->set_current_track_id == NULL) {
-		BT_DBG("set_current_track_id is NULL");
+		LOG_DBG("set_current_track_id is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_next_track_id == NULL) {
-		BT_DBG("get_next_track_id is NULL");
+		LOG_DBG("get_next_track_id is NULL");
 		return false;
 	}
 
 	if (pl_calls->set_next_track_id == NULL) {
-		BT_DBG("set_next_track_id is NULL");
+		LOG_DBG("set_next_track_id is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_parent_group_id == NULL) {
-		BT_DBG("get_parent_group_id is NULL");
+		LOG_DBG("get_parent_group_id is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_current_group_id == NULL) {
-		BT_DBG("get_current_group_id is NULL");
+		LOG_DBG("get_current_group_id is NULL");
 		return false;
 	}
 
 	if (pl_calls->set_current_group_id == NULL) {
-		BT_DBG("set_current_group_id is NULL");
+		LOG_DBG("set_current_group_id is NULL");
 		return false;
 	}
 
 #endif /* CONFIG_BT_MPL_OBJECTS */
 	if (pl_calls->get_playing_order == NULL) {
-		BT_DBG("get_playing_order is NULL");
+		LOG_DBG("get_playing_order is NULL");
 		return false;
 	}
 
 	if (pl_calls->set_playing_order == NULL) {
-		BT_DBG("set_playing_order is NULL");
+		LOG_DBG("set_playing_order is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_playing_orders_supported == NULL) {
-		BT_DBG("get_playing_orders_supported is NULL");
+		LOG_DBG("get_playing_orders_supported is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_media_state == NULL) {
-		BT_DBG("get_media_state is NULL");
+		LOG_DBG("get_media_state is NULL");
 		return false;
 	}
 
 	if (pl_calls->send_command == NULL) {
-		BT_DBG("send_command is NULL");
+		LOG_DBG("send_command is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_commands_supported == NULL) {
-		BT_DBG("get_commands_supported is NULL");
+		LOG_DBG("get_commands_supported is NULL");
 		return false;
 	}
 
 #ifdef CONFIG_BT_MPL_OBJECTS
 	if (pl_calls->send_search == NULL) {
-		BT_DBG("send_search is NULL");
+		LOG_DBG("send_search is NULL");
 		return false;
 	}
 
 	if (pl_calls->get_search_results_id == NULL) {
-		BT_DBG("get_search_results_id is NULL");
+		LOG_DBG("get_search_results_id is NULL");
 		return false;
 	}
 
 #endif /* CONFIG_BT_MPL_OBJECTS */
 	if (pl_calls->get_content_ctrl_id == NULL) {
-		BT_DBG("get_content_ctrl_id is NULL");
+		LOG_DBG("get_content_ctrl_id is NULL");
 		return false;
 	}
 
@@ -1864,7 +1866,7 @@ int media_proxy_pl_register(struct media_proxy_pl_calls *pl_calls)
 	}
 
 	if (mprx.local_player.registered) {
-		BT_DBG("Player already registered");
+		LOG_DBG("Player already registered");
 		return -EALREADY;
 	}
 
@@ -1882,6 +1884,28 @@ int media_proxy_pl_register(struct media_proxy_pl_calls *pl_calls)
 
 /* All callbacks here must come from the local player - mprx.local_player */
 
+void media_proxy_pl_name_cb(const char *name)
+{
+	mprx.sctrlr.cbs->player_name(name);
+
+	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->player_name_recv) {
+		mprx.ctrlr.cbs->player_name_recv(&mprx.local_player, 0, name);
+	} else {
+		LOG_DBG("No ctrlr player name callback");
+	}
+}
+
+void media_proxy_pl_icon_url_cb(const char *url)
+{
+	mprx.sctrlr.cbs->icon_url(url);
+
+	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->player_name_recv) {
+		mprx.ctrlr.cbs->icon_url_recv(&mprx.local_player, 0, url);
+	} else {
+		LOG_DBG("No ctrlr player icon URL callback");
+	}
+}
+
 void media_proxy_pl_track_changed_cb(void)
 {
 	mprx.sctrlr.cbs->track_changed();
@@ -1889,7 +1913,7 @@ void media_proxy_pl_track_changed_cb(void)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->track_changed_recv) {
 		mprx.ctrlr.cbs->track_changed_recv(&mprx.local_player, 0);
 	} else {
-		BT_DBG("No ctrlr track changed callback");
+		LOG_DBG("No ctrlr track changed callback");
 	}
 }
 
@@ -1900,7 +1924,7 @@ void media_proxy_pl_track_title_cb(char *title)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->track_title_recv) {
 		mprx.ctrlr.cbs->track_title_recv(&mprx.local_player, 0, title);
 	} else {
-		BT_DBG("No ctrlr track title callback");
+		LOG_DBG("No ctrlr track title callback");
 	}
 }
 
@@ -1911,7 +1935,7 @@ void media_proxy_pl_track_duration_cb(int32_t duration)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->track_duration_recv) {
 		mprx.ctrlr.cbs->track_duration_recv(&mprx.local_player, 0, duration);
 	} else {
-		BT_DBG("No ctrlr track duration callback");
+		LOG_DBG("No ctrlr track duration callback");
 	}
 }
 
@@ -1922,7 +1946,7 @@ void media_proxy_pl_track_position_cb(int32_t position)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->track_position_recv) {
 		mprx.ctrlr.cbs->track_position_recv(&mprx.local_player, 0, position);
 	} else {
-		BT_DBG("No ctrlr track position callback");
+		LOG_DBG("No ctrlr track position callback");
 	}
 }
 
@@ -1933,7 +1957,7 @@ void media_proxy_pl_playback_speed_cb(int8_t speed)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->playback_speed_recv) {
 		mprx.ctrlr.cbs->playback_speed_recv(&mprx.local_player, 0, speed);
 	} else {
-		BT_DBG("No ctrlr playback speed callback");
+		LOG_DBG("No ctrlr playback speed callback");
 	}
 }
 
@@ -1944,7 +1968,7 @@ void media_proxy_pl_seeking_speed_cb(int8_t speed)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->seeking_speed_recv) {
 		mprx.ctrlr.cbs->seeking_speed_recv(&mprx.local_player, 0, speed);
 	} else {
-		BT_DBG("No ctrlr seeking speed callback");
+		LOG_DBG("No ctrlr seeking speed callback");
 	}
 }
 
@@ -1956,7 +1980,7 @@ void media_proxy_pl_current_track_id_cb(uint64_t id)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->current_track_id_recv) {
 		mprx.ctrlr.cbs->current_track_id_recv(&mprx.local_player, 0, id);
 	} else {
-		BT_DBG("No ctrlr current track id callback");
+		LOG_DBG("No ctrlr current track id callback");
 	}
 }
 
@@ -1967,7 +1991,7 @@ void media_proxy_pl_next_track_id_cb(uint64_t id)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->next_track_id_recv) {
 		mprx.ctrlr.cbs->next_track_id_recv(&mprx.local_player, 0, id);
 	} else {
-		BT_DBG("No ctrlr next track id callback");
+		LOG_DBG("No ctrlr next track id callback");
 	}
 }
 
@@ -1978,7 +2002,7 @@ void media_proxy_pl_parent_group_id_cb(uint64_t id)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->parent_group_id_recv) {
 		mprx.ctrlr.cbs->parent_group_id_recv(&mprx.local_player, 0, id);
 	} else {
-		BT_DBG("No ctrlr parent group id callback");
+		LOG_DBG("No ctrlr parent group id callback");
 	}
 }
 
@@ -1989,7 +2013,7 @@ void media_proxy_pl_current_group_id_cb(uint64_t id)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->current_group_id_recv) {
 		mprx.ctrlr.cbs->current_group_id_recv(&mprx.local_player, 0, id);
 	} else {
-		BT_DBG("No ctrlr current group id callback");
+		LOG_DBG("No ctrlr current group id callback");
 	}
 }
 #endif /* CONFIG_BT_MPL_OBJECTS */
@@ -2001,7 +2025,7 @@ void media_proxy_pl_playing_order_cb(uint8_t order)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->playing_order_recv) {
 		mprx.ctrlr.cbs->playing_order_recv(&mprx.local_player, 0, order);
 	} else {
-		BT_DBG("No ctrlr playing order callback");
+		LOG_DBG("No ctrlr playing order callback");
 	}
 }
 
@@ -2012,14 +2036,14 @@ void media_proxy_pl_media_state_cb(uint8_t state)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->media_state_recv) {
 		mprx.ctrlr.cbs->media_state_recv(&mprx.local_player, 0, state);
 	} else {
-		BT_DBG("No ctrlr media state callback");
+		LOG_DBG("No ctrlr media state callback");
 	}
 }
 
 void media_proxy_pl_command_cb(const struct mpl_cmd_ntf *cmd_ntf)
 {
 	CHECKIF(cmd_ntf == NULL) {
-		BT_WARN("cmd_ntf is NULL");
+		LOG_WRN("cmd_ntf is NULL");
 		return;
 	}
 
@@ -2028,7 +2052,7 @@ void media_proxy_pl_command_cb(const struct mpl_cmd_ntf *cmd_ntf)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->command_recv) {
 		mprx.ctrlr.cbs->command_recv(&mprx.local_player, 0, cmd_ntf);
 	} else {
-		BT_DBG("No ctrlr command callback");
+		LOG_DBG("No ctrlr command callback");
 	}
 }
 
@@ -2039,7 +2063,7 @@ void media_proxy_pl_commands_supported_cb(uint32_t opcodes)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->commands_supported_recv) {
 		mprx.ctrlr.cbs->commands_supported_recv(&mprx.local_player, 0, opcodes);
 	} else {
-		BT_DBG("No ctrlr commands supported callback");
+		LOG_DBG("No ctrlr commands supported callback");
 	}
 }
 
@@ -2051,7 +2075,7 @@ void media_proxy_pl_search_cb(uint8_t result_code)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->search_recv) {
 		mprx.ctrlr.cbs->search_recv(&mprx.local_player, 0, result_code);
 	} else {
-		BT_DBG("No ctrlr search callback");
+		LOG_DBG("No ctrlr search callback");
 	}
 }
 
@@ -2062,7 +2086,7 @@ void media_proxy_pl_search_results_id_cb(uint64_t id)
 	if (mprx.ctrlr.cbs && mprx.ctrlr.cbs->search_results_id_recv) {
 		mprx.ctrlr.cbs->search_results_id_recv(&mprx.local_player, 0, id);
 	} else {
-		BT_DBG("No ctrlr search results id callback");
+		LOG_DBG("No ctrlr search results id callback");
 	}
 }
 #endif /* CONFIG_BT_MPL_OBJECTS */

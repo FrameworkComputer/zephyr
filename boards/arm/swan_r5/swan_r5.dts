@@ -6,7 +6,7 @@
 
 /dts-v1/;
 #include <st/l4/stm32l4r5Xi.dtsi>
-#include <st/l4/stm32l4r5z(g-i)tx-pinctrl.dtsi>
+#include <st/l4/stm32l4r5z(g-i)yx-pinctrl.dtsi>
 #include "feather_connector.dtsi"
 
 / {
@@ -42,7 +42,7 @@
 	};
 
 	supply-3v3 {
-		compatible = "regulator-fixed-sync", "regulator-fixed";
+		compatible = "regulator-fixed";
 		regulator-name = "supply-3v3";
 		enable-gpios = <&gpioe 4 GPIO_ACTIVE_HIGH>;
 		regulator-boot-on;
@@ -51,10 +51,16 @@
 	aliases {
 		led0 = &led0;
 		sw0 = &user_button;
+		volt-sensor0 = &vref;
+		volt-sensor1 = &vbat;
 	};
 };
 
 &clk_lsi {
+	status = "okay";
+};
+
+&clk_hsi48 {
 	status = "okay";
 };
 
@@ -187,5 +193,13 @@ zephyr_udc0: &usbotg_fs {
 &adc1 {
 	pinctrl-0 = <&adc1_in6_pa1>;
 	pinctrl-names = "default";
+	status = "okay";
+};
+
+&vref {
+	status = "okay";
+};
+
+&vbat {
 	status = "okay";
 };

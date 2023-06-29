@@ -7,23 +7,23 @@
 #ifndef ZEPHYR_INCLUDE_POSIX_PTHREAD_H_
 #define ZEPHYR_INCLUDE_POSIX_PTHREAD_H_
 
-#include <zephyr/kernel.h>
-#include <zephyr/wait_q.h>
-#include <zephyr/posix/time.h>
-#include <zephyr/posix/unistd.h>
-#include "posix_types.h"
-#include "posix_sched.h"
-#include <zephyr/posix/pthread_key.h>
+#include "pthread_key.h"
+
 #include <stdlib.h>
 #include <string.h>
+
+#include <zephyr/kernel.h>
+#include <zephyr/posix/time.h>
+#include <zephyr/posix/unistd.h>
+#include <zephyr/posix/sched.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 /* Pthread detach/joinable */
-#define PTHREAD_CREATE_JOINABLE     1
-#define PTHREAD_CREATE_DETACHED     2
+#define PTHREAD_CREATE_DETACHED 0
+#define PTHREAD_CREATE_JOINABLE 1
 
 /* Pthread cancellation */
 #define _PTHREAD_CANCEL_POS	0
@@ -31,10 +31,20 @@ extern "C" {
 #define PTHREAD_CANCEL_DISABLE	BIT(_PTHREAD_CANCEL_POS)
 
 /* Passed to pthread_once */
-#define PTHREAD_ONCE_INIT 1
+#define PTHREAD_ONCE_INIT                                                                          \
+	{                                                                                          \
+		1, 0                                                                               \
+	}
 
 /* The minimum allowable stack size */
 #define PTHREAD_STACK_MIN Z_KERNEL_STACK_SIZE_ADJUST(0)
+
+/**
+ * @brief Declare a condition variable as initialized
+ *
+ * Initialize a condition variable with the default condition variable attributes.
+ */
+#define PTHREAD_COND_INITIALIZER (-1)
 
 /**
  * @brief Declare a pthread condition variable
@@ -44,35 +54,23 @@ extern "C" {
  * strategies for kernel objects.
  *
  * @param name Symbol name of the condition variable
+ * @deprecated Use @c PTHREAD_COND_INITIALIZER instead.
  */
-#define PTHREAD_COND_DEFINE(name)					\
-	struct pthread_cond name = {					\
-		.wait_q = Z_WAIT_Q_INIT(&name.wait_q),			\
-	}
+#define PTHREAD_COND_DEFINE(name) pthread_cond_t name = PTHREAD_COND_INITIALIZER
 
 /**
  * @brief POSIX threading compatibility API
  *
  * See IEEE 1003.1
  */
-static inline int pthread_cond_init(pthread_cond_t *cv,
-				    const pthread_condattr_t *att)
-{
-	ARG_UNUSED(att);
-	z_waitq_init(&cv->wait_q);
-	return 0;
-}
+int pthread_cond_init(pthread_cond_t *cv, const pthread_condattr_t *att);
 
 /**
  * @brief POSIX threading compatibility API
  *
  * See IEEE 1003.1
  */
-static inline int pthread_cond_destroy(pthread_cond_t *cv)
-{
-	ARG_UNUSED(cv);
-	return 0;
-}
+int pthread_cond_destroy(pthread_cond_t *cv);
 
 /**
  * @brief POSIX threading compatibility API
@@ -130,6 +128,13 @@ static inline int pthread_condattr_destroy(pthread_condattr_t *att)
 }
 
 /**
+ * @brief Declare a mutex as initialized
+ *
+ * Initialize a mutex with the default mutex attributes.
+ */
+#define PTHREAD_MUTEX_INITIALIZER (-1)
+
+/**
  * @brief Declare a pthread mutex
  *
  * Declaration API for a pthread mutex.  This is not a POSIX API, it's
@@ -137,14 +142,9 @@ static inline int pthread_condattr_destroy(pthread_condattr_t *att)
  * kernel objects.
  *
  * @param name Symbol name of the mutex
+ * @deprecated Use @c PTHREAD_MUTEX_INITIALIZER instead.
  */
-#define PTHREAD_MUTEX_DEFINE(name) \
-	struct pthread_mutex name = \
-	{ \
-		.lock_count = 0, \
-		.wait_q = Z_WAIT_Q_INIT(&name.wait_q),	\
-		.owner = NULL, \
-	}
+#define PTHREAD_MUTEX_DEFINE(name) pthread_mutex_t name = PTHREAD_MUTEX_INITIALIZER
 
 /*
  *  Mutex attributes - type
@@ -277,24 +277,6 @@ static inline int pthread_mutexattr_destroy(pthread_mutexattr_t *m)
 	return 0;
 }
 
-/* FIXME: these are going to be tricky to implement.  Zephyr has (for
- * good reason) deprecated its own "initializer" macros in favor of a
- * static "declaration" macros instead.  Using such a macro inside a
- * gcc compound expression to declare and object then reference it
- * would work, but gcc limits such expressions to function context
- * (because they may need to generate code that runs at assignment
- * time) and much real-world use of these initializers is for static
- * variables.  The best trick I can think of would be to declare it in
- * a special section and then initialize that section at runtime
- * startup, which sort of defeats the purpose of having these be
- * static...
- *
- * Instead, see the nonstandard PTHREAD_*_DEFINE macros instead, which
- * work similarly but conform to Zephyr's paradigms.
- */
-/* #define PTHREAD_MUTEX_INITIALIZER */
-/* #define PTHREAD_COND_INITIALIZER */
-
 /**
  * @brief Declare a pthread barrier
  *
@@ -305,12 +287,9 @@ static inline int pthread_mutexattr_destroy(pthread_mutexattr_t *m)
  * @param name Symbol name of the barrier
  * @param count Thread count, same as the "count" argument to
  *             pthread_barrier_init()
+ * @deprecated Use @ref pthread_barrier_init instead.
  */
-#define PTHREAD_BARRIER_DEFINE(name, count)			\
-	struct pthread_barrier name = {				\
-		.wait_q = Z_WAIT_Q_INIT(&name.wait_q),		\
-		.max = count,					\
-	}
+#define PTHREAD_BARRIER_DEFINE(name, count) pthread_barrier_t name = -1 __DEPRECATED_MACRO
 
 #define PTHREAD_BARRIER_SERIAL_THREAD 1
 
@@ -326,30 +305,15 @@ int pthread_barrier_wait(pthread_barrier_t *b);
  *
  * See IEEE 1003.1
  */
-static inline int pthread_barrier_init(pthread_barrier_t *b,
-				       const pthread_barrierattr_t *attr,
-				       unsigned int count)
-{
-	ARG_UNUSED(attr);
-
-	b->max = count;
-	b->count = 0;
-	z_waitq_init(&b->wait_q);
-
-	return 0;
-}
+int pthread_barrier_init(pthread_barrier_t *b, const pthread_barrierattr_t *attr,
+			 unsigned int count);
 
 /**
  * @brief POSIX threading compatibility API
  *
  * See IEEE 1003.1
  */
-static inline int pthread_barrier_destroy(pthread_barrier_t *b)
-{
-	ARG_UNUSED(b);
-
-	return 0;
-}
+int pthread_barrier_destroy(pthread_barrier_t *b);
 
 /**
  * @brief POSIX threading compatibility API

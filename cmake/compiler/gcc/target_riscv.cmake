@@ -46,7 +46,7 @@ if(CONFIG_RISCV_ISA_EXT_C)
 endif()
 
 # TODO(b/245409408): Revert this when coreboot-sdk supports isa-spec=20191213
-if (NOT CMAKE_C_COMPILER STREQUAL "/opt/coreboot-sdk/bin/riscv64-elf-gcc")
+if (NOT ZEPHYR_TOOLCHAIN_VARIANT STREQUAL "coreboot-sdk")
     if(CONFIG_RISCV_ISA_EXT_ZICSR)
         string(CONCAT riscv_march ${riscv_march} "_zicsr")
     endif()

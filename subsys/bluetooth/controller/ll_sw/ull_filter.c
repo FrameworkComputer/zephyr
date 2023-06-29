@@ -8,7 +8,7 @@
 
 #include <zephyr/kernel.h>
 #include <soc.h>
-#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_types.h>
 #include <zephyr/sys/byteorder.h>
 
 #include "hal/cpu.h"
@@ -20,6 +20,8 @@
 #include "util/mayfly.h"
 #include "util/dbuf.h"
 
+#include "pdu_df.h"
+#include "lll/pdu_vendor.h"
 #include "pdu.h"
 
 #include "lll.h"
@@ -31,9 +33,7 @@
 #include "lll_conn.h"
 #include "lll_filter.h"
 
-#if (!defined(CONFIG_BT_LL_SW_LLCP_LEGACY))
 #include "ll_sw/ull_tx_queue.h"
-#endif
 
 #include "ull_adv_types.h"
 #include "ull_scan_types.h"
@@ -47,10 +47,11 @@
 
 #include "ll.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_ctlr_ull_filter
-#include "common/log.h"
 #include "hal/debug.h"
+
+#define LOG_LEVEL CONFIG_BT_HCI_DRIVER_LOG_LEVEL
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(bt_ctlr_ull_filter);
 
 #define ADDR_TYPE_ANON 0xFF
 
@@ -729,7 +730,7 @@ void ull_filter_rpa_update(bool timeout)
 	int64_t now = k_uptime_get();
 	bool all = timeout || (rpa_last_ms == -1) ||
 		   (now - rpa_last_ms >= rpa_timeout_ms);
-	BT_DBG("");
+	LOG_DBG("");
 
 	for (i = 0U; i < CONFIG_BT_CTLR_RL_SIZE; i++) {
 		if ((rl[i].taken) && (all || !rl[i].rpas_ready)) {
@@ -1264,7 +1265,7 @@ static void rpa_timeout(struct k_work *work)
 
 static void rpa_refresh_start(void)
 {
-	BT_DBG("");
+	LOG_DBG("");
 	k_work_schedule(&rpa_work, K_MSEC(rpa_timeout_ms));
 }
 
@@ -1492,7 +1493,7 @@ static void target_resolve(struct k_work *work)
 	idx = twork->idx;
 	search_rpa = &(twork->rpa);
 
-	if (rl[idx].taken && !bt_addr_cmp(&(rl[idx].target_rpa), search_rpa)) {
+	if (rl[idx].taken && bt_addr_eq(&(rl[idx].target_rpa), search_rpa)) {
 		j = idx;
 	} else {
 		/* No match - so not in list Need to see if we can resolve */
@@ -1617,7 +1618,7 @@ static uint8_t prpa_cache_find(bt_addr_t *rpa)
 {
 	for (uint8_t i = 0; i < CONFIG_BT_CTLR_RPA_CACHE_SIZE; i++) {
 		if (prpa_cache[i].taken &&
-		    !bt_addr_cmp(&(prpa_cache[i].rpa), rpa)) {
+		    bt_addr_eq(&(prpa_cache[i].rpa), rpa)) {
 			return i;
 		}
 	}

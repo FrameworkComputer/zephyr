@@ -10,8 +10,10 @@ Device Management
     mcumgr_callbacks.rst
     mcumgr_backporting.rst
     smp_protocol.rst
+    smp_transport.rst
     dfu.rst
     ota.rst
+    ec_host_cmd.rst
 
 SMP Groups
 ==========

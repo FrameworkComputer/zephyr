@@ -8,7 +8,8 @@ config NRF_RTC_TIMER
 	depends on CLOCK_CONTROL
 	depends on SOC_COMPATIBLE_NRF
 	select TICKLESS_CAPABLE
-	select NRF_HW_RTC1_RESERVED
+	select SYSTEM_TIMER_HAS_DISABLE_SUPPORT
+	depends on !$(dt_nodelabel_enabled,rtc1)
 	help
 	  This module implements a kernel device driver for the nRF Real Time
 	  Counter NRF_RTC1 and provides the standard "system clock driver"
@@ -33,6 +34,12 @@ config NRF_RTC_TIMER_LOCK_ZERO_LATENCY_IRQS
 	  higher priority contexts (including ZLIs) that might preempt the
 	  handler and call nrf_rtc_timer API from destroying the internal state
 	  in nrf_rtc_timer.
+
+config NRF_RTC_TIMER_TRIGGER_OVERFLOW
+	bool "Trigger overflow"
+	help
+	  When enabled, a function can be used to trigger RTC overflow and
+	  effectively shift time into the future.
 
 choice
 	prompt "Clock startup policy"

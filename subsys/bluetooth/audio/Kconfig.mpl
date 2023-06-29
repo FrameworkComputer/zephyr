@@ -107,9 +107,4 @@ config BT_MPL_TRACK_MAX_SIZE
 
 endif # BT_MPL_OBJECTS
 
-config BT_DEBUG_MPL
-	bool "Media player debug"
-	help
-	  Enables debug logs for the media player
-
 endif # BT_MPL

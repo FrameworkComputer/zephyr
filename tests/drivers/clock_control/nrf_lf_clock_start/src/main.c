@@ -22,7 +22,7 @@ static void xtal_check(bool on, nrf_clock_lfclk_t type)
 		zassert_true(is_running, "Clock should be on");
 	} else {
 		zassert_true(on, "Clock should be on");
-		zassert_equal(type, NRF_CLOCK_LFCLK_Xtal);
+		zassert_equal(type, NRF_CLOCK_LFCLK_XTAL);
 	}
 }
 
@@ -40,12 +40,12 @@ static void synth_check(bool on, nrf_clock_lfclk_t type)
 {
 	#if !defined(CLOCK_LFCLKSRC_SRC_Synth) && \
 	    !defined(CLOCK_LFCLKSRC_SRC_LFSYNT)
-	#define NRF_CLOCK_LFCLK_Synth 0
+	#define NRF_CLOCK_LFCLK_SYNTH 0
 	#endif
 
 	if (!IS_ENABLED(CONFIG_SYSTEM_CLOCK_NO_WAIT)) {
 		zassert_true(on, "Clock should be on");
-		zassert_equal(type, NRF_CLOCK_LFCLK_Synth);
+		zassert_equal(type, NRF_CLOCK_LFCLK_SYNTH);
 	}
 }
 
@@ -78,17 +78,44 @@ ZTEST(nrf_lf_clock_start, test_wait_in_thread)
 
 	z_nrf_clock_control_lf_on(CLOCK_CONTROL_NRF_LF_START_AVAILABLE);
 	o = nrf_clock_is_running(NRF_CLOCK, NRF_CLOCK_DOMAIN_LFCLK, &t);
-	zassert_false((t == NRF_CLOCK_LFCLK_Xtal) && o);
+	zassert_false((t == NRF_CLOCK_LFCLK_XTAL) && o);
 	k_busy_wait(35);
 	zassert_true(k_cycle_get_32() > 0);
 
 	z_nrf_clock_control_lf_on(CLOCK_CONTROL_NRF_LF_START_STABLE);
 	o = nrf_clock_is_running(NRF_CLOCK, NRF_CLOCK_DOMAIN_LFCLK, &t);
-	zassert_true((t == NRF_CLOCK_LFCLK_Xtal) && o);
+	zassert_true((t == NRF_CLOCK_LFCLK_XTAL) && o);
 }
 
 void *test_init(void)
 {
+	TC_PRINT("CLOCK_CONTROL_NRF_K32SRC=%s\n",
+		IS_ENABLED(CONFIG_CLOCK_CONTROL_NRF_K32SRC_RC)    ? "RC" :
+		IS_ENABLED(CONFIG_CLOCK_CONTROL_NRF_K32SRC_SYNTH) ? "SYNTH" :
+		IS_ENABLED(CONFIG_CLOCK_CONTROL_NRF_K32SRC_XTAL)  ? "XTAL"
+								  : "???");
+	if (IS_ENABLED(CONFIG_SYSTEM_CLOCK_NO_WAIT)) {
+		TC_PRINT("SYSTEM_CLOCK_NO_WAIT=y\n");
+	}
+	if (IS_ENABLED(CONFIG_SYSTEM_CLOCK_WAIT_FOR_AVAILABILITY)) {
+		TC_PRINT("SYSTEM_CLOCK_WAIT_FOR_AVAILABILITY=y\n");
+	}
+	if (IS_ENABLED(CONFIG_SYSTEM_CLOCK_WAIT_FOR_STABILITY)) {
+		TC_PRINT("SYSTEM_CLOCK_WAIT_FOR_STABILITY=y\n");
+	}
+	return NULL;
+}
+ZTEST_SUITE(nrf_lf_clock_start, NULL, test_init, NULL, NULL, NULL);
+
+/* This test needs to read the LF clock state soon after the system clock is
+ * started (to check if the starting routine waits for the LF clock or not),
+ * so do it at the beginning of the POST_KERNEL stage (the system clock is
+ * started in PRE_KERNEL_2). Reading of the clock state in the ZTEST setup
+ * function turns out to be too late.
+ */
+static int get_lfclk_state(void)
+{
+
 	/* Do clock state read as early as possible. When RC is already running
 	 * and XTAL has been started then LFSRCSTAT register content might be
 	 * not valid, in that case read system clock to check if it has
@@ -98,19 +125,6 @@ void *test_init(void)
 	k_busy_wait(100);
 	rtc_cnt = k_cycle_get_32();
 
-	 TC_PRINT("CLOCK_CONTROL_NRF_K32SRC=%s\n",
-		IS_ENABLED(CONFIG_CLOCK_CONTROL_NRF_K32SRC_RC) ? "RC"
-		: IS_ENABLED(CONFIG_CLOCK_CONTROL_NRF_K32SRC_SYNTH) ? "SYNTH"
-		: IS_ENABLED(CONFIG_CLOCK_CONTROL_NRF_K32SRC_XTAL) ? "XTAL"
-		: "???");
-	TC_PRINT("SYSTEM_CLOCK_NO_WAIT=%c\n",
-		 IS_ENABLED(CONFIG_SYSTEM_CLOCK_NO_WAIT) ? 'y' : 'n');
-	TC_PRINT("SYSTEM_CLOCK_WAIT_FOR_AVAILABILITY=%c\n",
-		 IS_ENABLED(CONFIG_SYSTEM_CLOCK_WAIT_FOR_AVAILABILITY) ?
-		 'y' : 'n');
-	TC_PRINT("SYSTEM_CLOCK_WAIT_FOR_STABILITY=%c\n",
-		 IS_ENABLED(CONFIG_SYSTEM_CLOCK_WAIT_FOR_STABILITY) ?
-		 'y' : 'n');
-	return NULL;
+	return 0;
 }
-ZTEST_SUITE(nrf_lf_clock_start, NULL, test_init, NULL, NULL, NULL);
+SYS_INIT(get_lfclk_state, POST_KERNEL, 0);

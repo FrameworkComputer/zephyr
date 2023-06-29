@@ -214,7 +214,7 @@ void smp_timer_init(void)
 }
 
 /* Runs on core 0 only */
-static int sys_clock_driver_init(const struct device *dev)
+static int sys_clock_driver_init(void)
 {
 	uint64_t curr = count();
 
@@ -224,6 +224,15 @@ static int sys_clock_driver_init(const struct device *dev)
 	irq_init();
 	return 0;
 }
+
+#ifdef CONFIG_PM
+
+void sys_clock_idle_exit(void)
+{
+	sys_clock_driver_init();
+}
+
+#endif
 
 SYS_INIT(sys_clock_driver_init, PRE_KERNEL_2,
 	 CONFIG_SYSTEM_CLOCK_INIT_PRIORITY);

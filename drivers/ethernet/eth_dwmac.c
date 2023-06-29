@@ -16,6 +16,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <zephyr/kernel.h>
 #include <zephyr/cache.h>
 #include <zephyr/net/ethernet.h>
+#include <zephyr/sys/barrier.h>
 #include <ethernet/eth_stats.h>
 
 #include "eth_dwmac_priv.h"
@@ -161,7 +162,7 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 			k_sem_give(&p->free_tx_descs);
 			goto abort;
 		}
-		sys_cache_data_range(pinned->data, pinned->len, K_CACHE_WB);
+		sys_cache_data_flush_range(pinned->data, pinned->len);
 		p->tx_frags[d_idx] = pinned;
 		LOG_DBG("d[%d]: frag %p pinned %p len %d", d_idx,
 			frag->data, pinned->data, pinned->len);
@@ -188,7 +189,7 @@ static int dwmac_send(const struct device *dev, struct net_pkt *pkt)
 	} while (frag);
 
 	/* make sure all the above made it to memory */
-	__DMB();
+	barrier_dmem_fence_full();
 
 	/* update the descriptor index head */
 	p->tx_desc_head = d_idx;
@@ -359,7 +360,7 @@ static void dwmac_rx_refill_thread(void *arg1, void *unused1, void *unused2)
 
 		/* get a new fragment if the previous one was consumed */
 		if (!frag) {
-			frag = net_pkt_get_reserve_rx_data(K_FOREVER);
+			frag = net_pkt_get_reserve_rx_data(RX_FRAG_SIZE, K_FOREVER);
 			if (!frag) {
 				LOG_ERR("net_pkt_get_reserve_rx_data() returned NULL");
 				k_sem_give(&p->free_rx_descs);
@@ -367,7 +368,7 @@ static void dwmac_rx_refill_thread(void *arg1, void *unused1, void *unused2)
 			}
 			LOG_DBG("new frag[%d] at %p", d_idx, frag->data);
 			__ASSERT(frag->size == RX_FRAG_SIZE, "");
-			sys_cache_data_range(frag->data, frag->size, K_CACHE_INVD);
+			sys_cache_data_invd_range(frag->data, frag->size);
 			p->rx_frags[d_idx] = frag;
 		} else {
 			LOG_DBG("reusing frag[%d] at %p", d_idx, frag->data);
@@ -380,7 +381,7 @@ static void dwmac_rx_refill_thread(void *arg1, void *unused1, void *unused2)
 		d->des3 = RDES3_BUF1V | RDES3_IOC | RDES3_OWN;
 
 		/* commit the above to memory */
-		__DMB();
+		barrier_dmem_fence_full();
 
 		/* advance to the next descriptor */
 		p->rx_desc_head = INC_WRAP(d_idx, NB_RX_DESCS);

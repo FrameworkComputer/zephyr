@@ -73,10 +73,14 @@ if(CONFIG_BT_LL_SW_SPLIT)
       )
   endif()
   zephyr_library_sources_ifdef(
+    CONFIG_BT_CTLR_CENTRAL_ISO
+    ll_sw/nordic/lll/lll_central_iso.c
+    )
+  zephyr_library_sources_ifdef(
     CONFIG_BT_CTLR_PERIPHERAL_ISO
     ll_sw/nordic/lll/lll_peripheral_iso.c
     )
-  if(CONFIG_BT_CTLR_ISO)
+  if(CONFIG_BT_CTLR_ISO_VENDOR_DATA_PATH)
     zephyr_library_sources(
       ll_sw/nordic/ull/ull_iso_vendor.c
       )
@@ -97,6 +101,7 @@ zephyr_library_sources_ifdef(
   )
 
 zephyr_library_include_directories(
+  ll_sw
   ll_sw/nordic
   hci/nordic
 )

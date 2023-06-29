@@ -11,20 +11,15 @@ zephyr_library_include_directories(
   ${ZEPHYR_BASE}/kernel/include
   ${ZEPHYR_BASE}/arch/${ARCH}/include
   )
-
+if(DEFINED CONFIG_LPC55XXX_USB_RAM)
 zephyr_linker_sources_ifdef(CONFIG_USB_DEVICE_DRIVER
   SECTIONS usb.ld)
 
 zephyr_compile_definitions_ifdef(CONFIG_USB_DEVICE_DRIVER USB_STACK_USE_DEDICATED_RAM=1)
+endif()
 
-if (CONFIG_SECOND_CORE_MCUX)
-  set(gen_dir ${ZEPHYR_BINARY_DIR}/include/generated/)
-  string(CONFIGURE ${CONFIG_SECOND_IMAGE_MCUX} second_core_image)
-
-  add_custom_target(second_core_inc_target DEPENDS ${gen_dir}/second-core.inc)
-
-  generate_inc_file_for_gen_target(${ZEPHYR_CURRENT_LIBRARY}
-				   ${second_core_image}
-				   ${gen_dir}/second-core.inc
-				   second_core_inc_target)
+# CMSIS SystemInit allows us to skip enabling clock to SRAM banks via
+# this compiler definition
+if(NOT DEFINED CONFIG_LPC55XXX_SRAM_CLOCKS)
+zephyr_compile_definitions(DONT_ENABLE_DISABLED_RAMBANKS=1)
 endif()

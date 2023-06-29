@@ -1,31 +1,5 @@
-# SPDX-License-Identifier: BSD-3-Clause
-#
-# Copyright 2022 The ChromiumOS Authors
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are
-# met:
-#
-#    * Redistributions of source code must retain the above copyright
-# notice, this list of conditions and the following disclaimer.
-#    * Redistributions in binary form must reproduce the above
-# copyright notice, this list of conditions and the following disclaimer
-# in the documentation and/or other materials provided with the
-# distribution.
-#    * Neither the name of Google LLC nor the names of its
-# contributors may be used to endorse or promote products derived from
-# this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-# "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-# LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-# A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-# OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-# LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-# DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-# THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-# (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+# Copyright 2022 Google LLC.
+# SPDX-License-Identifier: Apache-2.0
 """Module for job counters, limiting the amount of concurrent executions."""
 
 import fcntl
@@ -39,6 +13,8 @@ import selectors
 import subprocess
 import sys
 
+logger = logging.getLogger('twister')
+logger.setLevel(logging.DEBUG)
 
 class JobHandle:
     """Small object to handle claim of a job."""
@@ -166,18 +142,31 @@ class GNUMakeJobClient(JobClient):
             pipe = [int(x) for x in match.groups()]
             if jobs:
                 pipe = None
-                logging.warning(
+                logger.warning(
                     "-jN forced on command line; ignoring GNU make jobserver"
                 )
             else:
                 try:
-                    # Use F_GETFD to see if file descriptors are valid
-                    fcntl.fcntl(pipe[0], fcntl.F_GETFD)
-                    fcntl.fcntl(pipe[1], fcntl.F_GETFD)
-                    logging.info("using GNU make jobserver")
+                    # Use F_GETFL to see if file descriptors are valid
+                    if pipe:
+                        rc = fcntl.fcntl(pipe[0], fcntl.F_GETFL)
+                        if not rc & os.O_ACCMODE == os.O_RDONLY:
+                            logger.warning(
+                                "FD %s is not readable (flags=%x); "
+                                "ignoring GNU make jobserver", pipe[0], rc)
+                            pipe = None
+                    if pipe:
+                        rc = fcntl.fcntl(pipe[1], fcntl.F_GETFL)
+                        if not rc & os.O_ACCMODE == os.O_WRONLY:
+                            logger.warning(
+                                "FD %s is not writable (flags=%x); "
+                                "ignoring GNU make jobserver", pipe[1], rc)
+                            pipe = None
+                    if pipe:
+                        logger.info("using GNU make jobserver")
                 except OSError:
                     pipe = None
-                    logging.warning(
+                    logger.warning(
                         "No file descriptors; ignoring GNU make jobserver"
                     )
         else:
@@ -187,9 +176,9 @@ class GNUMakeJobClient(JobClient):
             if match:
                 jobs = int(match.group(1))
                 if jobs == 1:
-                    logging.info("Running in sequential mode (-j1)")
+                    logger.info("Running in sequential mode (-j1)")
         if makeflags[0] == "n":
-            logging.info("MAKEFLAGS contained dry-run flag")
+            logger.info("MAKEFLAGS contained dry-run flag")
             sys.exit(0)
         return cls(pipe, jobs, internal_jobs=1, makeflags=makeflags)
 

@@ -18,7 +18,8 @@
 
 extern const struct shell *ctx_shell;
 extern struct bt_conn *default_conn;
-extern struct bt_csis *csis;
+
+bool passes_scan_filter(const struct bt_le_scan_recv_info *info, const struct net_buf_simple *buf);
 
 #if defined(CONFIG_BT_ISO)
 extern struct bt_iso_chan iso_chan;
@@ -33,8 +34,5 @@ extern struct bt_le_per_adv_sync *per_adv_syncs[CONFIG_BT_PER_ADV_SYNC_MAX];
 #endif /* CONFIG_BT_EXT_ADV */
 
 void conn_addr_str(struct bt_conn *conn, char *addr, size_t len);
-ssize_t audio_ad_data_add(struct bt_data *data, const size_t data_size, const bool discoverable,
-			  const bool connectable);
-ssize_t csis_ad_data_add(struct bt_data *data, const size_t data_size, const bool discoverable);
 
 #endif /* __BT_H */

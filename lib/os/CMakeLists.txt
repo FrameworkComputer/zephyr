@@ -1,14 +1,13 @@
 # SPDX-License-Identifier: Apache-2.0
 
+zephyr_syscall_header(
+  ${ZEPHYR_BASE}/include/zephyr/sys/mutex.h
+)
+
 zephyr_sources_ifdef(CONFIG_BASE64 base64.c)
 
 zephyr_sources(
   cbprintf_packaged.c
-  crc32c_sw.c
-  crc32_sw.c
-  crc16_sw.c
-  crc8_sw.c
-  crc7_sw.c
   dec.c
   fdtable.c
   hex.c
@@ -25,6 +24,14 @@ zephyr_sources(
 
 zephyr_sources_ifdef(CONFIG_ONOFF onoff.c)
 zephyr_sources_ifdef(CONFIG_NOTIFY notify.c)
+zephyr_sources_ifdef(CONFIG_CRC
+  crc32c_sw.c
+  crc32_sw.c
+  crc16_sw.c
+  crc8_sw.c
+  crc7_sw.c
+  )
+zephyr_sources_ifdef(CONFIG_CRC_SHELL crc_shell.c)
 
 zephyr_sources_ifdef(CONFIG_CBPRINTF_COMPLETE cbprintf_complete.c)
 zephyr_sources_ifdef(CONFIG_CBPRINTF_NANO cbprintf_nano.c)

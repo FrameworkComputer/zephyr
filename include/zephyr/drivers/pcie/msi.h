@@ -7,6 +7,13 @@
 #ifndef ZEPHYR_INCLUDE_DRIVERS_PCIE_MSI_H_
 #define ZEPHYR_INCLUDE_DRIVERS_PCIE_MSI_H_
 
+/**
+ * @brief PCIe Host MSI Interface
+ * @defgroup pcie_host_msi_interface PCIe Host MSI Interface
+ * @ingroup pcie_host_interface
+ * @{
+ */
+
 #include <zephyr/kernel.h>
 #include <zephyr/types.h>
 #include <stdbool.h>
@@ -39,7 +46,7 @@ struct msix_vector {
 	uint32_t msg_up_addr;
 	uint32_t msg_data;
 	uint32_t vector_ctrl;
-};
+} __packed;
 
 struct msi_vector {
 	pcie_bdf_t bdf;
@@ -189,5 +196,9 @@ extern bool pcie_is_msi(pcie_bdf_t bdf);
 #ifdef __cplusplus
 }
 #endif
+
+/**
+ * @}
+ */
 
 #endif /* ZEPHYR_INCLUDE_DRIVERS_PCIE_MSI_H_ */

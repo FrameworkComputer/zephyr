@@ -237,6 +237,7 @@
 
 		node {
 			reg = <1 2>;
+			reg-names = "foo", "bar";
 		};
 	};
 	reg-zero-size-cells {
@@ -332,6 +333,13 @@
 		bar = <1>;
 		baz = <2>;
 		qaz = <3>;
+
+		child {
+			foo = <0>;
+			bar = <1>;
+			baz = <2>;
+			qaz = <3>;
+		};
 	};
 
 	//

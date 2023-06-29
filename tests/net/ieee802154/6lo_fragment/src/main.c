@@ -245,7 +245,7 @@ static struct net_pkt *create_pkt(struct net_fragment_data *data)
 
 	net_pkt_set_ip_hdr_len(pkt, NET_IPV6H_LEN);
 
-	buf = net_pkt_get_frag(pkt, K_FOREVER);
+	buf = net_pkt_get_frag(pkt, NET_IPV6UDPH_LEN, K_FOREVER);
 	if (!buf) {
 		net_pkt_unref(pkt);
 		return NULL;
@@ -285,7 +285,7 @@ static struct net_pkt *create_pkt(struct net_fragment_data *data)
 		net_pkt_frag_add(pkt, buf);
 
 		if (remaining > 0) {
-			buf = net_pkt_get_frag(pkt, K_FOREVER);
+			buf = net_pkt_get_frag(pkt, CONFIG_NET_BUF_DATA_SIZE, K_FOREVER);
 		}
 	}
 
@@ -438,6 +438,24 @@ static struct net_fragment_data test_data_8 = {
 	.iphc = false
 };
 
+
+static struct net_fragment_data test_data_9 = {
+	.ipv6.vtc = 0x61,
+	.ipv6.tcflow = 0x20,
+	.ipv6.flow = 0x00,
+	.ipv6.len = 0,
+	.ipv6.nexthdr = IPPROTO_UDP,
+	.ipv6.hop_limit = 0xff,
+	.ipv6.src = src_sam00,
+	.ipv6.dst = dst_m1_dam01,
+	.udp.src_port = htons(udp_src_port_16bit),
+	.udp.dst_port = htons(udp_dst_port_16bit),
+	.udp.len = 0x00,
+	.udp.chksum = 0x00,
+	.len = 90,
+	.iphc = true
+};
+
 static uint8_t frame_buffer_data[IEEE802154_MTU];
 
 static struct net_buf frame_buf = {
@@ -474,7 +492,7 @@ static bool test_fragment(struct net_fragment_data *data)
 		goto end;
 	}
 
-	if (!ieee802154_6lo_requires_fragmentation(pkt, 0)) {
+	if (!ieee802154_6lo_requires_fragmentation(pkt, 0, 0)) {
 		f_pkt = pkt;
 		pkt = NULL;
 
@@ -493,7 +511,7 @@ static bool test_fragment(struct net_fragment_data *data)
 	while (buf) {
 		buf = ieee802154_6lo_fragment(&ctx, &frame_buf, data->iphc);
 
-		dfrag = net_pkt_get_frag(f_pkt, K_FOREVER);
+		dfrag = net_pkt_get_frag(f_pkt, frame_buf.len, K_FOREVER);
 		if (!dfrag) {
 			goto end;
 		}
@@ -524,7 +542,7 @@ reassemble:
 			goto end;
 		}
 
-		dfrag = net_pkt_get_frag(rxpkt, K_FOREVER);
+		dfrag = net_pkt_get_frag(rxpkt, buf->len, K_FOREVER);
 		if (!dfrag) {
 			goto end;
 		}
@@ -631,5 +649,11 @@ ZTEST(ieee802154_6lo_fragment, test_fragment_ipv6_dispatch_big)
 	zassert_true(ret);
 }
 
+ZTEST(ieee802154_6lo_fragment, test_fragment_ipv6_no_fragmentation_after_iphc)
+{
+	bool ret = test_fragment(&test_data_9);
+
+	zassert_true(ret);
+}
 
 ZTEST_SUITE(ieee802154_6lo_fragment, NULL, NULL, NULL, NULL, NULL);

@@ -17,8 +17,8 @@ LOG_MODULE_REGISTER(net_ieee802154_fake_driver, LOG_LEVEL_DBG);
 /** FAKE ieee802.15.4 driver **/
 #include <zephyr/net/ieee802154_radio.h>
 
-extern struct net_pkt *current_pkt;
-extern struct k_sem driver_lock;
+struct net_pkt *current_pkt;
+K_SEM_DEFINE(driver_lock, 0, UINT_MAX);
 
 static enum ieee802154_hw_caps fake_get_capabilities(const struct device *dev)
 {
@@ -48,7 +48,7 @@ static inline void insert_frag(struct net_pkt *pkt, struct net_buf *frag)
 {
 	struct net_buf *new_frag;
 
-	new_frag = net_pkt_get_frag(pkt, K_SECONDS(1));
+	new_frag = net_pkt_get_frag(pkt, frag->len, K_SECONDS(1));
 	if (!new_frag) {
 		return;
 	}

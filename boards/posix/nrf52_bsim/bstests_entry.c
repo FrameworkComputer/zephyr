@@ -191,18 +191,16 @@ bool bst_irq_sniffer(int irq_number)
 	}
 }
 
-static int bst_fake_device_driver_pre2_init(const struct device *arg)
+static int bst_fake_device_driver_pre2_init(void)
 {
-	ARG_UNUSED(arg);
 	if (current_test && current_test->test_fake_ddriver_prekernel_f) {
 		current_test->test_fake_ddriver_prekernel_f();
 	}
 	return 0;
 }
 
-static int bst_fake_device_driver_post_init(const struct device *arg)
+static int bst_fake_device_driver_post_init(void)
 {
-	ARG_UNUSED(arg);
 	if (current_test && current_test->test_fake_ddriver_postkernel_f) {
 		current_test->test_fake_ddriver_postkernel_f();
 	}
@@ -233,6 +231,14 @@ uint8_t bst_delete(void)
 
 		free(test_list_top);
 		test_list_top = tmp;
+	}
+
+	if (bst_result == In_progress) {
+		bs_trace_raw_time(2, "TESTCASE NOT PASSED at exit (test return "
+				  "(%u) indicates it was still in progress)\n", bst_result);
+	} else if (bst_result != Passed) {
+		bs_trace_raw_time(2, "The TESTCASE FAILED (test return code %u)\n",
+				  bst_result);
 	}
 
 	return bst_result;

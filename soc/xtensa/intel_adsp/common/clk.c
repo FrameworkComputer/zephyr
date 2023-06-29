@@ -10,56 +10,42 @@
 #include <zephyr/kernel.h>
 #include <zephyr/spinlock.h>
 
-#include <adsp-clk.h>
+#include <adsp_clk.h>
 #include <adsp_shim.h>
 
-static struct cavs_clock_info platform_clocks[CONFIG_MP_MAX_NUM_CPUS];
+static struct adsp_cpu_clock_info platform_cpu_clocks[CONFIG_MP_MAX_NUM_CPUS];
 static struct k_spinlock lock;
 
-int cavs_clock_freq_enc[] = CAVS_CLOCK_FREQ_ENC;
-#ifndef CONFIG_SOC_INTEL_CAVS_V15
-int cavs_clock_freq_mask[] = CAVS_CLOCK_FREQ_MASK;
-#endif
+int adsp_clock_freq_enc[] = ADSP_CPU_CLOCK_FREQ_ENC;
+int adsp_clock_freq_mask[] = ADSP_CPU_CLOCK_FREQ_MASK;
 
-#ifdef CONFIG_SOC_INTEL_CAVS_V15
-static void select_cpu_clock_hw(uint32_t freq)
-{
-	uint8_t cpu_id = _current_cpu->id;
-	uint32_t enc = cavs_clock_freq_enc[freq] << (8 + cpu_id * 2);
-	uint32_t mask = CAVS_CLKCTL_DPCS_MASK(cpu_id);
-
-	CAVS_SHIM_CLKCTL &= ~CAVS_CLKCTL_HDCS;
-	CAVS_SHIM_CLKCTL = (CAVS_SHIM_CLKCTL & ~mask) | (enc & mask);
-}
-#else
 static void select_cpu_clock_hw(uint32_t freq_idx)
 {
-	uint32_t enc = cavs_clock_freq_enc[freq_idx];
-	uint32_t status_mask = cavs_clock_freq_mask[freq_idx];
+	uint32_t enc = adsp_clock_freq_enc[freq_idx];
+	uint32_t status_mask = adsp_clock_freq_mask[freq_idx];
 
 	/* Request clock */
-	CAVS_SHIM_CLKCTL |= enc;
+	ADSP_CLKCTL |= enc;
 
 	/* Wait for requested clock to be on */
-	while ((CAVS_SHIM_CLKCTL & status_mask) != status_mask) {
+	while ((ADSP_CLKCTL & status_mask) != status_mask) {
 		k_busy_wait(10);
 	}
 
 	/* Switch to requested clock */
-	CAVS_SHIM_CLKCTL = (CAVS_SHIM_CLKCTL & ~CAVS_CLKCTL_OSC_SOURCE_MASK) |
+	ADSP_CLKCTL = (ADSP_CLKCTL & ~ADSP_CLKCTL_OSC_SOURCE_MASK) |
 			    enc;
 
 	/* Release other clocks */
-	CAVS_SHIM_CLKCTL &= ~CAVS_CLKCTL_OSC_REQUEST_MASK | enc;
+	ADSP_CLKCTL &= ~ADSP_CLKCTL_OSC_REQUEST_MASK | enc;
 }
-#endif
 
-int cavs_clock_set_freq(uint32_t freq_idx)
+int adsp_clock_set_cpu_freq(uint32_t freq_idx)
 {
 	k_spinlock_key_t k;
 	int i;
 
-	if (freq_idx >= CAVS_CLOCK_FREQ_LEN) {
+	if (freq_idx >= ADSP_CPU_CLOCK_FREQ_LEN) {
 		return -EINVAL;
 	}
 
@@ -70,7 +56,7 @@ int cavs_clock_set_freq(uint32_t freq_idx)
 	unsigned int num_cpus = arch_num_cpus();
 
 	for (i = 0; i < num_cpus; i++) {
-		platform_clocks[i].current_freq = freq_idx;
+		platform_cpu_clocks[i].current_freq = freq_idx;
 	}
 
 	k_spin_unlock(&lock, k);
@@ -78,30 +64,78 @@ int cavs_clock_set_freq(uint32_t freq_idx)
 	return 0;
 }
 
-struct cavs_clock_info *cavs_clocks_get(void)
+struct adsp_cpu_clock_info *adsp_cpu_clocks_get(void)
 {
-	return platform_clocks;
+	return platform_cpu_clocks;
 }
 
-void cavs_clock_init(void)
+void adsp_clock_init(void)
 {
-	uint32_t platform_lowest_freq_idx = CAVS_CLOCK_FREQ_LOWEST;
+	uint32_t platform_lowest_freq_idx = ADSP_CPU_CLOCK_FREQ_LOWEST;
 	int i;
 
-#ifdef CAVS_CLOCK_HAS_WOVCRO
+#ifdef ADSP_CLOCK_HAS_WOVCRO
+#ifdef CONFIG_SOC_SERIES_INTEL_ACE
+	ACE_DfPMCCU.dfclkctl |= ACE_CLKCTL_WOVCRO;
+	if (ACE_DfPMCCU.dfclkctl & ACE_CLKCTL_WOVCRO) {
+		ACE_DfPMCCU.dfclkctl = ACE_DfPMCCU.dfclkctl & ~ACE_CLKCTL_WOVCRO;
+	} else {
+		platform_lowest_freq_idx = ADSP_CPU_CLOCK_FREQ_LPRO;
+	}
+#else
 	CAVS_SHIM.clkctl |= CAVS_CLKCTL_WOVCRO;
 	if (CAVS_SHIM.clkctl & CAVS_CLKCTL_WOVCRO) {
 		CAVS_SHIM.clkctl = CAVS_SHIM.clkctl & ~CAVS_CLKCTL_WOVCRO;
 	} else {
-		platform_lowest_freq_idx = CAVS_CLOCK_FREQ_LPRO;
+		platform_lowest_freq_idx = ADSP_CPU_CLOCK_FREQ_LPRO;
 	}
-#endif
+#endif /* CONFIG_SOC_SERIES_INTEL_ACE */
+#endif /* ADSP_CLOCK_HAS_WOVCRO */
 
 	unsigned int num_cpus = arch_num_cpus();
 
 	for (i = 0; i < num_cpus; i++) {
-		platform_clocks[i].default_freq = CAVS_CLOCK_FREQ_DEFAULT;
-		platform_clocks[i].current_freq = CAVS_CLOCK_FREQ_DEFAULT;
-		platform_clocks[i].lowest_freq = platform_lowest_freq_idx;
+		platform_cpu_clocks[i].default_freq = ADSP_CPU_CLOCK_FREQ_DEFAULT;
+		platform_cpu_clocks[i].current_freq = ADSP_CPU_CLOCK_FREQ_DEFAULT;
+		platform_cpu_clocks[i].lowest_freq = platform_lowest_freq_idx;
 	}
+}
+
+struct adsp_clock_source_desc adsp_clk_src_info[ADSP_CLOCK_SOURCE_COUNT] = {
+#ifndef CONFIG_DAI_DMIC_HW_IOCLK
+	[ADSP_CLOCK_SOURCE_XTAL_OSC] = { DT_PROP(DT_NODELABEL(sysclk), clock_frequency) },
+#else
+	/* Temporarily use the values from the configuration until set xtal frequency via ipc
+	 * support is added.
+	 */
+	[ADSP_CLOCK_SOURCE_XTAL_OSC] = { CONFIG_DAI_DMIC_HW_IOCLK },
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(audioclk), okay)
+	[ADSP_CLOCK_SOURCE_AUDIO_CARDINAL] = { DT_PROP(DT_NODELABEL(audioclk), clock_frequency) },
+#endif
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(pllclk), okay)
+	[ADSP_CLOCK_SOURCE_AUDIO_PLL_FIXED] = { DT_PROP(DT_NODELABEL(pllclk), clock_frequency) },
+#endif
+	[ADSP_CLOCK_SOURCE_MLCK_INPUT] = { 0 },
+#ifdef ADSP_CLOCK_HAS_WOVCRO
+	[ADSP_CLOCK_SOURCE_WOV_RING_OSC] = { DT_PROP(DT_NODELABEL(sysclk), clock_frequency) },
+#endif
+};
+
+bool adsp_clock_source_is_supported(int source)
+{
+	if (source < 0 || source >= ADSP_CLOCK_SOURCE_COUNT) {
+		return false;
+	}
+
+	return !!adsp_clk_src_info[source].frequency;
+}
+
+uint32_t adsp_clock_source_frequency(int source)
+{
+	if (source < 0 || source >= ADSP_CLOCK_SOURCE_COUNT) {
+		return 0;
+	}
+
+	return adsp_clk_src_info[source].frequency;
 }

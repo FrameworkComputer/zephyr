@@ -12,9 +12,7 @@
 #include "conn_internal.h"
 #include "iso_internal.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_CORE)
-#define LOG_MODULE_NAME bt_buf
-#include "common/log.h"
+#include <zephyr/bluetooth/hci.h>
 
 #if defined(CONFIG_BT_CONN)
 #if defined(CONFIG_BT_ISO)
@@ -91,9 +89,8 @@ struct net_buf *bt_buf_get_cmd_complete(k_timeout_t timeout)
 {
 	struct net_buf *buf;
 
-	if (bt_dev.sent_cmd) {
-		buf = net_buf_ref(bt_dev.sent_cmd);
-
+	buf = (struct net_buf *)atomic_ptr_clear((atomic_ptr_t *)&bt_dev.sent_cmd);
+	if (buf) {
 		bt_buf_set_type(buf, BT_BUF_EVT);
 		buf->len = 0U;
 		net_buf_reserve(buf, BT_BUF_RESERVE);

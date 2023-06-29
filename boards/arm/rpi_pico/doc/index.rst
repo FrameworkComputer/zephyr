@@ -6,11 +6,12 @@ Raspberry Pi Pico
 Overview
 ********
 
-The Raspberry Pi Pico is a small, low-cost, versatile board from
-Raspberry Pi. It is equipped with an RP2040 SoC, an on-board LED,
-a USB connector, and an SWD interface. The USB bootloader allows it
-to be flashed without any adapter, in a drag-and-drop manner.
-It is also possible to flash and debug the Pico with its SWD interface,
+The Raspberry Pi Pico and Pico W are small, low-cost, versatile boards from
+Raspberry Pi. They are equipped with an RP2040 SoC, an on-board LED,
+a USB connector, and an SWD interface. The Pico W additionally contains an
+Infineon CYW43439 2.4 GHz Wi-Fi/Bluetoth module. The USB bootloader allows the
+ability to flash without any adapter, in a drag-and-drop manner.
+It is also possible to flash and debug the boards with their SWD interface,
 using an external adapter.
 
 Hardware
@@ -28,13 +29,20 @@ Hardware
 - 8 Programmable I/O (PIO) for custom peripherals
 - On-board LED
 - 1 Watchdog timer peripheral
+- Infineon CYW43439 2.4 GHz Wi-Fi chip (Pico W only)
 
 
 .. figure:: img/rpi_pico.jpg
      :align: center
      :alt: Raspberry Pi Pico
 
-     Raspberry Pi Pico (Image courtesy of Raspberry Pi)
+
+.. figure:: img/rpi_pico_w.jpg
+     :align: center
+     :alt: Raspberry Pi Pico W
+
+     Raspberry Pi Pico (above) and Pico W (below)
+     (Images courtesy of Raspberry Pi)
 
 Supported Features
 ==================
@@ -78,6 +86,12 @@ hardware features:
    * - PWM
      - :kconfig:option:`CONFIG_PWM`
      - :dtcompatible:`raspberrypi,pico-pwm`
+   * - Flash
+     - :kconfig:option:`CONFIG_FLASH`
+     - :dtcompatible:`raspberrypi,pico-flash`
+   * - UART (PIO)
+     - :kconfig:option:`CONFIG_SERIAL`
+     - :dtcompatible:`raspberrypi,pico-uart-pio`
 
 Pin Mapping
 ===========
@@ -85,6 +99,12 @@ Pin Mapping
 The peripherals of the RP2040 SoC can be routed to various pins on the board.
 The configuration of these routes can be modified through DTS. Please refer to
 the datasheet to see the possible routings for each peripheral.
+
+External pin mapping on the Pico W is identical to the Pico, but note that internal
+RP2040 GPIO lines 23, 24, 25, and 29 are routed to the Infineon module on the W.
+Since GPIO 25 is routed to the on-board LED on the Pico, but to the Infineon module
+on the Pico W, the "blinky" sample program does not work on the W (use hello_world for
+a simple test program instead).
 
 Default Zephyr Peripheral Mapping:
 ----------------------------------
@@ -105,6 +125,17 @@ Default Zephyr Peripheral Mapping:
 - ADC_CH1 : P27
 - ADC_CH2 : P28
 - ADC_CH3 : P29
+
+Programmable I/O (PIO)
+**********************
+The RP2040 SoC comes with two PIO periherals. These are two simple
+co-processors that are designed for I/O operations. The PIOs run
+a custom instruction set, generated from a custom assembly language.
+PIO programs are assembled using `pioasm`, a tool provided by Raspberry Pi.
+
+Zephyr does not (currently) assemble PIO programs. Rather, they should be
+manually assembled and embedded in source code. An example of how this is done
+can be found at `drivers/serial/uart_rpi_pico_pio.c`.
 
 Programming and Debugging
 *************************
@@ -138,13 +169,13 @@ Create a file in /etc/udev.rules.d with any name, and write the line below.
 
 .. code-block:: bash
 
-   ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="0004", MODE="660", GROUP="plugdev", TAG+="uaccess"
+   ATTRS{idVendor}=="2e8a", ATTRS{idProduct}=="000c", MODE="660", GROUP="plugdev", TAG+="uaccess"
 
 This example is valid for the case that the user joins to `plugdev` groups.
 
 The Raspberry Pi Pico has an SWD interface that can be used to program
 and debug the on board RP2040. This interface can be utilized by OpenOCD.
-However, to use it with the RP2040, a `fork of OpenOCD supporting RP2040`_ is needed.
+To use it with the RP2040, OpenOCD version 0.12.0 or later is needed.
 
 If you are using a Debian based system (including RaspberryPi OS, Ubuntu. and more),
 using the `pico_setup.sh`_ script is a convenient way to set up the forked version of OpenOCD.
@@ -213,10 +244,6 @@ Using OpenOCD
 
 Install OpenOCD as described for flashing the board.
 
-.. note::
-  `fork of OpenOCD supporting RP2040`_ does not provide ZephyrRTOS enhancement.
-  (No RTOS awareness. Thus, can't recognize threads.)
-
 Here is an example for debugging the :ref:`blinky-sample` application.
 
 .. zephyr-app-commands::
@@ -252,9 +279,6 @@ Inside gdb, run:
 You can then start debugging the board.
 
 .. target-notes::
-
-.. _fork of OpenOCD supporting RP2040:
-   https://github.com/raspberrypi/openocd
 
 .. _pico_setup.sh:
    https://raw.githubusercontent.com/raspberrypi/pico-setup/master/pico_setup.sh

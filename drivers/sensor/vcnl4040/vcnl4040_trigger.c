@@ -40,13 +40,9 @@ static void vcnl4040_gpio_callback(const struct device *dev,
 static int vcnl4040_handle_proxy_int(const struct device *dev)
 {
 	struct vcnl4040_data *data = dev->data;
-	struct sensor_trigger proxy_trig = {
-		.type = SENSOR_TRIG_THRESHOLD,
-		.chan = SENSOR_CHAN_PROX,
-	};
 
-	if (data->proxy_handler) {
-		data->proxy_handler(dev, &proxy_trig);
+	if (data->proxy_handler != NULL) {
+		data->proxy_handler(dev, data->proxy_trigger);
 	}
 
 	return 0;
@@ -55,13 +51,9 @@ static int vcnl4040_handle_proxy_int(const struct device *dev)
 static int vcnl4040_handle_als_int(const struct device *dev)
 {
 	struct vcnl4040_data *data = dev->data;
-	struct sensor_trigger als_trig = {
-		.type = SENSOR_TRIG_THRESHOLD,
-		.chan = SENSOR_CHAN_LIGHT,
-	};
 
-	if (data->als_handler) {
-		data->als_handler(dev, &als_trig);
+	if (data->als_handler != NULL) {
+		data->als_handler(dev, data->als_trigger);
 	}
 
 	return 0;
@@ -73,14 +65,10 @@ static void vcnl4040_handle_int(const struct device *dev)
 	struct vcnl4040_data *data = dev->data;
 	uint16_t int_source;
 
-	k_sem_take(&data->sem, K_FOREVER);
-
 	if (vcnl4040_read(dev, VCNL4040_REG_INT_FLAG, &int_source)) {
 		LOG_ERR("Could not read interrupt source");
 		int_source = 0U;
 	}
-
-	k_sem_give(&data->sem);
 
 	data->int_type = int_source >> 8;
 
@@ -126,11 +114,11 @@ int vcnl4040_attr_set(const struct device *dev,
 	const struct vcnl4040_config *config = dev->config;
 	int ret = 0;
 
-	if (!config->int_gpio.port) {
+	if (config->int_gpio.port == NULL) {
 		return -ENOTSUP;
 	}
 
-	k_sem_take(&data->sem, K_FOREVER);
+	k_mutex_lock(&data->mutex, K_FOREVER);
 
 	if (chan == SENSOR_CHAN_PROX) {
 		if (attr == SENSOR_ATTR_UPPER_THRESH) {
@@ -180,7 +168,7 @@ int vcnl4040_attr_set(const struct device *dev,
 #endif
 	ret = -ENOTSUP;
 exit:
-	k_sem_give(&data->sem);
+	k_mutex_unlock(&data->mutex);
 
 	return ret;
 }
@@ -194,11 +182,11 @@ int vcnl4040_trigger_set(const struct device *dev,
 	uint16_t conf;
 	int ret = 0;
 
-	if (!config->int_gpio.port) {
+	if (config->int_gpio.port == NULL) {
 		return -ENOTSUP;
 	}
 
-	k_sem_take(&data->sem, K_FOREVER);
+	k_mutex_lock(&data->mutex, K_FOREVER);
 
 	switch (trig->type) {
 	case SENSOR_TRIG_THRESHOLD:
@@ -217,6 +205,7 @@ int vcnl4040_trigger_set(const struct device *dev,
 			}
 
 			data->proxy_handler = handler;
+			data->proxy_trigger = trig;
 		} else if (trig->chan == SENSOR_CHAN_LIGHT) {
 #ifdef CONFIG_VCNL4040_ENABLE_ALS
 			if (vcnl4040_read(dev, VCNL4040_REG_ALS_CONF, &conf)) {
@@ -224,8 +213,8 @@ int vcnl4040_trigger_set(const struct device *dev,
 				goto exit;
 			}
 
-			/* Set interrupt enable bit 1 */
-			conf |= 1 << 1;
+			/* ALS interrupt enable */
+			conf |= VCNL4040_ALS_INT_EN_MASK;
 
 			if (vcnl4040_write(dev, VCNL4040_REG_ALS_CONF, conf)) {
 				ret = -EIO;
@@ -233,6 +222,7 @@ int vcnl4040_trigger_set(const struct device *dev,
 			}
 
 			data->als_handler = handler;
+			data->als_trigger = trig;
 #else
 			ret = -ENOTSUP;
 			goto exit;
@@ -248,7 +238,7 @@ int vcnl4040_trigger_set(const struct device *dev,
 		goto exit;
 	}
 exit:
-	k_sem_give(&data->sem);
+	k_mutex_unlock(&data->mutex);
 
 	return ret;
 }
@@ -260,10 +250,8 @@ int vcnl4040_trigger_init(const struct device *dev)
 
 	data->dev = dev;
 
-	/* dts doesn't have GPIO int pin set, so we dont support
-	 * trigger mode for this instance
-	 */
-	if (!config->int_gpio.port) {
+	if (config->int_gpio.port == NULL) {
+		LOG_DBG("instance '%s' doesn't support trigger mode", dev->name);
 		return 0;
 	}
 
@@ -293,7 +281,7 @@ int vcnl4040_trigger_init(const struct device *dev)
 			   BIT(config->int_gpio.pin));
 
 	if (gpio_add_callback(config->int_gpio.port, &data->gpio_cb) < 0) {
-		LOG_DBG("Failed to set gpio callback!");
+		LOG_ERR("Failed to set gpio callback");
 		return -EIO;
 	}
 

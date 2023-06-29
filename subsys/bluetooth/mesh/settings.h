@@ -17,14 +17,26 @@ enum bt_mesh_settings_flag {
 	BT_MESH_SETTINGS_MOD_PENDING,
 	BT_MESH_SETTINGS_VA_PENDING,
 	BT_MESH_SETTINGS_CDB_PENDING,
+	BT_MESH_SETTINGS_SRPL_PENDING,
+	BT_MESH_SETTINGS_SSEQ_PENDING,
+	BT_MESH_SETTINGS_COMP_PENDING,
+	BT_MESH_SETTINGS_DEV_KEY_CAND_PENDING,
 
 	BT_MESH_SETTINGS_FLAG_COUNT,
 };
 
 #ifdef CONFIG_BT_SETTINGS
-#define BT_MESH_SETTINGS_DEFINE(_hname, _subtree, _set)			     \
-	SETTINGS_STATIC_HANDLER_DEFINE(bt_mesh_##_hname, "bt/mesh/" _subtree, \
-				       NULL, _set, NULL, NULL)
+#define BT_MESH_SETTINGS_DEFINE(_hname, _subtree, _set)                                            \
+	static int pre_##_set(const char *name, size_t len_rd, settings_read_cb read_cb,           \
+			      void *cb_arg)                                                        \
+	{                                                                                          \
+		if (!atomic_test_bit(bt_mesh.flags, BT_MESH_INIT)) {                               \
+			return 0;                                                                  \
+		}                                                                                  \
+		return _set(name, len_rd, read_cb, cb_arg);                                        \
+	}                                                                                          \
+	SETTINGS_STATIC_HANDLER_DEFINE(bt_mesh_##_hname, "bt/mesh/" _subtree, NULL, pre_##_set,    \
+				       NULL, NULL)
 #else
 /* Declaring non static settings handler helps avoid unnecessary ifdefs
  * as well as unused function warning. Since the declared handler structure is

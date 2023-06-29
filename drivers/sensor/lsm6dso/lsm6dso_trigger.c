@@ -135,6 +135,7 @@ int lsm6dso_trigger_set(const struct device *dev,
 
 	if (trig->chan == SENSOR_CHAN_ACCEL_XYZ) {
 		lsm6dso->handler_drdy_acc = handler;
+		lsm6dso->trig_drdy_acc = trig;
 		if (handler) {
 			return lsm6dso_enable_xl_int(dev, LSM6DSO_EN_BIT);
 		} else {
@@ -142,6 +143,7 @@ int lsm6dso_trigger_set(const struct device *dev,
 		}
 	} else if (trig->chan == SENSOR_CHAN_GYRO_XYZ) {
 		lsm6dso->handler_drdy_gyr = handler;
+		lsm6dso->trig_drdy_gyr = trig;
 		if (handler) {
 			return lsm6dso_enable_g_int(dev, LSM6DSO_EN_BIT);
 		} else {
@@ -151,6 +153,7 @@ int lsm6dso_trigger_set(const struct device *dev,
 #if defined(CONFIG_LSM6DSO_ENABLE_TEMP)
 	else if (trig->chan == SENSOR_CHAN_DIE_TEMP) {
 		lsm6dso->handler_drdy_temp = handler;
+		lsm6dso->trig_drdy_temp = trig;
 		if (handler) {
 			return lsm6dso_enable_t_int(dev, LSM6DSO_EN_BIT);
 		} else {
@@ -169,9 +172,6 @@ int lsm6dso_trigger_set(const struct device *dev,
 static void lsm6dso_handle_interrupt(const struct device *dev)
 {
 	struct lsm6dso_data *lsm6dso = dev->data;
-	struct sensor_trigger drdy_trigger = {
-		.type = SENSOR_TRIG_DATA_READY,
-	};
 	const struct lsm6dso_config *cfg = dev->config;
 	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
 	lsm6dso_status_reg_t status;
@@ -191,16 +191,16 @@ static void lsm6dso_handle_interrupt(const struct device *dev)
 		}
 
 		if ((status.xlda) && (lsm6dso->handler_drdy_acc != NULL)) {
-			lsm6dso->handler_drdy_acc(dev, &drdy_trigger);
+			lsm6dso->handler_drdy_acc(dev, lsm6dso->trig_drdy_acc);
 		}
 
 		if ((status.gda) && (lsm6dso->handler_drdy_gyr != NULL)) {
-			lsm6dso->handler_drdy_gyr(dev, &drdy_trigger);
+			lsm6dso->handler_drdy_gyr(dev, lsm6dso->trig_drdy_gyr);
 		}
 
 #if defined(CONFIG_LSM6DSO_ENABLE_TEMP)
 		if ((status.tda) && (lsm6dso->handler_drdy_temp != NULL)) {
-			lsm6dso->handler_drdy_temp(dev, &drdy_trigger);
+			lsm6dso->handler_drdy_temp(dev, lsm6dso->trig_drdy_temp);
 		}
 #endif
 	}
@@ -268,6 +268,7 @@ int lsm6dso_init_interrupt(const struct device *dev)
 			(k_thread_entry_t)lsm6dso_thread, lsm6dso,
 			NULL, NULL, K_PRIO_COOP(CONFIG_LSM6DSO_THREAD_PRIORITY),
 			0, K_NO_WAIT);
+	k_thread_name_set(&lsm6dso->thread, "lsm6dso");
 #elif defined(CONFIG_LSM6DSO_TRIGGER_GLOBAL_THREAD)
 	lsm6dso->work.handler = lsm6dso_work_cb;
 #endif /* CONFIG_LSM6DSO_TRIGGER_OWN_THREAD */
@@ -287,10 +288,16 @@ int lsm6dso_init_interrupt(const struct device *dev)
 		return -EIO;
 	}
 
-	/* enable interrupt on int1/int2 in pulse mode */
-	if (lsm6dso_int_notification_set(ctx, LSM6DSO_ALL_INT_PULSED) < 0) {
-		LOG_DBG("Could not set pulse mode");
-		return -EIO;
+
+	/* set data ready mode on int1/int2 */
+	LOG_DBG("drdy_pulsed is %d", (int)cfg->drdy_pulsed);
+	lsm6dso_dataready_pulsed_t mode = cfg->drdy_pulsed ? LSM6DSO_DRDY_PULSED :
+							     LSM6DSO_DRDY_LATCHED;
+
+	ret = lsm6dso_data_ready_mode_set(ctx, mode);
+	if (ret < 0) {
+		LOG_ERR("drdy_pulsed config error %d", (int)cfg->drdy_pulsed);
+		return ret;
 	}
 
 	return gpio_pin_interrupt_configure_dt(&cfg->gpio_drdy,

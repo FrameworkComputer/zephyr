@@ -16,9 +16,8 @@
 #include <zephyr/bluetooth/gatt.h>
 #include <zephyr/bluetooth/mesh.h>
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_MESH_DEBUG_PROXY)
-#define LOG_MODULE_NAME bt_mesh_proxy
-#include "common/log.h"
+#include <zephyr/bluetooth/hci.h>
+
 #include "common/bt_str.h"
 
 #include "mesh.h"
@@ -26,13 +25,16 @@
 #include "net.h"
 #include "rpl.h"
 #include "transport.h"
-#include "host/ecc.h"
 #include "prov.h"
 #include "beacon.h"
 #include "foundation.h"
 #include "access.h"
 #include "proxy.h"
 #include "proxy_msg.h"
+
+#define LOG_LEVEL CONFIG_BT_MESH_PROXY_LOG_LEVEL
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(bt_mesh_proxy);
 
 #define PDU_SAR(data)      (data[0] >> 6)
 
@@ -60,7 +62,7 @@ static void proxy_sar_timeout(struct k_work *work)
 	struct bt_mesh_proxy_role *role;
 	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
 
-	BT_WARN("Proxy SAR timeout");
+	LOG_WRN("Proxy SAR timeout");
 
 	role = CONTAINER_OF(dwork, struct bt_mesh_proxy_role, sar_timer);
 	if (role->conn) {
@@ -75,10 +77,15 @@ ssize_t bt_mesh_proxy_msg_recv(struct bt_conn *conn,
 	const uint8_t *data = buf;
 	struct bt_mesh_proxy_role *role = &roles[bt_conn_index(conn)];
 
+	if (net_buf_simple_tailroom(&role->buf) < len - 1) {
+		LOG_WRN("Proxy role buffer overflow");
+		return -EINVAL;
+	}
+
 	switch (PDU_SAR(data)) {
 	case SAR_COMPLETE:
 		if (role->buf.len) {
-			BT_WARN("Complete PDU while a pending incomplete one");
+			LOG_WRN("Complete PDU while a pending incomplete one");
 			return -EINVAL;
 		}
 
@@ -90,7 +97,7 @@ ssize_t bt_mesh_proxy_msg_recv(struct bt_conn *conn,
 
 	case SAR_FIRST:
 		if (role->buf.len) {
-			BT_WARN("First PDU while a pending incomplete one");
+			LOG_WRN("First PDU while a pending incomplete one");
 			return -EINVAL;
 		}
 
@@ -101,12 +108,12 @@ ssize_t bt_mesh_proxy_msg_recv(struct bt_conn *conn,
 
 	case SAR_CONT:
 		if (!role->buf.len) {
-			BT_WARN("Continuation with no prior data");
+			LOG_WRN("Continuation with no prior data");
 			return -EINVAL;
 		}
 
 		if (role->msg_type != PDU_TYPE(data)) {
-			BT_WARN("Unexpected message type in continuation");
+			LOG_WRN("Unexpected message type in continuation");
 			return -EINVAL;
 		}
 
@@ -116,12 +123,12 @@ ssize_t bt_mesh_proxy_msg_recv(struct bt_conn *conn,
 
 	case SAR_LAST:
 		if (!role->buf.len) {
-			BT_WARN("Last SAR PDU with no prior data");
+			LOG_WRN("Last SAR PDU with no prior data");
 			return -EINVAL;
 		}
 
 		if (role->msg_type != PDU_TYPE(data)) {
-			BT_WARN("Unexpected message type in last SAR PDU");
+			LOG_WRN("Unexpected message type in last SAR PDU");
 			return -EINVAL;
 		}
 
@@ -146,8 +153,8 @@ int bt_mesh_proxy_msg_send(struct bt_conn *conn, uint8_t type,
 	uint16_t mtu;
 	struct bt_mesh_proxy_role *role = &roles[bt_conn_index(conn)];
 
-	BT_DBG("conn %p type 0x%02x len %u: %s", (void *)conn, type, msg->len,
-	       bt_hex(msg->data, msg->len));
+	LOG_DBG("conn %p type 0x%02x len %u: %s", (void *)conn, type, msg->len,
+		bt_hex(msg->data, msg->len));
 
 	/* ATT_MTU - OpCode (1 byte) - Handle (2 bytes) */
 	mtu = bt_gatt_get_mtu(conn) - 3;
@@ -211,7 +218,7 @@ int bt_mesh_proxy_relay_send(struct bt_conn *conn, struct net_buf *buf)
 
 	bt_mesh_adv_send_start(0, err, BT_MESH_ADV(buf));
 	if (err) {
-		BT_ERR("Failed to send proxy message (err %d)", err);
+		LOG_ERR("Failed to send proxy message (err %d)", err);
 
 		/* If segment_and_send() fails the buf_send_end() callback will
 		 * not be called, so we need to clear the user data (net_buf,
@@ -277,7 +284,7 @@ void bt_mesh_proxy_role_cleanup(struct bt_mesh_proxy_role *role)
 	bt_mesh_adv_gatt_update();
 }
 
-int bt_mesh_proxy_conn_count_get(void)
+bool bt_mesh_proxy_has_avail_conn(void)
 {
-	return conn_count;
+	return conn_count < CONFIG_BT_MESH_MAX_CONN;
 }

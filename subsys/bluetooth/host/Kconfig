@@ -126,7 +126,7 @@ config BT_RX_STACK_SIZE
 	int "Size of the receiving thread stack"
 	default 768 if BT_HCI_RAW
 	default 3092 if BT_MESH_GATT_CLIENT
-	default 2200 if BT_MESH
+	default 2600 if BT_MESH
 	default 2048 if BT_AUDIO
 	default 2200 if BT_SETTINGS
 	default 1200
@@ -208,14 +208,39 @@ config BT_SETTINGS_CCC_LAZY_LOADING
 	  Disabling this option will increase memory usage as CCC values for all
 	  bonded devices will be loaded when calling settings_load.
 
+config BT_SETTINGS_DELAYED_STORE
+	# Enables delayed non-volatile storage mechanism
+	bool
+	help
+	  Triggers the storage of the CF and CCC right after a write.
+	  This is done in the workqueue context, in order to not block the BT RX
+	  thread for too long.
+
+config BT_SETTINGS_DELAYED_STORE_MS
+	int
+	default 1000
+	help
+	  (Advanced) Governs the timeout after which the settings write will
+	  take effect.
+
 config BT_SETTINGS_CCC_STORE_ON_WRITE
 	bool "Store CCC value immediately after it has been written"
 	depends on BT_CONN
+	select BT_SETTINGS_DELAYED_STORE
 	default y
 	help
 	  Store Client Configuration Characteristic value right after it has
 	  been updated. If the option is disabled, the CCC is only stored on
 	  disconnection.
+
+config BT_SETTINGS_CF_STORE_ON_WRITE
+	bool "Store CF value immediately after it has been written"
+	depends on BT_CONN && BT_GATT_CACHING
+	select BT_SETTINGS_DELAYED_STORE
+	default y
+	help
+	  Store Client Supported Features value right after it has been updated.
+	  If the option is disabled, the CF is only stored on disconnection.
 
 config BT_SETTINGS_USE_PRINTK
 	bool "Use snprintk to encode Bluetooth settings key strings"
@@ -254,6 +279,14 @@ config BT_LIM_ADV_TIMEOUT
 	  set shall be terminated. As per BT Core Spec 5.2, Vol 3, Part C,
 	  Appendix A (NORMATIVE): TIMERS AND CONSTANTS it's required to be no more
 	  than 180s.
+
+config BT_CONN_TX_USER_DATA_SIZE
+	int
+	default 16 if 64BIT
+	default 8
+	help
+	  Necessary user_data size for allowing packet fragmentation when
+	  sending over HCI. See `struct tx_meta` in conn.c.
 
 if BT_CONN
 
@@ -324,13 +357,22 @@ config BT_SMP
 	  (SMP), making it possible to pair devices over LE.
 
 if BT_SMP
-config BT_PRIVACY
-	bool "Privacy Feature"
+config BT_PASSKEY_KEYPRESS
+	bool "Passkey Keypress Notification support [EXPERIMENTAL]"
+	select EXPERIMENTAL
 	help
-	  Enable Privacy Feature support. This makes it possible to generate and use
-	  Resolvable Private Addresses (RPAs).
+	  Enable support for receiving and sending Keypress Notifications during
+	  Passkey Entry during pairing.
 
-	  Disabling this will remove the capability to resolve private addresses.
+config BT_PRIVACY
+	bool "Device privacy"
+	help
+	  Enable privacy for the local device. This makes the device use Resolvable
+	  Private Addresses (RPAs) by default.
+
+	  Note:
+	  Establishing connections as a directed advertiser, or to a directed
+	  advertiser is only possible if the controller also supports privacy.
 
 config BT_PRIVACY_RANDOMIZE_IR
 	bool "Randomize identity root for fallback identities"
@@ -500,6 +542,17 @@ config BT_ID_UNPAIR_MATCHING_BONDS
 	  last Transport Specific Key to be distributed is acknowledged at
 	  link-layer. The Host does not have control over this acknowledgment,
 	  and the order of distribution is fixed by the specification.
+
+config BT_ID_ALLOW_UNAUTH_OVERWRITE
+	bool "Allow unauthenticated pairing with same peer with other local identity"
+	depends on !BT_SMP_ALLOW_UNAUTH_OVERWRITE
+	help
+	  This option allows unauthenticated pairing attempts made by the
+	  peer where an unauthenticated bond already exists on other local
+	  identity. This configuration still blocks unauthenticated pairing
+	  attempts on the same local identity. To allow the pairing procedure
+	  unconditionally, please see the BT_SMP_ALLOW_UNAUTH_OVERWRITE
+	  configuration.
 
 config BT_SMP_USB_HCI_CTLR_WORKAROUND
 	bool "Workaround for USB HCI controller out-of-order events"
@@ -831,17 +884,12 @@ config BT_DF_VS_CONN_IQ_REPORT_16_BITS_IQ_SAMPLES
 	  extenstion to handle connection IQ report with samples that are in 16 bit signed integer
 	  format.
 
-config BT_DEBUG_DF
-	bool "Bluetooth Direction Finding debug"
-	help
-	  This option enables debug support for Bluetooth Direction Finding
-
 endif # BT_DF
 endif # BT_HCI_HOST
 
 config BT_ECC
 	bool "ECDH key generation support"
-	default y if BT_MESH_PROV || (BT_SMP && !BT_SMP_OOB_LEGACY_PAIR_ONLY)
+	default y if BT_SMP && !BT_SMP_OOB_LEGACY_PAIR_ONLY
 	help
 	  This option adds support for ECDH HCI commands.
 
@@ -882,121 +930,28 @@ config BT_PER_ADV_SYNC_BUF_SIZE
 	  than this buffer size, then the data will be discarded.
 	  Unfragmented reports are forwarded as they are received.
 
-if BT_DEBUG
-config BT_DEBUG_SETTINGS
-	bool "Bluetooth storage debug"
-	depends on BT_SETTINGS
-	help
-	  This option enables debug support for Bluetooth storage.
-
-config BT_DEBUG_HCI_CORE
-	bool "Bluetooth HCI core debug"
-	help
-	  This option enables debug support for Bluetooth HCI
-	  core.
-
-config BT_DEBUG_CONN
-	bool "Bluetooth connection debug"
-	depends on BT_CONN || BT_ISO
-	help
-	  This option enables debug support for Bluetooth
-	  connection handling.
-
-config BT_DEBUG_ISO
-	bool "ISO channel debug"
-	help
-	  Use this option to enable ISO channels debug logs for the
-	  Bluetooth Audio functionality.
-
 config BT_DEBUG_ISO_DATA
 	bool "ISO channel data debug"
-	depends on BT_DEBUG_ISO
+	depends on BT_ISO_LOG_LEVEL_DBG
 	help
 	  Use this option to enable ISO channels data debug logs for the
 	  Bluetooth Audio functionality. This will enable debug logs for all
 	  ISO data received and sent.
 
-config BT_DEBUG_KEYS
-	bool "Bluetooth security keys debug"
-	depends on BT_HCI_HOST
-	depends on BT_SMP
-	help
-	  This option enables debug support for the handling of
-	  Bluetooth security keys.
-
-	  WARNING: This option prints out private security keys such as
-	  the Long Term Key.
-	  Use of this feature in production is strongly discouraged.
-
-config BT_DEBUG_SMP
-	bool "Bluetooth Security Manager Protocol (SMP) debug"
-	depends on BT_HCI_HOST
-	depends on BT_SMP
-	help
-	  This option enables debug support for the Bluetooth
-	  Security Manager Protocol (SMP).
-
-	  WARNING: This option prints out private security keys such as
-	  the Long Term Key.
-	  Use of this feature in production is strongly discouraged.
-
 config BT_SMP_SELFTEST
 	bool "Bluetooth SMP self tests executed on init"
-	depends on BT_DEBUG_SMP
+	depends on BT_SMP_LOG_LEVEL_DBG
 	help
 	  This option enables SMP self-tests executed on startup
 	  to verify security and crypto functions.
 
 config BT_SMP_FORCE_BREDR
 	bool "Force Bluetooth SMP over BR/EDR"
-	depends on BT_DEBUG_SMP
+	depends on BT_SMP_LOG_LEVEL_DBG
 	help
 	  This option enables SMP over BR/EDR even if controller is not
 	  supporting BR/EDR Secure Connections. This option is solely for
 	  testing and should never be enabled on production devices.
-
-config BT_DEBUG_RFCOMM
-	bool "Bluetooth RFCOMM debug"
-	depends on BT_RFCOMM
-	help
-	  This option enables debug support for the Bluetooth
-	  RFCOMM layer.
-
-config BT_DEBUG_HFP_HF
-	bool "Bluetooth Hands Free Profile (HFP) debug"
-	depends on BT_HFP_HF
-	help
-	  This option enables debug support for the Bluetooth
-	  Hands Free Profile (HFP).
-
-config BT_DEBUG_AVDTP
-	bool "Bluetooth AVDTP debug"
-	depends on BT_AVDTP
-	help
-	  This option enables debug support for the Bluetooth AVDTP.
-
-config BT_DEBUG_A2DP
-	bool "Bluetooth A2DP debug"
-	depends on BT_A2DP
-	help
-	  This option enables debug support for the Bluetooth
-	  A2DP profile.
-
-config BT_DEBUG_SDP
-	bool "Bluetooth Service Discovery Protocol (SDP) debug"
-	depends on BT_BREDR
-	help
-	  This option enables debug support for the Bluetooth
-	  Service Discovery Protocol (SDP).
-
-config BT_DEBUG_SERVICE
-	bool "Bluetooth Services debug"
-	depends on BT_CONN
-	help
-	  This option enables debug support for the Bluetooth
-	  Services.
-
-endif # BT_DEBUG
 
 config BT_LOG_SNIFFER_INFO
 	bool "Bluetooth log information for sniffer"

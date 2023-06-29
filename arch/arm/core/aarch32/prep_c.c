@@ -19,6 +19,11 @@
 #include <zephyr/kernel.h>
 #include <kernel_internal.h>
 #include <zephyr/linker/linker-defs.h>
+#include <zephyr/sys/barrier.h>
+
+#if !defined(CONFIG_CPU_CORTEX_M)
+#include <zephyr/arch/arm/aarch32/cortex_a_r/lib_helpers.h>
+#endif
 
 #if defined(CONFIG_ARMV7_R) || defined(CONFIG_ARMV7_A)
 #include <aarch32/cortex_a_r/stack.h>
@@ -49,8 +54,8 @@ void *_vector_table_pointer;
 static inline void relocate_vector_table(void)
 {
 	SCB->VTOR = VECTOR_ADDRESS & SCB_VTOR_TBLOFF_Msk;
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 }
 
 #elif defined(CONFIG_AARCH32_ARMV8_R)
@@ -59,8 +64,9 @@ static inline void relocate_vector_table(void)
 
 static inline void relocate_vector_table(void)
 {
+	write_sctlr(read_sctlr() & ~HIVECS);
 	write_vbar(VECTOR_ADDRESS & VBAR_MASK);
-	__ISB();
+	barrier_isync_fence_full();
 }
 
 #else
@@ -70,6 +76,9 @@ void __weak relocate_vector_table(void)
 {
 #if defined(CONFIG_XIP) && (CONFIG_FLASH_BASE_ADDRESS != 0) || \
     !defined(CONFIG_XIP) && (CONFIG_SRAM_BASE_ADDRESS != 0)
+#if !defined(CONFIG_CPU_CORTEX_M)
+	write_sctlr(read_sctlr() & ~HIVECS);
+#endif
 	size_t vector_size = (size_t)_vector_end - (size_t)_vector_start;
 	(void)memcpy(VECTOR_ADDRESS, _vector_start, vector_size);
 #elif defined(CONFIG_SW_VECTOR_RELAY) || defined(CONFIG_SW_VECTOR_RELAY_CLIENT)
@@ -141,8 +150,8 @@ static inline void z_arm_floating_point_init(void)
 	/* Make the side-effects of modifying the FPCCR be realized
 	 * immediately.
 	 */
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 
 	/* Initialize the Floating Point Status and Control Register. */
 #if defined(CONFIG_ARMV8_1_M_MAINLINE)
@@ -206,7 +215,7 @@ static inline void z_arm_floating_point_init(void)
 	/* Enable PL1 access to CP10, CP11 */
 	reg_val |= (CPACR_CP10(CPACR_FA) | CPACR_CP11(CPACR_FA));
 	__set_CPACR(reg_val);
-	__ISB();
+	barrier_isync_fence_full();
 
 #if !defined(CONFIG_FPU_SHARING)
 	/*

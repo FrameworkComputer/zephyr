@@ -9,6 +9,7 @@
  */
 
 #include <zephyr/bluetooth/l2cap.h>
+#include <zephyr/sys/iterable_sections.h>
 
 enum l2cap_conn_list_action {
 	BT_L2CAP_CHAN_LOOKUP,
@@ -274,7 +275,7 @@ void bt_l2cap_chan_del(struct bt_l2cap_chan *chan);
 
 const char *bt_l2cap_chan_state_str(bt_l2cap_chan_state_t state);
 
-#if defined(CONFIG_BT_DEBUG_L2CAP)
+#if defined(CONFIG_BT_L2CAP_LOG_LEVEL_DBG)
 void bt_l2cap_chan_set_state_debug(struct bt_l2cap_chan *chan,
 				   bt_l2cap_chan_state_t state,
 				   const char *func, int line);
@@ -283,7 +284,7 @@ void bt_l2cap_chan_set_state_debug(struct bt_l2cap_chan *chan,
 #else
 void bt_l2cap_chan_set_state(struct bt_l2cap_chan *chan,
 			     bt_l2cap_chan_state_t state);
-#endif /* CONFIG_BT_DEBUG_L2CAP */
+#endif /* CONFIG_BT_L2CAP_LOG_LEVEL_DBG */
 
 /*
  * Notify L2CAP channels of a change in encryption state passing additionally

@@ -14,18 +14,9 @@ config BT_MCS
 	depends on UTF8
 	select BT_CCID
 	select EXPERIMENTAL
+	select BT_GATT_DYNAMIC_DB
 	help
 	  This option enables support for the Media Control Service.
-
-if BT_MCS
-
-config BT_DEBUG_MCS
-	bool "Media Control Service debug"
-	help
-	  Use this option to enable Media Control Service debug logs for the
-	  Bluetooth Audio functionality.
-
-endif # BT_MCS
 
 #### Media Control Client ################################
 
@@ -129,13 +120,5 @@ config BT_MCC_SHELL
 	default y if BT_SHELL
 	help
 	  This option enables shell support for the Media Control Client.
-
-#### MCC Debug logs ####
-
-config BT_DEBUG_MCC
-	bool "Media Control Client debug"
-	help
-	  Use this option to enable Media Control Client debug logs for the
-	  Bluetooth Audio functionality.
 
 endif # BT_MCC

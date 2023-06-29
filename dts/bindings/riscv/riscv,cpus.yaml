@@ -6,7 +6,6 @@ include: cpu.yaml
 properties:
   mmu-type:
     description: Memory Management Unit (MMU)
-    required: false
     type: string
     enum:
       - riscv,sv32
@@ -19,6 +18,7 @@ properties:
     required: true
     type: string
     enum:
+      - rv32emc
       - rv32imac
       - rv32imafc
       - rv32imafcb

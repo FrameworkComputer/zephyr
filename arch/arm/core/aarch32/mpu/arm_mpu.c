@@ -7,6 +7,7 @@
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
+#include <zephyr/sys/barrier.h>
 #include "arm_core_mpu_dev.h"
 #include <zephyr/linker/linker-defs.h>
 #include <kernel_arch_data.h>
@@ -151,8 +152,8 @@ void arm_core_mpu_enable(void)
 	__set_SCTLR(val);
 
 	/* Make sure that all the registers are set before proceeding */
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 }
 
 /**
@@ -163,15 +164,15 @@ void arm_core_mpu_disable(void)
 	uint32_t val;
 
 	/* Force any outstanding transfers to complete before disabling MPU */
-	__DSB();
+	barrier_dsync_fence_full();
 
 	val = __get_SCTLR();
 	val &= ~SCTLR_MPU_ENABLE;
 	__set_SCTLR(val);
 
 	/* Make sure that all the registers are set before proceeding */
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 }
 #else
 /**
@@ -180,13 +181,17 @@ void arm_core_mpu_disable(void)
 void arm_core_mpu_enable(void)
 {
 	/* Enable MPU and use the default memory map as a
-	 * background region for privileged software access.
+	 * background region for privileged software access if desired.
 	 */
+#if defined(CONFIG_MPU_DISABLE_BACKGROUND_MAP)
+	MPU->CTRL = MPU_CTRL_ENABLE_Msk;
+#else
 	MPU->CTRL = MPU_CTRL_ENABLE_Msk | MPU_CTRL_PRIVDEFENA_Msk;
+#endif
 
 	/* Make sure that all the registers are set before proceeding */
-	__DSB();
-	__ISB();
+	barrier_dsync_fence_full();
+	barrier_isync_fence_full();
 }
 
 /**
@@ -195,7 +200,7 @@ void arm_core_mpu_enable(void)
 void arm_core_mpu_disable(void)
 {
 	/* Force any outstanding transfers to complete before disabling MPU */
-	__DMB();
+	barrier_dmem_fence_full();
 
 	/* Disable MPU */
 	MPU->CTRL = 0;
@@ -346,10 +351,16 @@ int z_arm_mpu_init(void)
 	/* Clean and invalidate data cache if it is enabled and
 	 * that was not already done at boot
 	 */
+#if defined(CONFIG_CPU_AARCH32_CORTEX_R)
+	if (__get_SCTLR() & SCTLR_C_Msk) {
+		L1C_CleanInvalidateDCacheAll();
+	}
+#else
 #if !defined(CONFIG_INIT_ARCH_HW_AT_BOOT)
 	if (SCB->CCR & SCB_CCR_DC_Msk) {
 		SCB_CleanInvalidateDCache();
 	}
+#endif
 #endif
 #endif /* CONFIG_NOCACHE_MEMORY */
 

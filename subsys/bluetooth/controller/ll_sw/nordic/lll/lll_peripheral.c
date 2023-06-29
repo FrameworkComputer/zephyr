@@ -20,6 +20,8 @@
 #include "util/dbuf.h"
 #include "util/util.h"
 
+#include "pdu_df.h"
+#include "pdu_vendor.h"
 #include "pdu.h"
 
 #include "lll.h"
@@ -34,9 +36,6 @@
 #include "lll_df_internal.h"
 #include "lll_tim_internal.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_ctlr_lll_periph
-#include "common/log.h"
 #include <soc.h>
 #include "hal/debug.h"
 

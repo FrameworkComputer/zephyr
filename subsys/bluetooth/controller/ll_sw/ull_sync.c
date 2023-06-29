@@ -7,7 +7,7 @@
 #include <zephyr/kernel.h>
 #include <soc.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_types.h>
 
 #include "util/util.h"
 #include "util/mem.h"
@@ -22,6 +22,8 @@
 
 #include "ticker/ticker.h"
 
+#include "pdu_df.h"
+#include "lll/pdu_vendor.h"
 #include "pdu.h"
 
 #include "lll.h"
@@ -46,9 +48,6 @@
 
 #include "ll.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_DEBUG_HCI_DRIVER)
-#define LOG_MODULE_NAME bt_ctlr_ull_sync
-#include "common/log.h"
 #include <soc.h>
 #include "hal/debug.h"
 
@@ -618,6 +617,9 @@ void ull_sync_setup_addr_check(struct ll_scan_set *scan, uint8_t addr_type,
 			 */
 			scan->periodic.adv_addr_type = addr_type;
 
+			/* Mark it as identity address from RPA (0x02, 0x03) */
+			scan->periodic.adv_addr_type += 2U;
+
 			/* Address matched */
 			scan->periodic.state = LL_SYNC_STATE_ADDR_MATCH;
 		}
@@ -634,6 +636,9 @@ void ull_sync_setup_addr_check(struct ll_scan_set *scan, uint8_t addr_type,
 		ll_rl_id_addr_get(rl_idx, &addr_type, addr);
 		if ((addr_type == scan->periodic.adv_addr_type) &&
 		    !memcmp(addr, scan->periodic.adv_addr, BDADDR_SIZE)) {
+			/* Mark it as identity address from RPA (0x02, 0x03) */
+			scan->periodic.adv_addr_type += 2U;
+
 			/* Identity address matched */
 			scan->periodic.state = LL_SYNC_STATE_ADDR_MATCH;
 		}
@@ -699,7 +704,7 @@ void ull_sync_setup(struct ll_scan_set *scan, struct ll_scan_aux_set *aux,
 	/* Remember the peer address.
 	 * NOTE: Peer identity address is copied here when privacy is enable.
 	 */
-	sync->peer_id_addr_type = scan->periodic.adv_addr_type;
+	sync->peer_id_addr_type = scan->periodic.adv_addr_type & 0x01;
 	(void)memcpy(sync->peer_id_addr, scan->periodic.adv_addr,
 		     sizeof(sync->peer_id_addr));
 #endif /* CONFIG_BT_CTLR_CHECK_SAME_PEER_SYNC ||
@@ -719,6 +724,26 @@ void ull_sync_setup(struct ll_scan_set *scan, struct ll_scan_aux_set *aux,
 	sync->timeout_reload = RADIO_SYNC_EVENTS((sync->timeout * 10U *
 						  USEC_PER_MSEC), interval_us);
 
+	/* Adjust Skip value so that there is minimum of 6 events that can be
+	 * listened to before Sync_Timeout occurs.
+	 * The adjustment of the skip value is controller implementation
+	 * specific and not specified by the Bluetooth Core Specification v5.3.
+	 * The Controller `may` use the Skip value, and the implementation here
+	 * covers a case where Skip value could lead to less events being
+	 * listened to until Sync_Timeout. Listening to more consecutive events
+	 * before Sync_Timeout increases probability of retaining the Periodic
+	 * Synchronization.
+	 */
+	if (sync->timeout_reload > CONN_ESTAB_COUNTDOWN) {
+		uint16_t skip_max = sync->timeout_reload - CONN_ESTAB_COUNTDOWN;
+
+		if (sync->skip > skip_max) {
+			sync->skip = skip_max;
+		}
+	} else {
+		sync->skip = 0U;
+	}
+
 	sync->sync_expire = CONN_ESTAB_COUNTDOWN;
 
 	/* Extract the SCA value from the sca_chm field of the sync_info
@@ -733,7 +758,7 @@ void ull_sync_setup(struct ll_scan_set *scan, struct ll_scan_aux_set *aux,
 #endif /* CONFIG_BT_CTLR_SYNC_ISO */
 
 	lll->window_widening_periodic_us =
-		ceiling_fraction(((lll_clock_ppm_local_get() +
+		DIV_ROUND_UP(((lll_clock_ppm_local_get() +
 				   lll_clock_ppm_get(sca)) *
 				  interval_us), USEC_PER_SEC);
 	lll->window_widening_max_us = (interval_us >> 1) - EVENT_IFS_US;
@@ -934,8 +959,7 @@ void ull_sync_established_report(memq_link_t *link, struct node_rx_hdr *rx)
 		 * setup.
 		 */
 
-		ll_rx_put(rx_establ->hdr.link, rx_establ);
-		ll_rx_sched();
+		ll_rx_put_sched(rx_establ->hdr.link, rx_establ);
 	}
 
 #if defined(CONFIG_BT_CTLR_SYNC_PERIODIC_CTE_TYPE_FILTERING)
@@ -959,8 +983,7 @@ void ull_sync_established_report(memq_link_t *link, struct node_rx_hdr *rx)
 		ull_scan_aux_setup(link, rx);
 	} else {
 		rx->type = NODE_RX_TYPE_RELEASE;
-		ll_rx_put(link, rx);
-		ll_rx_sched();
+		ll_rx_put_sched(link, rx);
 	}
 }
 
@@ -1126,7 +1149,7 @@ void ull_sync_chm_update(uint8_t sync_handle, uint8_t *acad, uint8_t acad_len)
 		ad_len = acad[PDU_ADV_DATA_HEADER_LEN_OFFSET];
 		if (ad_len &&
 		    (acad[PDU_ADV_DATA_HEADER_TYPE_OFFSET] ==
-		     BT_DATA_CHANNEL_MAP_UPDATE_IND)) {
+		     PDU_ADV_DATA_TYPE_CHANNEL_MAP_UPDATE_IND)) {
 			break;
 		}
 
@@ -1350,8 +1373,7 @@ static void sync_expire(void *param)
 	/* NOTE: footer param has already been populated during sync setup */
 
 	/* Enqueue the sync failed to established towards ULL context */
-	ll_rx_put(rx->hdr.link, rx);
-	ll_rx_sched();
+	ll_rx_put_sched(rx->hdr.link, rx);
 }
 
 static void ticker_stop_sync_lost_op_cb(uint32_t status, void *param)
@@ -1396,8 +1418,7 @@ static void sync_lost(void *param)
 	rx->hdr.rx_ftr.param = sync;
 
 	/* Enqueue the sync lost towards ULL context */
-	ll_rx_put(rx->hdr.link, rx);
-	ll_rx_sched();
+	ll_rx_put_sched(rx->hdr.link, rx);
 }
 
 #if defined(CONFIG_BT_CTLR_CHECK_SAME_PEER_SYNC)

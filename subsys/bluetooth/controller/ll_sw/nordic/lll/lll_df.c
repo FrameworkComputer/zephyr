@@ -6,7 +6,7 @@
 
 #include <stdint.h>
 #include <soc.h>
-#include <zephyr/bluetooth/hci.h>
+#include <zephyr/bluetooth/hci_types.h>
 
 #include "util/util.h"
 #include "util/memq.h"
@@ -17,6 +17,8 @@
 #include "hal/ccm.h"
 #include "hal/radio_df.h"
 
+#include "pdu_df.h"
+#include "pdu_vendor.h"
 #include "pdu.h"
 
 #include "lll.h"
@@ -28,9 +30,6 @@
 #include "lll_df.h"
 #include "lll_df_internal.h"
 
-#define BT_DBG_ENABLED IS_ENABLED(CONFIG_BT_CTLR_DF_DEBUG_ENABLE)
-#define LOG_MODULE_NAME bt_ctlr_lll_df
-#include "common/log.h"
 #include <soc.h>
 #include "hal/debug.h"
 
@@ -113,23 +112,18 @@ void lll_df_cte_tx_enable(struct lll_adv_sync *lll_sync, const struct pdu_adv *p
 			*cte_len_us = CTE_LEN_US(df_cfg->cte_length);
 		} else {
 			if (lll_sync->cte_started) {
-				lll_df_conf_cte_tx_disable();
+				lll_df_cte_tx_disable();
 				lll_sync->cte_started = 0U;
 			}
 			*cte_len_us = 0U;
 		}
 	} else {
 		if (lll_sync->cte_started) {
-			lll_df_conf_cte_tx_disable();
+			lll_df_cte_tx_disable();
 			lll_sync->cte_started = 0U;
 		}
 		*cte_len_us = 0U;
 	}
-}
-
-void lll_df_conf_cte_tx_disable(void)
-{
-	radio_df_reset();
 }
 #endif /* CONFIG_BT_CTLR_DF_ADV_CTE_TX */
 
@@ -398,5 +392,10 @@ void lll_df_cte_tx_configure(uint8_t cte_type, uint8_t cte_length, uint8_t num_a
 		radio_df_ant_switch_pattern_set(ant_ids, num_ant_ids);
 	}
 #endif /* CONFIG_BT_CTLR_DF_ANT_SWITCH_TX */
+}
+
+void lll_df_cte_tx_disable(void)
+{
+	radio_df_reset();
 }
 #endif /* CONFIG_BT_CTLR_DF_ADV_CTE_TX || CONFIG_BT_CTLR_DF_CONN_CTE_TX */

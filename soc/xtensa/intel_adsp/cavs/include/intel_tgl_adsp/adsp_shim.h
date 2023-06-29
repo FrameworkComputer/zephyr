@@ -120,8 +120,8 @@ struct cavs_win {
 #define ADSP_DMWBA_ENABLE   BIT(0)
 #define ADSP_DMWBA_READONLY BIT(1)
 
-#define CAVS_CLKCTL_OSC_SOURCE_MASK  BIT_MASK(2)
-#define CAVS_CLKCTL_OSC_REQUEST_MASK (~BIT_MASK(28))
+#define ADSP_CLKCTL_OSC_SOURCE_MASK  BIT_MASK(2)
+#define ADSP_CLKCTL_OSC_REQUEST_MASK (~BIT_MASK(28))
 
 /** LDO Control */
 #define ADSP_DSPRA_ADDRESS        (0x71A60)
@@ -144,5 +144,9 @@ struct cavs_win {
 #define DSP_INIT_GENO   ADSP_GENO_ADDRESS
 #define GENO_MDIVOSEL           BIT(1)
 #define GENO_DIOPTOSEL          BIT(2)
+
+#define DSPALHO_ASO_FLAG        BIT(0)
+#define DSPALHO_CSO_FLAG        BIT(1)
+#define DSPALHO_CFO_FLAG        BIT(2)
 
 #endif /* ZEPHYR_SOC_INTEL_ADSP_SHIM_H_ */

@@ -72,6 +72,8 @@ static const struct bt_mesh_comp comp = {
 static void setup_cdb(void)
 {
 	struct bt_mesh_cdb_app_key *key;
+	uint8_t app_key[16];
+	int err;
 
 	key = bt_mesh_cdb_app_key_alloc(net_idx, app_idx);
 	if (key == NULL) {
@@ -79,7 +81,13 @@ static void setup_cdb(void)
 		return;
 	}
 
-	bt_rand(key->keys[0].app_key, 16);
+	bt_rand(app_key, 16);
+
+	err = bt_mesh_cdb_app_key_import(key, 0, app_key);
+	if (err) {
+		printk("Failed to import appkey into cdb. Err:%d\n", err);
+		return;
+	}
 
 	if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
 		bt_mesh_cdb_app_key_store(key);
@@ -89,6 +97,7 @@ static void setup_cdb(void)
 static void configure_self(struct bt_mesh_cdb_node *self)
 {
 	struct bt_mesh_cdb_app_key *key;
+	uint8_t app_key[16];
 	uint8_t status = 0;
 	int err;
 
@@ -100,9 +109,15 @@ static void configure_self(struct bt_mesh_cdb_node *self)
 		return;
 	}
 
+	err = bt_mesh_cdb_app_key_export(key, 0, app_key);
+	if (err) {
+		printk("Failed to export appkey from cdb. Err:%d\n", err);
+		return;
+	}
+
 	/* Add Application Key */
 	err = bt_mesh_cfg_cli_app_key_add(self->net_idx, self->addr, self->net_idx, app_idx,
-					  key->keys[0].app_key, &status);
+					  app_key, &status);
 	if (err || status) {
 		printk("Failed to add app-key (err %d, status %d)\n", err,
 		       status);
@@ -131,6 +146,7 @@ static void configure_node(struct bt_mesh_cdb_node *node)
 	NET_BUF_SIMPLE_DEFINE(buf, BT_MESH_RX_SDU_MAX);
 	struct bt_mesh_comp_p0_elem elem;
 	struct bt_mesh_cdb_app_key *key;
+	uint8_t app_key[16];
 	struct bt_mesh_comp_p0 comp;
 	uint8_t status;
 	int err, elem_addr;
@@ -143,9 +159,14 @@ static void configure_node(struct bt_mesh_cdb_node *node)
 		return;
 	}
 
+	err = bt_mesh_cdb_app_key_export(key, 0, app_key);
+	if (err) {
+		printk("Failed to export appkey from cdb. Err:%d\n", err);
+		return;
+	}
+
 	/* Add Application Key */
-	err = bt_mesh_cfg_cli_app_key_add(net_idx, node->addr, net_idx, app_idx,
-					  key->keys[0].app_key, &status);
+	err = bt_mesh_cfg_cli_app_key_add(net_idx, node->addr, net_idx, app_idx, app_key, &status);
 	if (err || status) {
 		printk("Failed to add app-key (err %d status %d)\n", err, status);
 		return;
@@ -328,7 +349,7 @@ static void button_init(void)
 }
 #endif
 
-void main(void)
+int main(void)
 {
 	char uuid_hex_str[32 + 1];
 	int err;
@@ -339,7 +360,7 @@ void main(void)
 	err = bt_enable(NULL);
 	if (err) {
 		printk("Bluetooth init failed (err %d)\n", err);
-		return;
+		return 0;
 	}
 
 	printk("Bluetooth initialized\n");
@@ -388,4 +409,5 @@ void main(void)
 
 		printk("Added node 0x%04x\n", node_addr);
 	}
+	return 0;
 }

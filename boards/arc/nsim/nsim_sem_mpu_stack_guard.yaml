@@ -3,8 +3,10 @@ name: SEM Nsim simulator
 type: sim
 arch: arc
 simulation: nsim
+simulation_exec: nsimdrv
 toolchain:
   - zephyr
+  - cross-compile
   - arcmwdt
 testing:
   ignore_tags:

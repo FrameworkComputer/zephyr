@@ -10,12 +10,13 @@
 #include <tinycrypt/cmac_mode.h>
 #include <tinycrypt/constants.h>
 
-#define BT_DBG_ENABLED	IS_ENABLED(CONFIG_BT_DEBUG_CRYPTO)
-#define LOG_MODULE_NAME bt_crypto
 #include "common/bt_str.h"
-#include "common/log.h"
-
 #include "bt_crypto.h"
+
+#define LOG_LEVEL CONFIG_BT_CRYPTO_LOG_LEVEL
+#include <zephyr/logging/log.h>
+LOG_MODULE_REGISTER(bt_crypto);
+
 
 int bt_crypto_aes_cmac(const uint8_t *key, const uint8_t *in, size_t len, uint8_t *out)
 {
@@ -260,18 +261,34 @@ int bt_crypto_h7(const uint8_t salt[16], const uint8_t w[16], uint8_t res[16])
 
 int bt_crypto_h8(const uint8_t k[16], const uint8_t s[16], const uint8_t key_id[4], uint8_t res[16])
 {
+	uint8_t key_id_s[4];
+	uint8_t iks[16];
+	uint8_t ks[16];
+	uint8_t ss[16];
 	int err;
-	uint8_t ik[16];
 
-	err = bt_crypto_aes_cmac(s, k, 16, ik);
+	LOG_DBG("k %s", bt_hex(k, 16));
+	LOG_DBG("s %s", bt_hex(s, 16));
+	LOG_DBG("key_id %s", bt_hex(key_id, 4));
+
+	sys_memcpy_swap(ks, k, 16);
+	sys_memcpy_swap(ss, s, 16);
+
+	err = bt_crypto_aes_cmac(ss, ks, 16, iks);
 	if (err) {
 		return err;
 	}
 
-	err = bt_crypto_aes_cmac(ik, key_id, 4, res);
+	sys_memcpy_swap(key_id_s, key_id, 4);
+
+	err = bt_crypto_aes_cmac(iks, key_id_s, 4, res);
 	if (err) {
 		return err;
 	}
+
+	LOG_DBG("res %s", bt_hex(res, 16));
+
+	sys_mem_swap(res, 16);
 
 	return 0;
 }

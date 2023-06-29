@@ -37,7 +37,9 @@ doc/latex
 doc/themes/zephyr-docs-theme
 sanity-out*
 twister-out*
+bsim_out
 bsim_bt_out
+tests/RunResults.xml
 scripts/grub
 doc/reference/kconfig/*.rst
 doc/doc.warnings
@@ -63,3 +65,17 @@ TAGS
 tags
 
 .idea
+
+# from check_compliance.py
+BinaryFiles.txt
+Checkpatch.txt
+DevicetreeBindings.txt
+Gitlint.txt
+Identity.txt
+ImageSize.txt
+Kconfig.txt
+KconfigBasic.txt
+MaintainersFormat.txt
+Nits.txt
+Pylint.txt
+YAMLLint.txt

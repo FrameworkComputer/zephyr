@@ -174,11 +174,10 @@ static void gsm_rx(struct gsm_modem *gsm)
 	LOG_DBG("starting");
 
 	while (true) {
-		(void)k_sem_take(&gsm->gsm_data.rx_sem, K_FOREVER);
+		modem_iface_uart_rx_wait(&gsm->context.iface, K_FOREVER);
 
 		/* The handler will listen AT channel */
-		gsm->context.cmd_handler.process(&gsm->context.cmd_handler,
-						 &gsm->context.iface);
+		modem_cmd_handler_process(&gsm->context.cmd_handler, &gsm->context.iface);
 	}
 }
 
@@ -615,8 +614,8 @@ static struct net_if *ppp_net_if(void)
 
 static void set_ppp_carrier_on(struct gsm_modem *gsm)
 {
-	static const struct ppp_api *api;
 	const struct device *ppp_dev = device_get_binding(CONFIG_NET_PPP_DRV_NAME);
+	const struct ppp_api *api;
 	struct net_if *iface = gsm->iface;
 	int ret;
 
@@ -625,21 +624,15 @@ static void set_ppp_carrier_on(struct gsm_modem *gsm)
 		return;
 	}
 
-	if (api == NULL) {
-		api = (const struct ppp_api *)ppp_dev->api;
+	api = (const struct ppp_api *)ppp_dev->api;
 
-		/* For the first call, we want to call ppp_start()... */
-		ret = api->start(ppp_dev);
-		if (ret < 0) {
-			LOG_ERR("ppp start returned %d", ret);
-		}
-	} else {
-		/* ...but subsequent calls should be to ppp_enable() */
-		ret = net_if_l2(iface)->enable(iface, true);
-		if (ret < 0) {
-			LOG_ERR("ppp l2 enable returned %d", ret);
-		}
+	ret = api->start(ppp_dev);
+
+	if (ret < 0) {
+		LOG_ERR("ppp start returned %d", ret);
 	}
+
+	net_if_up(iface);
 }
 
 static void query_rssi(struct gsm_modem *gsm, bool lock)
@@ -826,7 +819,7 @@ attaching:
 		/* Read connection quality (RSSI) before PPP carrier is ON */
 		query_rssi_nolock(gsm);
 
-		if (!((gsm->minfo.mdm_rssi > 0) && (gsm->minfo.mdm_rssi != GSM_RSSI_INVALID) &&
+		if (!((gsm->minfo.mdm_rssi) && (gsm->minfo.mdm_rssi != GSM_RSSI_INVALID) &&
 			(gsm->minfo.mdm_rssi < GSM_RSSI_MAXVAL))) {
 
 			LOG_DBG("Not valid RSSI, %s", "retrying...");
@@ -1178,6 +1171,8 @@ unlock:
 
 void gsm_ppp_stop(const struct device *dev)
 {
+	const struct device *ppp_dev = device_get_binding(CONFIG_NET_PPP_DRV_NAME);
+	const struct ppp_api *api = (const struct ppp_api *)ppp_dev->api;
 	struct gsm_modem *gsm = dev->data;
 	struct net_if *iface = gsm->iface;
 	struct k_work_sync work_sync;
@@ -1192,11 +1187,13 @@ void gsm_ppp_stop(const struct device *dev)
 		(void)k_work_cancel_delayable_sync(&gsm->rssi_work_handle, &work_sync);
 	}
 
+	api->stop(ppp_dev);
+
 	gsm_ppp_lock(gsm);
 
 	/* wait for the interface to be properly down */
 	if (net_if_is_up(iface)) {
-		(void)(net_if_l2(iface)->enable(iface, false));
+		net_if_down(ppp_net_if());
 		(void)k_sem_take(&gsm->sem_if_down, K_FOREVER);
 	}
 
@@ -1273,19 +1270,24 @@ static int gsm_init(const struct device *dev)
 	(void)k_mutex_init(&gsm->lock);
 	gsm->dev = dev;
 
-	gsm->cmd_handler_data.cmds[CMD_RESP] = response_cmds;
-	gsm->cmd_handler_data.cmds_len[CMD_RESP] = ARRAY_SIZE(response_cmds);
-	gsm->cmd_handler_data.match_buf = &gsm->cmd_match_buf[0];
-	gsm->cmd_handler_data.match_buf_len = sizeof(gsm->cmd_match_buf);
-	gsm->cmd_handler_data.buf_pool = &gsm_recv_pool;
-	gsm->cmd_handler_data.alloc_timeout = K_NO_WAIT;
-	gsm->cmd_handler_data.eol = "\r";
+	const struct modem_cmd_handler_config cmd_handler_config = {
+		.match_buf = &gsm->cmd_match_buf[0],
+		.match_buf_len = sizeof(gsm->cmd_match_buf),
+		.buf_pool = &gsm_recv_pool,
+		.alloc_timeout = K_NO_WAIT,
+		.eol = "\r",
+		.user_data = NULL,
+		.response_cmds = response_cmds,
+		.response_cmds_len = ARRAY_SIZE(response_cmds),
+		.unsol_cmds = NULL,
+		.unsol_cmds_len = 0,
+	};
 
 	(void)k_sem_init(&gsm->sem_response, 0, 1);
 	(void)k_sem_init(&gsm->sem_if_down, 0, 1);
 
-	ret = modem_cmd_handler_init(&gsm->context.cmd_handler,
-				   &gsm->cmd_handler_data);
+	ret = modem_cmd_handler_init(&gsm->context.cmd_handler, &gsm->cmd_handler_data,
+				     &cmd_handler_config);
 	if (ret < 0) {
 		LOG_DBG("cmd handler error %d", ret);
 		return ret;
@@ -1305,13 +1307,15 @@ static int gsm_init(const struct device *dev)
 #endif	/* CONFIG_MODEM_SHELL */
 
 	gsm->context.is_automatic_oper = false;
-	gsm->gsm_data.rx_rb_buf = &gsm->gsm_rx_rb_buf[0];
-	gsm->gsm_data.rx_rb_buf_len = sizeof(gsm->gsm_rx_rb_buf);
-	gsm->gsm_data.hw_flow_control = DT_PROP(GSM_UART_NODE,
-						hw_flow_control);
 
-	ret = modem_iface_uart_init(&gsm->context.iface, &gsm->gsm_data,
-				DEVICE_DT_GET(GSM_UART_NODE));
+	const struct modem_iface_uart_config uart_config = {
+		.rx_rb_buf = &gsm->gsm_rx_rb_buf[0],
+		.rx_rb_buf_len = sizeof(gsm->gsm_rx_rb_buf),
+		.hw_flow_control = DT_PROP(GSM_UART_NODE, hw_flow_control),
+		.dev = DEVICE_DT_GET(GSM_UART_NODE),
+	};
+
+	ret = modem_iface_uart_init(&gsm->context.iface, &gsm->gsm_data, &uart_config);
 	if (ret < 0) {
 		LOG_DBG("iface uart error %d", ret);
 		return ret;
@@ -1364,5 +1368,5 @@ static int gsm_init(const struct device *dev)
 	return 0;
 }
 
-DEVICE_DT_DEFINE(DT_INST(0, zephyr_gsm_ppp), gsm_init, NULL, &gsm, NULL,
+DEVICE_DT_DEFINE(DT_DRV_INST(0), gsm_init, NULL, &gsm, NULL,
 		 POST_KERNEL, CONFIG_MODEM_GSM_INIT_PRIORITY, NULL);

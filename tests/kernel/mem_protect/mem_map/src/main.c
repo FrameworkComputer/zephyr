@@ -38,7 +38,8 @@ void k_sys_fatal_error_handler(unsigned int reason, const z_arch_esf_t *pEsf)
 		expect_fault = false;
 		ztest_test_pass();
 	} else {
-		printk("Unexpected fault during test");
+		printk("Unexpected fault during test\n");
+		printk("PROJECT EXECUTION FAILED\n");
 		k_fatal_halt(reason);
 	}
 }
@@ -212,6 +213,46 @@ ZTEST(mem_map, test_z_phys_unmap)
 	mapped[0] = 42;
 	printk("shouldn't get here\n");
 	ztest_test_fail();
+}
+
+/**
+ * Show that z_phys_unmap() can reclaim the virtual region correctly.
+ *
+ * @ingroup kernel_memprotect_tests
+ */
+ZTEST(mem_map, test_z_phys_map_unmap_reclaim_addr)
+{
+	uint8_t *mapped, *mapped_old;
+	uint8_t *buf = test_page + BUF_OFFSET;
+
+	/* Map the buffer the first time. */
+	z_phys_map(&mapped, z_mem_phys_addr(buf),
+		   BUF_SIZE, BASE_FLAGS);
+
+	printk("Mapped (1st time): %p\n", mapped);
+
+	/* Store the pointer for later comparison. */
+	mapped_old = mapped;
+
+	/*
+	 * Unmap the buffer.
+	 * This should reclaim the bits in virtual region tracking,
+	 * so that the next time z_phys_map() is called with
+	 * the same arguments, it will return the same address.
+	 */
+	z_phys_unmap(mapped, BUF_SIZE);
+
+	/*
+	 * Map again the same buffer using same parameters.
+	 * It should give us back the same virtual address
+	 * as above when it is mapped the first time.
+	 */
+	z_phys_map(&mapped, z_mem_phys_addr(buf),
+		   BUF_SIZE, BASE_FLAGS);
+
+	printk("Mapped (2nd time): %p\n", mapped);
+
+	zassert_equal(mapped, mapped_old, "Virtual memory region not reclaimed!");
 }
 
 /**

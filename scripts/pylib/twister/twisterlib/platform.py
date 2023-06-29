@@ -38,6 +38,7 @@ class Platform:
         self.arch = ""
         self.type = "na"
         self.simulation = "na"
+        self.simulation_exec = None
         self.supported_toolchains = []
         self.env = []
         self.env_satisfied = True
@@ -57,6 +58,7 @@ class Platform:
         self.ignore_tags = testing.get("ignore_tags", [])
         self.only_tags = testing.get("only_tags", [])
         self.default = testing.get("default", False)
+        self.binaries = testing.get("binaries", [])
         # if no flash size is specified by the board, take a default of 512K
         self.flash = data.get("flash", 512)
         self.supported = set()
@@ -67,7 +69,31 @@ class Platform:
         self.arch = data['arch']
         self.type = data.get('type', "na")
         self.simulation = data.get('simulation', "na")
+        self.simulation_exec = data.get('simulation_exec')
         self.supported_toolchains = data.get("toolchain", [])
+        if self.supported_toolchains is None:
+            self.supported_toolchains = []
+
+        support_toolchain_variants = {
+          "arc": ["zephyr", "cross-compile", "xtools", "arcmwdt"],
+          "arm": ["zephyr", "gnuarmemb", "xtools", "armclang", "llvm"],
+          "arm64": ["zephyr", "cross-compile"],
+          "mips": ["zephyr", "xtools"],
+          "nios2": ["zephyr", "xtools"],
+          "riscv32": ["zephyr", "cross-compile", "xtools"],
+          "riscv64": ["zephyr"],
+          "posix": ["host", "llvm"],
+          "sparc": ["zephyr", "xtools"],
+          "x86": ["zephyr", "xtools", "llvm"],
+          # Xtensa is not listed on purpose, since there is no single toolchain
+          # that is supported on all board targets for xtensa.
+        }
+
+        if self.arch in support_toolchain_variants:
+            for toolchain in support_toolchain_variants[self.arch]:
+                if toolchain not in self.supported_toolchains:
+                    self.supported_toolchains.append(toolchain)
+
         self.env = data.get("env", [])
         self.env_satisfied = True
         for env in self.env:

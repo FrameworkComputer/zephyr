@@ -21,7 +21,8 @@
 #ifndef ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_MCC_
 #define ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_MCC_
 
-#include <zephyr/types.h>
+#include <stdint.h>
+
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/net/buf.h>
 #include <zephyr/bluetooth/audio/media_proxy.h>
@@ -923,7 +924,7 @@ int bt_mcc_otc_read_current_group_object(struct bt_conn *conn);
 int bt_mcc_otc_read_parent_group_object(struct bt_conn *conn);
 
 #if defined(CONFIG_BT_MCC_SHELL)
-struct bt_ots_client *bt_mcc_otc_inst(void);
+struct bt_ots_client *bt_mcc_otc_inst(struct bt_conn *conn);
 #endif /* defined(CONFIG_BT_MCC_SHELL) */
 #endif /* CONFIG_BT_OTS_CLIENT */
 

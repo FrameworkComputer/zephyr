@@ -12,9 +12,11 @@
 #include <soc/system_reg.h>
 #include <soc/cache_memory.h>
 #include "hal/soc_ll.h"
+#include "hal/wdt_hal.h"
 #include "esp_cpu.h"
 #include "esp_timer.h"
 #include "esp_spi_flash.h"
+#include "esp_clk_internal.h"
 #include <soc/interrupt_reg.h>
 #include <zephyr/drivers/interrupt_controller/intc_esp32c3.h>
 
@@ -24,6 +26,10 @@
 #include <zephyr/toolchain/gcc.h>
 #include <soc.h>
 
+#ifdef CONFIG_MCUBOOT
+#include "bootloader_init.h"
+#endif /* CONFIG_MCUBOOT */
+
 /*
  * This is written in C rather than assembly since, during the port bring up,
  * Zephyr is being booted by the Espressif bootloader.  With it, the C stack
@@ -31,9 +37,6 @@
  */
 void __attribute__((section(".iram1"))) __esp_platform_start(void)
 {
-	volatile uint32_t *wdt_rtc_protect = (uint32_t *)RTC_CNTL_WDTWPROTECT_REG;
-	volatile uint32_t *wdt_rtc_reg = (uint32_t *)RTC_CNTL_WDTCONFIG0_REG;
-
 #ifdef CONFIG_RISCV_GP
 	/* Configure the global pointer register
 	 * (This should be the first thing startup does, as any other piece of code could be
@@ -53,13 +56,21 @@ void __attribute__((section(".iram1"))) __esp_platform_start(void)
 	/* Disable normal interrupts. */
 	csr_read_clear(mstatus, MSTATUS_MIE);
 
+#ifdef CONFIG_MCUBOOT
+	/* MCUboot early initialisation.
+	 */
+	bootloader_init();
+
+#else
 	/* ESP-IDF 2nd stage bootloader enables RTC WDT to check on startup sequence
 	 * related issues in application. Hence disable that as we are about to start
 	 * Zephyr environment.
 	 */
-	*wdt_rtc_protect = RTC_CNTL_WDT_WKEY_VALUE;
-	*wdt_rtc_reg &= ~RTC_CNTL_WDT_EN;
-	*wdt_rtc_protect = 0;
+	wdt_hal_context_t rtc_wdt_ctx = {.inst = WDT_RWDT, .rwdt_dev = &RTCCNTL};
+
+	wdt_hal_write_protect_disable(&rtc_wdt_ctx);
+	wdt_hal_disable(&rtc_wdt_ctx);
+	wdt_hal_write_protect_enable(&rtc_wdt_ctx);
 
 	/* Configure the Cache MMU size for instruction and rodata in flash. */
 	extern uint32_t esp_rom_cache_set_idrom_mmu_size(uint32_t irom_size,
@@ -81,11 +92,18 @@ void __attribute__((section(".iram1"))) __esp_platform_start(void)
 	REG_CLR_BIT(SYSTEM_WIFI_CLK_EN_REG, SYSTEM_WIFI_CLK_SDIOSLAVE_EN);
 	SET_PERI_REG_MASK(SYSTEM_WIFI_CLK_EN_REG, SYSTEM_WIFI_CLK_EN);
 
+	/* Configures the CPU clock, RTC slow and fast clocks, and performs
+	 * RTC slow clock calibration.
+	 */
+	esp_clk_init();
+
 	esp_timer_early_init();
 
 #if CONFIG_SOC_FLASH_ESP32
 	spi_flash_guard_set(&g_flash_guard_default_ops);
 #endif
+
+#endif /* CONFIG_MCUBOOT */
 
 	/*Initialize the esp32c3 interrupt controller */
 	esp_intr_initialize();

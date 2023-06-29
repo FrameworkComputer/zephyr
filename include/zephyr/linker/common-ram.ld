@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 
+#include <zephyr/linker/iterable_sections.h>
+
 #if defined(CONFIG_NETWORKING)
 #ifndef NETWORK_RAM_SECTIONS
 #define NETWORK_RAM_SECTIONS \
@@ -37,44 +39,19 @@
         } GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 
 #if CONFIG_PM_DEVICE
-	SECTION_DATA_PROLOGUE(pm_device_slots, (NOLOAD),)
-	{
-		__pm_device_slots_start = .;
-		KEEP(*(".z_pm_device_slots"));
-		__pm_device_slots_end = .;
-	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
+	ITERABLE_SECTION_RAM(pm_device_slots, 4)
 #endif
 
-#if defined(CONFIG_HAS_DYNAMIC_DEVICE_HANDLES)
-	SECTION_DATA_PROLOGUE(device_handles,,)
+#if defined(CONFIG_DEVICE_DEPS_DYNAMIC)
+	SECTION_DATA_PROLOGUE(device_deps,,)
 	{
-#include "device-handles.ld"
+#include "device-deps.ld"
 	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
-#endif 	/* CONFIG_HAS_DYNAMIC_DEVICE_HANDLES */
-
-	SECTION_DATA_PROLOGUE(initshell,,)
-	{
-		/* link in shell initialization objects for all modules that
-		 * use shell and their shell commands are automatically
-		 * initialized by the kernel.
-		 */
-		__shell_module_start = .;
-		KEEP(*(".shell_module_*"));
-		__shell_module_end = .;
-		__shell_cmd_start = .;
-		KEEP(*(".shell_cmd_*"));
-		__shell_cmd_end = .;
-	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
+#endif 	/* CONFIG_DEVICE_DEPS_DYNAMIC */
 
 	ITERABLE_SECTION_RAM_GC_ALLOWED(log_mpsc_pbuf, 4)
 	ITERABLE_SECTION_RAM(log_msg_ptr, 4)
-
-	SECTION_DATA_PROLOGUE(log_dynamic_sections,,)
-	{
-		__log_dynamic_start = .;
-		KEEP(*(SORT(.log_dynamic_*)));
-		__log_dynamic_end = .;
-	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
+	ITERABLE_SECTION_RAM(log_dynamic, 4)
 
 #ifdef CONFIG_USERSPACE
 	/* All kernel objects within are assumed to be either completely
@@ -100,24 +77,18 @@
 	ITERABLE_SECTION_RAM_GC_ALLOWED(k_queue, 4)
 	ITERABLE_SECTION_RAM_GC_ALLOWED(k_condvar, 4)
 
-	SECTION_DATA_PROLOGUE(_net_buf_pool_area,,SUBALIGN(4))
-	{
-		_net_buf_pool_list = .;
-		KEEP(*(SORT_BY_NAME("._net_buf_pool.static.*")))
-	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
+	ITERABLE_SECTION_RAM(net_buf_pool, 4)
 
 #if defined(CONFIG_NETWORKING)
 	NETWORK_RAM_SECTIONS
 #endif /* NETWORKING */
 
+#if defined(CONFIG_PCIE)
+	ITERABLE_SECTION_RAM(pcie_dev, 4)
+#endif /* PCIE */
+
 #if defined(CONFIG_UART_MUX)
-	SECTION_DATA_PROLOGUE(uart_mux,,SUBALIGN(4))
-	{
-		__uart_mux_start = .;
-		*(".uart_mux.*")
-		KEEP(*(SORT_BY_NAME(".uart_mux.*")))
-		__uart_mux_end = .;
-	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
+	ITERABLE_SECTION_RAM(uart_mux, 4)
 #endif
 
 #if defined(CONFIG_USB_DEVICE_STACK)
@@ -142,20 +113,16 @@
 	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
 #endif /* CONFIG_USB_DEVICE_BOS */
 
-
 #if defined(CONFIG_RTIO)
-	SECTION_DATA_PROLOGUE(rtio,,SUBALIGN(4))
-	{
-		__rtio_start = .;
-		*(".rtio.*")
-		KEEP(*(SORT_BY_NAME(".rtio.*")))
-		__rtio_end = .;
-	} GROUP_DATA_LINK_IN(RAMABLE_REGION, ROMABLE_REGION)
-
 	ITERABLE_SECTION_RAM(rtio, 4)
 	ITERABLE_SECTION_RAM(rtio_iodev, 4)
+	ITERABLE_SECTION_RAM(rtio_sqe_pool, 4)
+	ITERABLE_SECTION_RAM(rtio_cqe_pool, 4)
 #endif /* CONFIG_RTIO */
 
+#if defined(CONFIG_SENSING)
+	ITERABLE_SECTION_RAM(sensing_sensor, 4)
+#endif /* CONFIG_SENSING */
 
 #ifdef CONFIG_USERSPACE
 	_static_kernel_objects_end = .;

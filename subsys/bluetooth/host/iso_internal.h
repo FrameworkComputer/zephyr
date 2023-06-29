@@ -72,10 +72,6 @@ struct bt_iso_big {
 
 #define iso(buf) ((struct iso_data *)net_buf_user_data(buf))
 
-#if defined(CONFIG_BT_ISO_MAX_CHAN)
-extern struct bt_conn iso_conns[CONFIG_BT_ISO_MAX_CHAN];
-#endif
-
 /* Process ISO buffer */
 void hci_iso(struct net_buf *buf);
 
@@ -150,7 +146,7 @@ struct net_buf *bt_iso_create_frag_timeout(size_t reserve, k_timeout_t timeout);
 	bt_iso_create_frag_timeout(_reserve, K_FOREVER)
 #endif
 
-#if defined(CONFIG_BT_DEBUG_ISO)
+#if defined(CONFIG_BT_ISO_LOG_LEVEL_DBG)
 void bt_iso_chan_set_state_debug(struct bt_iso_chan *chan,
 				 enum bt_iso_state state,
 				 const char *func, int line);
@@ -158,7 +154,7 @@ void bt_iso_chan_set_state_debug(struct bt_iso_chan *chan,
 	bt_iso_chan_set_state_debug(_chan, _state, __func__, __LINE__)
 #else
 void bt_iso_chan_set_state(struct bt_iso_chan *chan, enum bt_iso_state state);
-#endif /* CONFIG_BT_DEBUG_ISO */
+#endif /* CONFIG_BT_ISO_LOG_LEVEL_DBG */
 
 /* Process incoming data for a connection */
 void bt_iso_recv(struct bt_conn *iso, struct net_buf *buf, uint8_t flags);

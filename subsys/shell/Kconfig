@@ -90,7 +90,7 @@ config SHELL_ARGC_MAX
 
 config SHELL_TAB
 	bool "The Tab button support in shell"
-	default y if !SHELL_MINIMAL
+	default y if !SHELL_MINIMAL && !SHELL_BACKEND_RTT
 	help
 	  Enable using the Tab button in the shell. The button
 	  can be used for prompting commands, or for autocompletion.
@@ -125,7 +125,7 @@ config SHELL_START_OBSCURED
 
 config SHELL_VT100_COMMANDS
 	bool "VT100 commands in shell"
-	default y
+	default y if !SHELL_BACKEND_RTT
 	help
 	  Enables VT100 commands in shell (e.g. cursor position, clear screen etc.).
 
@@ -245,6 +245,19 @@ config SHELL_LOG_FORMAT_TIMESTAMP
 	help
 	  Enable timestamp formatting.
 
+config SHELL_AUTOSTART
+	bool "Auto-start shell at boot"
+	default y
+	help
+	  If enabled, shell will be automatically started.
+
+config SHELL_CMDS_RETURN_VALUE
+	bool "Retval command"
+	depends on SHELL_CMDS
+	default y
+	help
+	  This option enables the retval command. It is used to retrieve
+	  the return value from the most recently executed command.
 
 source "subsys/shell/modules/Kconfig"
 

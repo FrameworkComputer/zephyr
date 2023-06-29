@@ -21,13 +21,14 @@ Information included in the image information header:
 '''
 
 import argparse
+import re
 from elftools.elf.elffile import ELFFile
 
 
 def write_header(filename, segments, adjusted_lma):
     content = []
 
-    filename_we = filename.split('.h')[0].upper()
+    filename_we = re.sub(r'[\W]','_', filename).upper()
     content.append(f'#ifndef {filename_we}_H')
     content.append(f'#define {filename_we}_H')
     content.append(f'')
@@ -65,7 +66,7 @@ def main():
     parser = argparse.ArgumentParser(description='''
     Process ELF file and extract image information.
     Create header file with extracted image information which can be included
-    in other build systems.''')
+    in other build systems.''', allow_abbrev=False)
 
     parser.add_argument('--header-file', required=True,
                         help="""Header file to write with image data.""")
