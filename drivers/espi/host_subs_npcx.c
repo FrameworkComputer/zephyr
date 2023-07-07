@@ -251,8 +251,13 @@ static void host_kbc_ibf_isr(const void *arg)
 
 	/* KBC Input Buffer Full event */
 	kbc_evt->evt = HOST_KBC_EVT_IBF;
+#if defined(CONFIG_THIRD_PARTY_CUSTOMIZED_DESIGN)
+	/* The data in KBC Input Buffer */
+	kbc_evt->data = inst_kbc->SHIKMDI;
+#else
 	/* The data in KBC Input Buffer */
 	kbc_evt->data = inst_kbc->HIKMDI;
+#endif
 	/*
 	 * Indicates if the host sent a command or data.
 	 * 0 = data
@@ -794,6 +799,9 @@ uint8_t host_c2h_read_io_cfg_reg(uint8_t reg_index)
 int npcx_host_periph_read_request(enum lpc_peripheral_opcode op,
 								uint32_t *data)
 {
+#if defined(CONFIG_THIRD_PARTY_CUSTOMIZED_DESIGN)
+	uint32_t kbc_data;
+#endif
 	if (op >= E8042_START_OPCODE && op <= E8042_MAX_OPCODE) {
 		struct kbc_reg *const inst_kbc = host_sub_cfg.inst_kbc;
 
@@ -817,6 +825,12 @@ int npcx_host_periph_read_request(enum lpc_peripheral_opcode op,
 		case E8042_READ_KB_STS:
 			*data = inst_kbc->HIKMST;
 			break;
+#if defined(CONFIG_THIRD_PARTY_CUSTOMIZED_DESIGN)
+		case E8042_CLEAR_IBF:
+			kbc_data = inst_kbc->HIKMDI;
+			*data = kbc_data;
+			break;
+#endif
 		default:
 			return -EINVAL;
 		}

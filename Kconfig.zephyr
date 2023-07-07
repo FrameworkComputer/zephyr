@@ -883,3 +883,10 @@ config COMPAT_INCLUDES
 	  deprecated header files.
 
 endmenu
+
+config THIRD_PARTY_CUSTOMIZED_DESIGN
+	bool "support framework third party function"
+	default n
+	help
+	  because framework use windows platform, will need change third
+	  party function to assort windows.
