@@ -890,3 +890,10 @@ config THIRD_PARTY_CUSTOMIZED_DESIGN
 	help
 	  because framework use windows platform, will need change third
 	  party function to assort windows.
+
+config THIRD_PARTY_CUSTOMIZED_IBF_DELAY
+	bool "add delay for framework at subs ibf handle"
+	default n
+	help
+	  at framework have 8042 data loss issue, need to add a small delay
+	  to make sure we wouldn't loss data in the ibf handle.

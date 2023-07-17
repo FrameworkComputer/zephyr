@@ -249,8 +249,14 @@ static void host_kbc_ibf_isr(const void *arg)
 	struct espi_evt_data_kbc *kbc_evt =
 				(struct espi_evt_data_kbc *)&evt.evt_data;
 
+#if defined(CONFIG_THIRD_PARTY_CUSTOMIZED_IBF_DELAY)
+	k_busy_wait(4);
+#endif
 	/* KBC Input Buffer Full event */
 	kbc_evt->evt = HOST_KBC_EVT_IBF;
+#if defined(CONFIG_THIRD_PARTY_CUSTOMIZED_IBF_DELAY)
+	k_busy_wait(4);
+#endif
 #if defined(CONFIG_THIRD_PARTY_CUSTOMIZED_DESIGN)
 	/* The data in KBC Input Buffer */
 	kbc_evt->data = inst_kbc->SHIKMDI;
@@ -265,6 +271,9 @@ static void host_kbc_ibf_isr(const void *arg)
 	 */
 	kbc_evt->type = IS_BIT_SET(inst_kbc->HIKMST, NPCX_HIKMST_A2);
 
+#if defined(CONFIG_THIRD_PARTY_CUSTOMIZED_IBF_DELAY)
+	k_busy_wait(40);
+#endif
 	LOG_DBG("%s: kbc data 0x%02x", __func__, evt.evt_data);
 	espi_send_callbacks(host_sub_data.callbacks, host_sub_data.host_bus_dev,
 							evt);
