@@ -352,6 +352,26 @@ static void espi_vw_config_input(const struct device *dev,
 	LOG_DBG("VWEVMS%d 0x%08X", idx, inst->VWEVMS[idx]);
 }
 
+#if defined(CONFIG_ESPI_VWIRE_INDEX_33H)
+/* eSPI local virtual-wire 33h service functions */
+static void espi_vw_config_33h_input(const struct device *dev)
+{
+	struct espi_reg *const inst = HAL_INSTANCE(dev);
+	const int idx = 8;
+
+	SET_FIELD(inst->VWEVMS[idx], NPCX_VWEVMS_INDEX, 0x33);
+
+	/* IE & WE bits are already set? */
+	if (IS_BIT_SET(inst->VWEVMS[idx], NPCX_VWEVMS_IE) &&
+		IS_BIT_SET(inst->VWEVMS[idx], NPCX_VWEVMS_WE))
+		return;
+
+	/* Set IE & WE bits in VWEVMS */
+	inst->VWEVMS[idx] |= BIT(NPCX_VWEVMS_IE) | BIT(NPCX_VWEVMS_WE) | BIT(NPCX_VWEVMS_INDEX_EN);
+	LOG_DBG("33h VWEVMS%d 0x%08X", idx, inst->VWEVMS[idx]);
+}
+#endif
+
 static void espi_vw_config_output(const struct device *dev,
 				const struct npcx_vw_out_config *config_out)
 {
@@ -1239,7 +1259,10 @@ static int espi_npcx_init(const struct device *dev)
 	/* Configure Virtual Wire input signals */
 	for (i = 0; i < ARRAY_SIZE(vw_in_tbl); i++)
 		espi_vw_config_input(dev, &vw_in_tbl[i]);
-
+#if defined(CONFIG_ESPI_VWIRE_INDEX_33H)
+	/* Configure Virtual Wire index 33h */
+	espi_vw_config_33h_input(dev);
+#endif
 	/* Configure Virtual Wire output signals */
 	for (i = 0; i < ARRAY_SIZE(vw_out_tbl); i++)
 		espi_vw_config_output(dev, &vw_out_tbl[i]);

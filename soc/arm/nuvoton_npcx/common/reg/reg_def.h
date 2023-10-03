@@ -760,6 +760,8 @@ struct espi_reg {
 #define NPCX_ESPISTS_ESPIRST_LVL         24
 #define NPCX_VWEVMS_WIRE                 FIELD(0, 4)
 #define NPCX_VWEVMS_VALID                FIELD(4, 4)
+#define NPCX_VWEVMS_INDEX                FIELD(8, 7)
+#define NPCX_VWEVMS_INDEX_EN             15
 #define NPCX_VWEVMS_IE                   18
 #define NPCX_VWEVMS_WE                   20
 #define NPCX_VWEVSM_WIRE                 FIELD(0, 4)

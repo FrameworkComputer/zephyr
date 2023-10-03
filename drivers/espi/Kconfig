@@ -79,6 +79,17 @@ config ESPI_FLASH_CHANNEL
 	help
 	  eSPI Controller supports flash channel.
 
+if ESPI_VWIRE_CHANNEL
+
+config ESPI_VWIRE_INDEX_33H
+	bool "Enable virtual wire index 33h"
+	default n
+	help
+	  AMD z-state use the virtual wire index 33h to notify the system state
+	  to EC.
+
+endif #ESPI_VWIRE_CHANNEL
+
 if ESPI_PERIPHERAL_CHANNEL
 
 config ESPI_PERIPHERAL_UART
