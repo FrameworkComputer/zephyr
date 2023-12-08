@@ -914,7 +914,8 @@ static void i2c_ctrl_isr(const struct device *dev)
 		tmp = i2c_ctrl_fifo_read(dev);
 
 		LOG_ERR("Bus error occurred on i2c port%02x!", data->port);
-		data->oper_state = NPCX_I2C_ERROR_RECOVERY;
+		if (data->oper_state != NPCX_I2C_IDLE)
+			data->oper_state = NPCX_I2C_ERROR_RECOVERY;
 
 		/* I/O error occurred */
 		i2c_ctrl_notify(dev, -EIO);
