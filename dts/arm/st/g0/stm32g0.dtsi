@@ -33,6 +33,22 @@
 			device_type = "cpu";
 			compatible = "arm,cortex-m0+";
 			reg = <0>;
+			cpu-power-states = <&stop0 &stop1>;
+		};
+
+		power-states {
+			stop0: state0 {
+				compatible = "zephyr,power-state";
+				power-state-name = "suspend-to-idle";
+				substate-id = <1>;
+				min-residency-us = <20>;
+			};
+			stop1: state1 {
+				compatible = "zephyr,power-state";
+				power-state-name = "suspend-to-idle";
+				substate-id = <2>;
+				min-residency-us = <100>;
+			};
 		};
 	};
 
@@ -74,21 +90,6 @@
 			#clock-cells = <0>;
 			compatible = "st,stm32g0-pll-clock";
 			status = "disabled";
-		};
-	};
-
-	power-states {
-		stop0: state0 {
-			compatible = "zephyr,power-state";
-			power-state-name = "suspend-to-idle";
-			substate-id = <1>;
-			min-residency-us = <20>;
-		};
-		stop1: state1 {
-			compatible = "zephyr,power-state";
-			power-state-name = "suspend-to-idle";
-			substate-id = <2>;
-			min-residency-us = <100>;
 		};
 	};
 
@@ -395,9 +396,6 @@
 			interrupts = <12 0>;
 			status = "disabled";
 			#io-channel-cells = <1>;
-			temp-channel = <12>;
-			vref-channel = <13>;
-			vbat-channel = <14>;
 			resolutions = <STM32_ADC_RES(12, 0x00)
 				       STM32_ADC_RES(10, 0x01)
 				       STM32_ADC_RES(8, 0x02)
@@ -410,6 +408,7 @@
 			 */
 			sampling-times = <3 5 8 13 20 40 80 161>;
 			num-sampling-time-common-channels = <2>;
+			st,adc-sequencer = <NOT_FULLY_CONFIGURABLE>;
 		};
 
 		dma1: dma@40020000 {

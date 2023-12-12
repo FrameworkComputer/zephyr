@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 1997-2015, Wind River Systems, Inc.
  * Copyright (c) 2021 Intel Corporation
+ * Copyright (c) 2023 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,7 +10,7 @@
  * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
  * #line marks the *next* line, so it is off by one.
  */
-#line 13
+#line 14
 
 #ifndef ZEPHYR_INCLUDE_SYS_ATOMIC_H_
 #define ZEPHYR_INCLUDE_SYS_ATOMIC_H_
@@ -18,17 +19,13 @@
 #include <zephyr/toolchain.h>
 #include <stddef.h>
 
+#include <zephyr/sys/atomic_types.h> /* IWYU pragma: export */
 #include <zephyr/types.h>
 #include <zephyr/sys/util_macro.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
-
-typedef long atomic_t;
-typedef atomic_t atomic_val_t;
-typedef void *atomic_ptr_t;
-typedef atomic_ptr_t atomic_ptr_val_t;
 
 /* Low-level primitives come in several styles: */
 
@@ -153,7 +150,7 @@ static inline bool atomic_test_bit(const atomic_t *target, int bit)
  * @param target Address of atomic variable or array.
  * @param bit Bit number (starting from 0).
  *
- * @return true if the bit was set, false if it wasn't.
+ * @return false if the bit was already cleared, true if it wasn't.
  */
 static inline bool atomic_test_and_clear_bit(atomic_t *target, int bit)
 {
@@ -177,7 +174,7 @@ static inline bool atomic_test_and_clear_bit(atomic_t *target, int bit)
  * @param target Address of atomic variable or array.
  * @param bit Bit number (starting from 0).
  *
- * @return true if the bit was set, false if it wasn't.
+ * @return true if the bit was already set, false if it wasn't.
  */
 static inline bool atomic_test_and_set_bit(atomic_t *target, int bit)
 {

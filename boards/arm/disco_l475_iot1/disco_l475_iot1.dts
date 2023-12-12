@@ -8,6 +8,7 @@
 #include <st/l4/stm32l475Xg.dtsi>
 #include <st/l4/stm32l475v(c-e-g)tx-pinctrl.dtsi>
 #include "arduino_r3_connector.dtsi"
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 
 / {
 	model = "STMicroelectronics B-L475E-IOT01Ax board";
@@ -39,6 +40,7 @@
 		user_button: button_0 {
 			label = "User";
 			gpios = <&gpioc 13 GPIO_ACTIVE_LOW>;
+			zephyr,code = <INPUT_KEY_0>;
 		};
 	};
 
@@ -69,10 +71,6 @@
 		volt-sensor0 = &vref;
 		volt-sensor1 = &vbat;
 	};
-};
-
-&cpu0 {
-	cpu-power-states = <&stop0 &stop1 &stop2>;
 };
 
 &clk_lsi {
@@ -198,6 +196,8 @@
 		reset-gpios = <&gpioa 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 		irq-gpios = <&gpioe 6 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
 		spi-max-frequency = <2000000>;
+		controller-data-delay-us = <0>;  /* No need for extra delay for BlueNRG-MS */
+		spi-hold-cs;
 	};
 
 	wifi0: ism43362@1 {
@@ -290,10 +290,11 @@ zephyr_udc0: &usbotg_fs {
 };
 
 &adc1 {
-	pinctrl-0 = <&adc1_in5_pa0 &adc1_in3_pc2
-		     &adc1_in4_pc3 &adc1_in13_pc4
-		     &adc1_in14_pc5>;
+	pinctrl-0 = <&adc1_in3_pc2 &adc1_in4_pc3
+		     &adc1_in13_pc4 &adc1_in14_pc5>;
 	pinctrl-names = "default";
+	st,adc-clock-source = <SYNC>;
+	st,adc-prescaler = <4>;
 	status = "okay";
 };
 

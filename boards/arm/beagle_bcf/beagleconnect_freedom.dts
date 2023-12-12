@@ -9,6 +9,7 @@
 
 #include <ti/cc1352r7.dtsi>
 #include "beagleconnect_freedom-pinctrl.dtsi"
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 
 #define BTN_GPIO_FLAGS (GPIO_ACTIVE_LOW | GPIO_PULL_UP)
 
@@ -38,6 +39,7 @@
 		compatible = "gpio-keys";
 		button0: button_0 {
 			gpios = <&gpio0 15 GPIO_ACTIVE_LOW>;
+			zephyr,code = <INPUT_KEY_0>;
 		};
 	};
 
@@ -57,38 +59,11 @@
 
 	sens_i2c: sensor-switch {
 		status = "okay";
-		compatible = "ti,ts5a2066";
+		compatible = "gpio-i2c-switch";
 		#address-cells = <1>;
 		#size-cells = <0>;
 		controller = <&i2c0>;
 		gpios = <&gpio0 14 GPIO_ACTIVE_HIGH>;
-
-		light: opt3001-light@44 {
-			status = "okay";
-			compatible = "ti,opt3001";
-			reg = <0x44>;
-		};
-
-		humidity: hdc2010-humidity@41 {
-			status = "okay";
-			compatible = "ti,hdc2010";
-			reg = <0x41>;
-		};
-	};
-
-	power-states {
-		idle: idle {
-			compatible = "zephyr,power-state";
-			power-state-name = "suspend-to-idle";
-			min-residency-us = <1000>;
-		};
-
-		standby: standby {
-			compatible = "zephyr,power-state";
-			power-state-name = "standby";
-			min-residency-us = <5000>;
-			exit-latency-us = <240>;
-		};
 	};
 };
 
@@ -114,7 +89,6 @@
 
 &cpu0 {
 	clock-frequency = <48000000>;
-	cpu-power-states = <&idle &standby>;
 };
 
 &trng {
@@ -151,6 +125,18 @@
 	mcu: msp430-usbbridge@4 {
 		compatible = "beagle,usbbridge";
 		reg = <0x4>;
+	};
+
+	light: opt3001-light@44 {
+		status = "okay";
+		compatible = "ti,opt3001";
+		reg = <0x44>;
+	};
+
+	humidity: hdc2010-humidity@41 {
+		status = "okay";
+		compatible = "ti,hdc2010";
+		reg = <0x41>;
 	};
 };
 
@@ -199,10 +185,6 @@
 			};
 		};
 	};
-};
-
-&rtc {
-	status = "okay";
 };
 
 &ieee802154 {

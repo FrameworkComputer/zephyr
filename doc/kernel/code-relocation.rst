@@ -62,9 +62,6 @@ for  data copy operations from ROM to required memory type.
   .. note::
 
      function zephyr_code_relocate() can be called  as many times as required.
-     This step has to be performed before calling find_package(Zephyr ...)
-     in the application's CMakeLists.txt.
-
 
 Additional Configurations
 =========================
@@ -138,7 +135,7 @@ A test showcasing this feature is provided at
 This test shows how the code relocation feature is used.
 
 This test will place .text, .data, .bss from 3 files to various parts in the SRAM
-using a custom linker file derived from ``include/arch/arm/aarch32/cortex_m/scripts/linker.ld``
+using a custom linker file derived from ``include/zephyr/arch/arm/cortex_m/scripts/linker.ld``
 
 A sample showcasing the NOCOPY flag is provided at
 ``$ZEPHYR_BASE/samples/application_development/code_relocation_nocopy/``

@@ -78,8 +78,12 @@ void __attribute__((noinline)) check_input(const char *name, const char *input)
  * and will not set ret to TC_FAIL.
  *
  */
-void alternate_thread(void)
+void alternate_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	TC_PRINT("Starts %s\n", __func__);
 	check_input(__func__,
 		    "Input string is too long and stack overflowed!\n");
@@ -129,7 +133,55 @@ ZTEST(stackprot, test_create_alt_thread)
 {
 	/* Start thread */
 	k_thread_create(&alt_thread_data, alt_thread_stack_area, STACKSIZE,
-			(k_thread_entry_t)alternate_thread, NULL, NULL, NULL,
+			alternate_thread, NULL, NULL, NULL,
+			K_PRIO_COOP(1), K_USER, K_NO_WAIT);
+
+	/* Note that this sleep is required on SMP platforms where
+	 * that thread will execute asynchronously!
+	 */
+	k_sleep(K_MSEC(100));
+}
+
+#ifdef CONFIG_STACK_CANARIES_TLS
+extern __thread volatile uintptr_t __stack_chk_guard;
+#else
+extern volatile uintptr_t __stack_chk_guard;
+#endif
+
+/**
+ * This thread checks its canary value against its parent canary.
+ * If CONFIG_STACK_CANARIES_TLS is enabled, it is expected that the
+ * canaries have different values, otherwise there is only one global
+ * canary and the value should be the same.
+ */
+void alternate_thread_canary(void *arg1, void *arg2, void *arg3)
+{
+	ARG_UNUSED(arg2);
+	ARG_UNUSED(arg3);
+
+	TC_PRINT("Starts %s\n", __func__);
+
+#ifdef CONFIG_STACK_CANARIES_TLS
+	zassert_false(__stack_chk_guard == (uintptr_t)arg1);
+#else
+	zassert_true(__stack_chk_guard == (uintptr_t)arg1);
+#endif
+}
+
+/**
+ * @brief Test stack canaries behavior
+ *
+ * @details Test that canaries value are different between threads when
+ * CONFIG_STACK_CANARIES_TLS is enabled.
+ *
+ * @ingroup kernel_memprotect_tests
+ */
+ZTEST(stackprot, test_canary_value)
+{
+	/* Start thread */
+	k_thread_create(&alt_thread_data, alt_thread_stack_area, STACKSIZE,
+			alternate_thread_canary,
+			(void *)__stack_chk_guard, NULL, NULL,
 			K_PRIO_COOP(1), K_USER, K_NO_WAIT);
 
 	/* Note that this sleep is required on SMP platforms where

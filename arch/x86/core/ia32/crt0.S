@@ -21,7 +21,7 @@
 #include <zephyr/arch/cpu.h>
 #include <zephyr/arch/x86/multiboot.h>
 #include <x86_mmu.h>
-#include <zephyr/sys/mem_manage.h>
+#include <zephyr/kernel/mm.h>
 
 	/* exports (private APIs) */
 
@@ -42,6 +42,10 @@
 
 #if defined(CONFIG_X86_SSE)
 	GDATA(_sse_mxcsr_default_value)
+#endif
+
+#if defined(CONFIG_THREAD_LOCAL_STORAGE)
+	GTEXT(z_x86_early_tls_update_gdt)
 #endif
 
 	GDATA(x86_cpu_boot_arg)
@@ -252,6 +256,11 @@ __csSet:
 #endif
 #endif /* Z_VM_KERNEL */
 
+#ifdef CONFIG_THREAD_LOCAL_STORAGE
+	pushl %esp
+	call z_x86_early_tls_update_gdt
+	popl %esp
+#endif
 	/* Clear BSS */
 #ifdef CONFIG_LINKER_USE_BOOT_SECTION
 	call	z_bss_zero_boot

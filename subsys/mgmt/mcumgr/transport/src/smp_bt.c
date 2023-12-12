@@ -91,13 +91,13 @@ static struct conn_param_data conn_data[CONFIG_BT_MAX_CONN];
 /* SMP service.
  * {8D53DC1D-1DB7-4CD3-868B-8A527460AA84}
  */
-static struct bt_uuid_128 smp_bt_svc_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 smp_bt_svc_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0x8d53dc1d, 0x1db7, 0x4cd3, 0x868b, 0x8a527460aa84));
 
 /* SMP characteristic; used for both requests and responses.
  * {DA2E7828-FBCE-4E01-AE9E-261174997C48}
  */
-static struct bt_uuid_128 smp_bt_chr_uuid = BT_UUID_INIT_128(
+static const struct bt_uuid_128 smp_bt_chr_uuid = BT_UUID_INIT_128(
 	BT_UUID_128_ENCODE(0xda2e7828, 0xfbce, 0x4e01, 0xae9e, 0x261174997c48));
 
 static void connected(struct bt_conn *conn, uint8_t err);
@@ -108,6 +108,10 @@ BT_CONN_CB_DEFINE(mcumgr_bt_callbacks) = {
 	.connected = connected,
 	.disconnected = disconnected,
 };
+
+#ifdef CONFIG_SMP_CLIENT
+static struct smp_client_transport_entry smp_client_transport;
+#endif
 
 /* Helper function that allocates conn_param_data for a conn. */
 static struct conn_param_data *conn_param_data_alloc(struct bt_conn *conn)
@@ -191,7 +195,8 @@ static void conn_param_set(struct bt_conn *conn, struct bt_le_conn_param *param)
 /* Work handler function for restoring the preferred connection parameters for the connection. */
 static void conn_param_on_pref_restore(struct k_work *work)
 {
-	struct conn_param_data *cpd = CONTAINER_OF(work, struct conn_param_data, dwork);
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct conn_param_data *cpd = CONTAINER_OF(dwork, struct conn_param_data, dwork);
 
 	if (cpd != NULL) {
 		conn_param_set(cpd->conn, CONN_PARAM_PREF);
@@ -202,7 +207,8 @@ static void conn_param_on_pref_restore(struct k_work *work)
 /* Work handler function for retrying on conn negotiation API error. */
 static void conn_param_on_error_retry(struct k_work *work)
 {
-	struct conn_param_data *cpd = CONTAINER_OF(work, struct conn_param_data, ework);
+	struct k_work_delayable *ework = k_work_delayable_from_work(work);
+	struct conn_param_data *cpd = CONTAINER_OF(ework, struct conn_param_data, ework);
 	struct bt_le_conn_param *param = (cpd->state & CONN_PARAM_SMP_REQUESTED) ?
 		CONN_PARAM_SMP : CONN_PARAM_PREF;
 
@@ -664,6 +670,14 @@ static void smp_bt_setup(void)
 	if (rc == 0) {
 		rc = smp_bt_register();
 	}
+
+#ifdef CONFIG_SMP_CLIENT
+	if (rc == 0) {
+		smp_client_transport.smpt = &smp_bt_transport;
+		smp_client_transport.smpt_type = SMP_BLUETOOTH_TRANSPORT;
+		smp_client_transport_register(&smp_client_transport);
+	}
+#endif
 
 	if (rc != 0) {
 		LOG_ERR("Bluetooth SMP transport register failed (err %d)", rc);

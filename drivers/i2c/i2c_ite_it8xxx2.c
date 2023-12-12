@@ -44,6 +44,7 @@ struct i2c_it8xxx2_config {
 	uint8_t *reg_mstfctrl;
 	uint8_t i2c_irq_base;
 	uint8_t port;
+	uint8_t channel_switch_sel;
 	/* SCL GPIO cells */
 	struct gpio_dt_spec scl_gpios;
 	/* SDA GPIO cells */
@@ -1134,6 +1135,18 @@ static int i2c_it8xxx2_init(const struct device *dev)
 	}
 #endif
 
+	/* ChannelA-C switch selection of I2C pin */
+	if (config->port == SMB_CHANNEL_A) {
+		IT8XXX2_SMB_SMB01CHS = (IT8XXX2_SMB_SMB01CHS &= ~GENMASK(2, 0)) |
+			config->channel_switch_sel;
+	} else if (config->port == SMB_CHANNEL_B) {
+		IT8XXX2_SMB_SMB01CHS = (config->channel_switch_sel << 4) |
+			(IT8XXX2_SMB_SMB01CHS &= ~GENMASK(6, 4));
+	} else if (config->port == SMB_CHANNEL_C) {
+		IT8XXX2_SMB_SMB23CHS = (IT8XXX2_SMB_SMB23CHS &= ~GENMASK(2, 0)) |
+			config->channel_switch_sel;
+	}
+
 	/* Set clock frequency for I2C ports */
 	if (config->bitrate == I2C_BITRATE_STANDARD ||
 		config->bitrate == I2C_BITRATE_FAST ||
@@ -1232,11 +1245,18 @@ static const struct i2c_driver_api i2c_it8xxx2_driver_api = {
 };
 
 #ifdef CONFIG_I2C_IT8XXX2_FIFO_MODE
-BUILD_ASSERT(((DT_INST_PROP(SMB_CHANNEL_B, fifo_enable) == true) &&
-	     (DT_INST_PROP(SMB_CHANNEL_C, fifo_enable) == false)) ||
-	     ((DT_INST_PROP(SMB_CHANNEL_B, fifo_enable) == false) &&
-	     (DT_INST_PROP(SMB_CHANNEL_C, fifo_enable) == true)),
-	     "FIFO2 only supports one channel of B or C.");
+/*
+ * Sometimes, channel C may write wrong register to the target device.
+ * This issue occurs when FIFO2 is enabled on channel C. The problem
+ * arises because FIFO2 is shared between channel B and channel C.
+ * FIFO2 will be disabled when data access is completed, at which point
+ * FIFO2 is set to the default configuration for channel B.
+ * The byte counter of FIFO2 may be affected by channel B. There is a chance
+ * that channel C may encounter wrong register being written due to FIFO2
+ * byte counter wrong write after channel B's write operation.
+ */
+BUILD_ASSERT((DT_PROP(DT_NODELABEL(i2c2), fifo_enable) == false),
+	     "Channel C cannot use FIFO mode.");
 #endif
 
 #define I2C_ITE_IT8XXX2_INIT(inst)                                              \
@@ -1258,6 +1278,7 @@ BUILD_ASSERT(((DT_INST_PROP(SMB_CHANNEL_B, fifo_enable) == true) &&
 		.bitrate = DT_INST_PROP(inst, clock_frequency),                 \
 		.i2c_irq_base = DT_INST_IRQN(inst),                             \
 		.port = DT_INST_PROP(inst, port_num),                           \
+		.channel_switch_sel = DT_INST_PROP(inst, channel_switch_sel),   \
 		.scl_gpios = GPIO_DT_SPEC_INST_GET(inst, scl_gpios),            \
 		.sda_gpios = GPIO_DT_SPEC_INST_GET(inst, sda_gpios),            \
 		.clock_gate_offset = DT_INST_PROP(inst, clock_gate_offset),     \

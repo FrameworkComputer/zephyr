@@ -13,6 +13,12 @@ choice CODE_LOCATION
 	default CODE_FLEXSPI
 endchoice
 
+config DEVICE_CONFIGURATION_DATA
+	default y
+
+config NXP_IMX_EXTERNAL_SDRAM
+	default y
+
 if FLASH
 
 config FLASH_MCUX_FLEXSPI_HYPERFLASH
@@ -25,11 +31,8 @@ config FLASH_MCUX_FLEXSPI_NOR
 
 endif #FLASH
 
-config KSCAN
-	default y if LVGL
-
 config INPUT
-	default y if KSCAN
+	default y if LVGL
 
 if INPUT
 
@@ -43,15 +46,16 @@ if NETWORKING
 config NET_L2_ETHERNET
 	default y
 
+if ETH_MCUX
+
 config ETH_MCUX_PHY_RESET
 	default y
+
+endif # ETH_MCUX
 
 endif # NETWORKING
 
 if LVGL
-
-config LV_Z_POINTER_KSCAN
-	default y
 
 config LV_Z_VDB_SIZE
 	default 16

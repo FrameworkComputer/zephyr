@@ -125,19 +125,15 @@ ZTEST_F(ascs_test_suite, test_sink_ase_read_state_idle)
 {
 	const struct bt_gatt_attr *ase = fixture->ase_snk.attr;
 	struct bt_conn *conn = &fixture->conn;
-	struct test_ase_chrc_value_hdr *hdr;
+	struct test_ase_chrc_value_hdr hdr = { 0xff };
 	ssize_t ret;
 
 	Z_TEST_SKIP_IFNDEF(CONFIG_BT_ASCS_ASE_SNK);
 	zexpect_not_null(fixture->ase_snk.attr);
 
-	ret = ase->read(conn, ase, NULL, 0, 0);
+	ret = ase->read(conn, ase, &hdr, sizeof(hdr), 0);
 	zassert_false(ret < 0, "attr->read returned unexpected (err 0x%02x)", BT_GATT_ERR(ret));
-
-	expect_bt_gatt_attr_read_called_once(conn, ase, EMPTY, EMPTY, 0x0000, EMPTY, sizeof(*hdr));
-
-	hdr = (void *)bt_gatt_attr_read_fake.arg5_val;
-	zassert_equal(0x00, hdr->ase_state, "unexpected ASE_State 0x%02x", hdr->ase_state);
+	zassert_equal(0x00, hdr.ase_state, "unexpected ASE_State 0x%02x", hdr.ase_state);
 }
 
 ZTEST_F(ascs_test_suite, test_release_ase_on_callback_unregister)
@@ -248,13 +244,12 @@ ZTEST_F(ascs_test_suite, test_release_ase_on_acl_disconnection_client_terminates
 				      !IS_ENABLED(CONFIG_BT_ASCS_ASE_SNK));
 
 	/* Mock ACL disconnection */
-	mock_bt_conn_disconnected(conn, BT_HCI_ERR_CONN_TIMEOUT);
+	mock_bt_conn_disconnected(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 
 	/* Mock CIS disconnection */
-	mock_bt_iso_disconnect(chan);
+	mock_bt_iso_disconnected(chan, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 
 	/* Expected to notify the upper layers */
-	expect_bt_bap_unicast_server_cb_release_called_once(stream);
 	expect_bt_bap_stream_ops_released_called_once(stream);
 
 	bt_bap_unicast_server_unregister_cb(&mock_bap_unicast_server_cb);
@@ -292,7 +287,6 @@ ZTEST_F(ascs_test_suite, test_release_ase_on_acl_disconnection_server_terminates
 	k_sleep(K_MSEC(CONFIG_BT_ASCS_ISO_DISCONNECT_DELAY));
 
 	/* Expected to notify the upper layers */
-	expect_bt_bap_unicast_server_cb_release_called_once(stream);
 	expect_bt_bap_stream_ops_released_called_once(stream);
 
 	bt_bap_unicast_server_unregister_cb(&mock_bap_unicast_server_cb);
@@ -346,16 +340,15 @@ ZTEST_F(ascs_test_suite, test_release_stream_pair_on_acl_disconnection_client_te
 	test_mocks_reset();
 
 	/* Mock ACL disconnection */
-	mock_bt_conn_disconnected(conn, BT_HCI_ERR_CONN_TIMEOUT);
+	mock_bt_conn_disconnected(conn, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 
 	/* Mock CIS disconnection */
-	mock_bt_iso_disconnect(chan);
+	mock_bt_iso_disconnected(chan, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 
 	/* Expected to notify the upper layers */
 	const struct bt_bap_stream *streams[2] = { &snk_stream, &src_stream };
 
 	expect_bt_bap_stream_ops_released_called_twice(streams);
-	expect_bt_bap_unicast_server_cb_release_called_twice(streams);
 
 	bt_bap_unicast_server_unregister_cb(&mock_bap_unicast_server_cb);
 }
@@ -417,7 +410,328 @@ ZTEST_F(ascs_test_suite, test_release_stream_pair_on_acl_disconnection_server_te
 	const struct bt_bap_stream *streams[2] = { &snk_stream, &src_stream };
 
 	expect_bt_bap_stream_ops_released_called_twice(streams);
-	expect_bt_bap_unicast_server_cb_release_called_twice(streams);
+
+	bt_bap_unicast_server_unregister_cb(&mock_bap_unicast_server_cb);
+}
+
+ZTEST_F(ascs_test_suite, test_recv_in_streaming_state)
+{
+	struct bt_bap_stream *stream = &fixture->stream;
+	struct bt_conn *conn = &fixture->conn;
+	uint8_t ase_id = fixture->ase_snk.id;
+	struct bt_iso_recv_info info = {
+		.seq_num = 1,
+		.flags = BT_ISO_FLAGS_VALID,
+	};
+	struct bt_iso_chan *chan;
+	struct net_buf buf;
+
+	Z_TEST_SKIP_IFNDEF(CONFIG_BT_ASCS_ASE_SNK);
+
+	bt_bap_unicast_server_register_cb(&mock_bap_unicast_server_cb);
+
+	test_preamble_state_streaming(conn, ase_id, stream, &chan, false);
+
+	chan->ops->recv(chan, &info, &buf);
+
+	/* Verification */
+	expect_bt_bap_stream_ops_recv_called_once(stream, &info, &buf);
+
+	bt_bap_unicast_server_unregister_cb(&mock_bap_unicast_server_cb);
+}
+
+ZTEST_F(ascs_test_suite, test_recv_in_enabling_state)
+{
+	struct bt_bap_stream *stream = &fixture->stream;
+	struct bt_conn *conn = &fixture->conn;
+	uint8_t ase_id = fixture->ase_snk.id;
+	struct bt_iso_recv_info info = {
+		.seq_num = 1,
+		.flags = BT_ISO_FLAGS_VALID,
+	};
+	struct bt_iso_chan *chan;
+	struct net_buf buf;
+	int err;
+
+	Z_TEST_SKIP_IFNDEF(CONFIG_BT_ASCS_ASE_SNK);
+
+	bt_bap_unicast_server_register_cb(&mock_bap_unicast_server_cb);
+
+	test_preamble_state_enabling(conn, ase_id, stream);
+
+	err = mock_bt_iso_accept(conn, 0x01, 0x01, &chan);
+	zassert_equal(0, err, "Failed to connect iso: err %d", err);
+
+	test_mocks_reset();
+
+	chan->ops->recv(chan, &info, &buf);
+
+	/* Verification */
+	expect_bt_bap_stream_ops_recv_not_called();
+
+	bt_bap_unicast_server_unregister_cb(&mock_bap_unicast_server_cb);
+}
+
+ZTEST_F(ascs_test_suite, test_cis_link_loss_in_streaming_state)
+{
+	struct bt_bap_stream *stream = &fixture->stream;
+	struct bt_conn *conn = &fixture->conn;
+	const struct bt_gatt_attr *ase;
+	struct bt_iso_chan *chan;
+	uint8_t ase_id;
+
+	if (IS_ENABLED(CONFIG_BT_ASCS_ASE_SNK)) {
+		ase = fixture->ase_snk.attr;
+		ase_id = fixture->ase_snk.id;
+	} else {
+		ase = fixture->ase_src.attr;
+		ase_id = fixture->ase_src.id;
+	}
+	zexpect_not_null(ase);
+	zexpect_true(ase_id != 0x00);
+
+	bt_bap_unicast_server_register_cb(&mock_bap_unicast_server_cb);
+
+	test_preamble_state_streaming(conn, ase_id, stream, &chan,
+				      !IS_ENABLED(CONFIG_BT_ASCS_ASE_SNK));
+
+	/* Mock CIS disconnection */
+	mock_bt_iso_disconnected(chan, BT_HCI_ERR_CONN_TIMEOUT);
+
+	/* Expected to notify the upper layers */
+	expect_bt_bap_stream_ops_qos_set_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_called_once(stream);
+	expect_bt_bap_stream_ops_released_not_called();
+
+	bt_bap_unicast_server_unregister_cb(&mock_bap_unicast_server_cb);
+}
+
+static void test_cis_link_loss_in_disabling_state(struct ascs_test_suite_fixture *fixture,
+						  bool streaming)
+{
+	struct bt_bap_stream *stream = &fixture->stream;
+	struct bt_conn *conn = &fixture->conn;
+	const struct bt_gatt_attr *ase;
+	struct bt_iso_chan *chan;
+	uint8_t ase_id;
+	int err;
+
+	Z_TEST_SKIP_IFNDEF(CONFIG_BT_ASCS_ASE_SRC);
+
+	ase = fixture->ase_src.attr;
+	ase_id = fixture->ase_src.id;
+	zexpect_not_null(ase);
+	zexpect_true(ase_id != 0x00);
+
+	bt_bap_unicast_server_register_cb(&mock_bap_unicast_server_cb);
+
+	test_preamble_state_enabling(conn, ase_id, stream);
+	err = mock_bt_iso_accept(conn, 0x01, 0x01, &chan);
+	zassert_equal(0, err, "Failed to connect iso: err %d", err);
+
+	if (streaming) {
+		test_ase_control_client_receiver_start_ready(conn, ase_id);
+	}
+
+	test_ase_control_client_disable(conn, ase_id);
+
+	expect_bt_bap_stream_ops_disabled_called_once(stream);
+
+	test_mocks_reset();
+
+	/* Mock CIS disconnection */
+	mock_bt_iso_disconnected(chan, BT_HCI_ERR_CONN_TIMEOUT);
+
+	/* Expected to notify the upper layers */
+	expect_bt_bap_stream_ops_qos_set_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
+	expect_bt_bap_stream_ops_released_not_called();
+
+	bt_bap_unicast_server_unregister_cb(&mock_bap_unicast_server_cb);
+}
+
+ZTEST_F(ascs_test_suite, test_cis_link_loss_in_disabling_state_v1)
+{
+	/* Enabling -> Streaming -> Disabling */
+	test_cis_link_loss_in_disabling_state(fixture, true);
+}
+
+ZTEST_F(ascs_test_suite, test_cis_link_loss_in_disabling_state_v2)
+{
+	/* Enabling -> Disabling */
+	test_cis_link_loss_in_disabling_state(fixture, false);
+}
+
+ZTEST_F(ascs_test_suite, test_cis_link_loss_in_enabling_state)
+{
+	struct bt_bap_stream *stream = &fixture->stream;
+	struct bt_conn *conn = &fixture->conn;
+	const struct bt_gatt_attr *ase;
+	struct bt_iso_chan *chan;
+	uint8_t ase_id;
+	int err;
+
+	if (IS_ENABLED(CONFIG_BT_ASCS_ASE_SNK)) {
+		ase = fixture->ase_snk.attr;
+		ase_id = fixture->ase_snk.id;
+	} else {
+		ase = fixture->ase_src.attr;
+		ase_id = fixture->ase_src.id;
+	}
+	zexpect_not_null(ase);
+	zexpect_true(ase_id != 0x00);
+
+	bt_bap_unicast_server_register_cb(&mock_bap_unicast_server_cb);
+
+	test_preamble_state_enabling(conn, ase_id, stream);
+	err = mock_bt_iso_accept(conn, 0x01, 0x01, &chan);
+	zassert_equal(0, err, "Failed to connect iso: err %d", err);
+
+	/* Mock CIS disconnection */
+	mock_bt_iso_disconnected(chan, BT_HCI_ERR_CONN_TIMEOUT);
+
+	/* Expected no change in ASE state */
+	expect_bt_bap_stream_ops_qos_set_not_called();
+	expect_bt_bap_stream_ops_released_not_called();
+
+	err = bt_bap_stream_disable(stream);
+	zassert_equal(0, err, "Failed to disable stream: err %d", err);
+
+	if (IS_ENABLED(CONFIG_BT_ASCS_ASE_SNK)) {
+		expect_bt_bap_stream_ops_qos_set_called_once(stream);
+		expect_bt_bap_stream_ops_disabled_called_once(stream);
+	} else {
+		/* Server-initiated disable operation that shall not cause transition to QoS */
+		expect_bt_bap_stream_ops_qos_set_not_called();
+	}
+
+	bt_bap_unicast_server_unregister_cb(&mock_bap_unicast_server_cb);
+}
+
+ZTEST_F(ascs_test_suite, test_cis_link_loss_in_enabling_state_client_retries)
+{
+	struct bt_bap_stream *stream = &fixture->stream;
+	struct bt_conn *conn = &fixture->conn;
+	const struct bt_gatt_attr *ase;
+	struct bt_iso_chan *chan;
+	uint8_t ase_id;
+	int err;
+
+	if (IS_ENABLED(CONFIG_BT_ASCS_ASE_SNK)) {
+		ase = fixture->ase_snk.attr;
+		ase_id = fixture->ase_snk.id;
+	} else {
+		ase = fixture->ase_src.attr;
+		ase_id = fixture->ase_src.id;
+	}
+	zexpect_not_null(ase);
+	zexpect_true(ase_id != 0x00);
+
+	bt_bap_unicast_server_register_cb(&mock_bap_unicast_server_cb);
+
+	test_preamble_state_enabling(conn, ase_id, stream);
+	err = mock_bt_iso_accept(conn, 0x01, 0x01, &chan);
+	zassert_equal(0, err, "Failed to connect iso: err %d", err);
+
+	/* Mock CIS disconnection */
+	mock_bt_iso_disconnected(chan, BT_HCI_ERR_CONN_FAIL_TO_ESTAB);
+
+	/* Expected to not notify the upper layers */
+	expect_bt_bap_stream_ops_qos_set_not_called();
+	expect_bt_bap_stream_ops_released_not_called();
+
+	/* Client retries to establish CIS */
+	err = mock_bt_iso_accept(conn, 0x01, 0x01, &chan);
+	zassert_equal(0, err, "Failed to connect iso: err %d", err);
+	if (!IS_ENABLED(CONFIG_BT_ASCS_ASE_SNK)) {
+		test_ase_control_client_receiver_start_ready(conn, ase_id);
+	} else {
+		err = bt_bap_stream_start(stream);
+		zassert_equal(0, err, "bt_bap_stream_start err %d", err);
+	}
+
+	expect_bt_bap_stream_ops_started_called_once(stream);
+
+	bt_bap_unicast_server_unregister_cb(&mock_bap_unicast_server_cb);
+}
+
+static struct bt_bap_stream *stream_allocated;
+static const struct bt_audio_codec_qos_pref qos_pref =
+	BT_AUDIO_CODEC_QOS_PREF(true, BT_GAP_LE_PHY_2M, 0x02, 10, 40000, 40000, 40000, 40000);
+
+static int unicast_server_cb_config_custom_fake(struct bt_conn *conn, const struct bt_bap_ep *ep,
+						enum bt_audio_dir dir,
+						const struct bt_audio_codec_cfg *codec_cfg,
+						struct bt_bap_stream **stream,
+						struct bt_audio_codec_qos_pref *const pref,
+						struct bt_bap_ascs_rsp *rsp)
+{
+	*stream = stream_allocated;
+	*pref = qos_pref;
+	*rsp = BT_BAP_ASCS_RSP(BT_BAP_ASCS_RSP_CODE_SUCCESS, BT_BAP_ASCS_REASON_NONE);
+
+	bt_bap_stream_cb_register(*stream, &mock_bap_stream_ops);
+
+	return 0;
+}
+
+ZTEST_F(ascs_test_suite, test_ase_state_notification_retry)
+{
+	struct bt_bap_stream *stream = &fixture->stream;
+	struct bt_conn *conn = &fixture->conn;
+	const struct bt_gatt_attr *ase, *cp;
+	struct bt_conn_info info;
+	uint8_t ase_id;
+	int err;
+
+	if (IS_ENABLED(CONFIG_BT_ASCS_ASE_SNK)) {
+		ase = fixture->ase_snk.attr;
+		ase_id = fixture->ase_snk.id;
+	} else {
+		ase = fixture->ase_src.attr;
+		ase_id = fixture->ase_src.id;
+	}
+
+	zexpect_not_null(ase);
+	zassert_not_equal(ase_id, 0x00);
+
+	cp = test_ase_control_point_get();
+	zexpect_not_null(cp);
+
+	bt_bap_unicast_server_register_cb(&mock_bap_unicast_server_cb);
+
+	stream_allocated = stream;
+	mock_bap_unicast_server_cb_config_fake.custom_fake = unicast_server_cb_config_custom_fake;
+
+	/* Mock out of buffers case */
+	mock_bt_gatt_notify_cb_fake.return_val = -ENOMEM;
+
+	const uint8_t buf[] = {
+		0x01,           /* Opcode = Config Codec */
+		0x01,           /* Number_of_ASEs */
+		ase_id,         /* ASE_ID[0] */
+		0x01,           /* Target_Latency[0] = Target low latency */
+		0x02,           /* Target_PHY[0] = LE 2M PHY */
+		0x06,           /* Codec_ID[0].Coding_Format = LC3 */
+		0x00, 0x00,     /* Codec_ID[0].Company_ID */
+		0x00, 0x00,     /* Codec_ID[0].Vendor_Specific_Codec_ID */
+		0x00,           /* Codec_Specific_Configuration_Length[0] */
+	};
+
+	cp->write(conn, cp, (void *)buf, sizeof(buf), 0, 0);
+
+	/* Verification */
+	expect_bt_bap_stream_ops_configured_not_called();
+
+	mock_bt_gatt_notify_cb_fake.return_val = 0;
+
+	err = bt_conn_get_info(conn, &info);
+	zassert_equal(err, 0);
+
+	/* Wait for ASE state notification retry */
+	k_sleep(K_MSEC(BT_CONN_INTERVAL_TO_MS(info.le.interval)));
+
+	expect_bt_bap_stream_ops_configured_called_once(stream, EMPTY);
 
 	bt_bap_unicast_server_unregister_cb(&mock_bap_unicast_server_cb);
 }

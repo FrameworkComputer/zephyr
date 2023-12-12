@@ -9,10 +9,17 @@
 #define LL_BIS_ADV_HANDLE_BASE BT_CTLR_ADV_ISO_STREAM_HANDLE_BASE
 #define LL_BIS_ADV_IDX_FROM_HANDLE(conn_handle) \
 	((conn_handle) - (LL_BIS_ADV_HANDLE_BASE))
+/* Conditional compile to prevent coverity issue CWE570, comparison of unsigned int to 0 */
+#if (LL_BIS_ADV_HANDLE_BASE > 0)
 #define IS_ADV_ISO_HANDLE(conn_handle) \
 	(((conn_handle) >= (LL_BIS_ADV_HANDLE_BASE)) && \
 	 ((conn_handle) <= ((LL_BIS_ADV_HANDLE_BASE) + \
 			    (BT_CTLR_ADV_ISO_STREAM_MAX) - 1U)))
+#else
+#define IS_ADV_ISO_HANDLE(conn_handle) \
+	((conn_handle) <= ((LL_BIS_ADV_HANDLE_BASE) + \
+			   (BT_CTLR_ADV_ISO_STREAM_MAX) - 1U))
+#endif /* LL_BIS_ADV_HANDLE_BASE */
 #else
 #define LL_BIS_ADV_IDX_FROM_HANDLE(conn_handle) 0U
 #define IS_ADV_ISO_HANDLE(conn_handle) 0U
@@ -23,10 +30,17 @@
 #define LL_BIS_SYNC_HANDLE_BASE BT_CTLR_SYNC_ISO_STREAM_HANDLE_BASE
 #define LL_BIS_SYNC_IDX_FROM_HANDLE(conn_handle) \
 	((conn_handle) - (LL_BIS_SYNC_HANDLE_BASE))
+/* Conditional compile to prevent coverity issue CWE570, comparison of unsigned int to 0 */
+#if (LL_BIS_SYNC_HANDLE_BASE > 0)
 #define IS_SYNC_ISO_HANDLE(conn_handle) \
 	(((conn_handle) >= (LL_BIS_SYNC_HANDLE_BASE)) && \
 	 ((conn_handle) <= ((LL_BIS_SYNC_HANDLE_BASE) + \
 			    (BT_CTLR_SYNC_ISO_STREAM_MAX) - 1U)))
+#else
+#define IS_SYNC_ISO_HANDLE(conn_handle) \
+	((conn_handle) <= ((LL_BIS_SYNC_HANDLE_BASE) + \
+			   (BT_CTLR_SYNC_ISO_STREAM_MAX) - 1U))
+#endif /* LL_BIS_SYNC_HANDLE_BASE */
 #else
 #define LL_BIS_SYNC_IDX_FROM_HANDLE(conn_handle) 0U
 #define IS_SYNC_ISO_HANDLE(conn_handle) 0U
@@ -55,12 +69,26 @@ struct ll_iso_test_mode_data {
 	uint64_t rx_payload_type:4;
 };
 
+struct ll_iso_link_quality {
+	uint32_t tx_unacked_packets;
+	uint32_t tx_flushed_packets;
+	uint32_t tx_last_subevent_packets;
+	uint32_t retransmitted_packets;
+	uint32_t crc_error_packets;
+	uint32_t rx_unreceived_packets;
+	uint32_t duplicate_packets;
+};
+
 /* Common members for ll_conn_iso_stream and ll_broadcast_iso_stream */
 struct ll_iso_stream_hdr {
 	struct ll_iso_test_mode_data test_mode;
 	struct ll_iso_datapath *datapath_in;
 	struct ll_iso_datapath *datapath_out;
+#if defined(CONFIG_BT_CTLR_READ_ISO_LINK_QUALITY)
+	struct ll_iso_link_quality link_quality;
+#endif /* CONFIG_BT_CTLR_READ_ISO_LINK_QUALITY */
 };
+
 
 struct ll_iso_datapath {
 	uint8_t  path_dir;

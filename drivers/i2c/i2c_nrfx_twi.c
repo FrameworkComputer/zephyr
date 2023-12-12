@@ -126,7 +126,6 @@ static int i2c_nrfx_twi_transfer(const struct device *dev,
 			 * to make sure everything has been done to restore the
 			 * bus from this error.
 			 */
-			LOG_ERR("Error on I2C line occurred for message %d", i);
 			nrfx_twi_disable(&config->twi);
 			(void)i2c_nrfx_twi_recover_bus(dev);
 			ret = -EIO;
@@ -135,7 +134,6 @@ static int i2c_nrfx_twi_transfer(const struct device *dev,
 
 		res = data->res;
 		if (res != NRFX_SUCCESS) {
-			LOG_ERR("Error 0x%08X occurred for message %d", res, i);
 			ret = -EIO;
 			break;
 		}
@@ -321,10 +319,10 @@ static int twi_nrfx_pm_action(const struct device *dev,
 		      CONFIG_I2C_INIT_PRIORITY,				       \
 		      &i2c_nrfx_twi_driver_api)
 
-#ifdef CONFIG_I2C_0_NRF_TWI
+#ifdef CONFIG_HAS_HW_NRF_TWI0
 I2C_NRFX_TWI_DEVICE(0);
 #endif
 
-#ifdef CONFIG_I2C_1_NRF_TWI
+#ifdef CONFIG_HAS_HW_NRF_TWI1
 I2C_NRFX_TWI_DEVICE(1);
 #endif

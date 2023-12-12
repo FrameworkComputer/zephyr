@@ -141,6 +141,9 @@ static void thrift_test_before(void *data)
 	rv = pthread_create(&context.server_thread, attrp, server_func, nullptr);
 	zassert_equal(0, rv, "pthread_create failed: %d", rv);
 
+	/* Give the server thread a chance to start and prepare the socket */
+	k_msleep(50);
+
 	// set up client
 	context.client = setup_client();
 }
@@ -148,19 +151,20 @@ static void thrift_test_before(void *data)
 static void thrift_test_after(void *data)
 {
 	ARG_UNUSED(data);
-	void *unused;
 
 	context.server->stop();
 
-	pthread_join(context.server_thread, &unused);
-
-	context.server.reset();
-	context.client.reset();
+	pthread_join(context.server_thread, NULL);
 
 	for (auto &fd : context.fds) {
 		close(fd);
 		fd = -1;
 	}
+
+	context.client.reset();
+	context.server.reset();
+
+	k_msleep(CONFIG_NET_TCP_TIME_WAIT_DELAY);
 }
 
 ZTEST_SUITE(thrift, NULL, thrift_test_setup, thrift_test_before, thrift_test_after, NULL);

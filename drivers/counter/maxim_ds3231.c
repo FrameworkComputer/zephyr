@@ -289,7 +289,7 @@ static const uint8_t *decode_time(struct tm *tp,
 	uint8_t reg;
 
 	if (with_sec) {
-		uint8_t reg = *rp++;
+		reg = *rp++;
 
 		tp->tm_sec = bcd2bin(reg & 0x7F);
 	}
@@ -1142,7 +1142,7 @@ static int ds3231_init(const struct device *dev)
 	 */
 
 	if (cfg->isw_gpios.port != NULL) {
-		if (!device_is_ready(cfg->isw_gpios.port)) {
+		if (!gpio_is_ready_dt(&cfg->isw_gpios)) {
 			LOG_ERR("INTn/SQW GPIO device not ready");
 			rc = -ENODEV;
 			goto out;
@@ -1300,7 +1300,7 @@ DEVICE_DT_INST_DEFINE(0, ds3231_init, NULL, &ds3231_0_data,
 
 #ifdef CONFIG_USERSPACE
 
-#include <zephyr/syscall_handler.h>
+#include <zephyr/internal/syscall_handler.h>
 
 int z_vrfy_maxim_ds3231_get_syncpoint(const struct device *dev,
 				      struct maxim_ds3231_syncpoint *syncpoint)
@@ -1308,13 +1308,13 @@ int z_vrfy_maxim_ds3231_get_syncpoint(const struct device *dev,
 	struct maxim_ds3231_syncpoint value;
 	int rv;
 
-	Z_OOPS(Z_SYSCALL_SPECIFIC_DRIVER(dev, K_OBJ_DRIVER_COUNTER, &ds3231_api));
-	Z_OOPS(Z_SYSCALL_MEMORY_WRITE(syncpoint, sizeof(*syncpoint)));
+	K_OOPS(K_SYSCALL_SPECIFIC_DRIVER(dev, K_OBJ_DRIVER_COUNTER, &ds3231_api));
+	K_OOPS(K_SYSCALL_MEMORY_WRITE(syncpoint, sizeof(*syncpoint)));
 
 	rv = z_impl_maxim_ds3231_get_syncpoint(dev, &value);
 
 	if (rv >= 0) {
-		Z_OOPS(z_user_to_copy(syncpoint, &value, sizeof(*syncpoint)));
+		K_OOPS(k_usermode_to_copy(syncpoint, &value, sizeof(*syncpoint)));
 	}
 
 	return rv;
@@ -1325,9 +1325,9 @@ int z_vrfy_maxim_ds3231_get_syncpoint(const struct device *dev,
 int z_vrfy_maxim_ds3231_req_syncpoint(const struct device *dev,
 				      struct k_poll_signal *sig)
 {
-	Z_OOPS(Z_SYSCALL_SPECIFIC_DRIVER(dev, K_OBJ_DRIVER_COUNTER, &ds3231_api));
+	K_OOPS(K_SYSCALL_SPECIFIC_DRIVER(dev, K_OBJ_DRIVER_COUNTER, &ds3231_api));
 	if (sig != NULL) {
-		Z_OOPS(Z_SYSCALL_OBJ(sig, K_OBJ_POLL_SIGNAL));
+		K_OOPS(K_SYSCALL_OBJ(sig, K_OBJ_POLL_SIGNAL));
 	}
 
 	return z_impl_maxim_ds3231_req_syncpoint(dev, sig);

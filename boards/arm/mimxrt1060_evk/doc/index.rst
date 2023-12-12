@@ -11,7 +11,7 @@ processor series and expands the i.MX RT series to three scalable families.
 
 The i.MX RT1060 doubles the On-Chip SRAM to 1MB while keeping pin-to-pin
 compatibility with i.MX RT1050. This series introduces additional features
-ideal for real-time applications such as High-Speed GPIO, CAN-FD, and
+ideal for real-time applications such as High-Speed GPIO, CAN FD, and
 synchronous parallel NAND/NOR/PSRAM controller. The i.MX RT1060 runs on the
 Arm® Cortex-M7® core up to 600 MHz.
 
@@ -79,6 +79,24 @@ these references:
 - `MIMXRT1060-EVK Website`_
 - `MIMXRT1060-EVK User Guide`_
 - `MIMXRT1060-EVK Schematics`_
+- `MIMXRT1060-EVK Debug Firmware`_
+
+External Memory
+===============
+
+This platform has the following external memories:
+
++--------------------+------------+-------------------------------------+
+| Device             | Controller | Status                              |
++====================+============+=====================================+
+| IS25WP064AJBLE     | SEMC       | Enabled via device configuration    |
+|                    |            | data block, which sets up SEMC at   |
+|                    |            | boot time                           |
++--------------------+------------+-------------------------------------+
+| IS42S16160J        | FLEXSPI    | Enabled via flash configurationn    |
+|                    |            | block, which sets up FLEXSPI at     |
+|                    |            | boot time.                          |
++--------------------+------------+-------------------------------------+
 
 Supported Features
 ==================
@@ -315,6 +333,11 @@ however the :ref:`pyocd-debug-host-tools` do not yet support programming the
 external flashes on this board so you must reconfigure the board for one of the
 following debug probes instead.
 
+.. _Using LinkServer:
+
+        1. Install the :ref:`linkserver-debug-host-tools` and make sure they are in your search path.
+        2. To update the debug firmware, please follow the instructions on `MIMXRT1060-EVK Debug Firmware`
+
 .. _Using J-Link RT1060:
 
 Using J-Link
@@ -429,6 +452,9 @@ connected to the EVK properly. See :ref:`Using J-Link RT1060` for more details.
 .. _MIMXRT1060-EVK User Guide:
    https://www.nxp.com/webapp/Download?colCode=MIMXRT10601064EKBHUG
 
+.. _MIMXRT1060-EVK Debug Firmware:
+   https://www.nxp.com/docs/en/application-note/AN13206.pdf
+
 .. _MIMXRT1060-EVK Schematics:
    https://www.nxp.com/webapp/Download?colCode=MIMXRT1060-EVK-DESIGNFILE-A3
 
@@ -446,3 +472,13 @@ connected to the EVK properly. See :ref:`Using J-Link RT1060` for more details.
 
 .. _Using J-Link with MIMXRT1060-EVKB:
    https://community.nxp.com/t5/i-MX-RT-Knowledge-Base/Using-J-Link-with-MIMXRT1060-EVKB/ta-p/1452717
+
+Experimental ENET Driver
+========================
+
+Current default ethernet driver is eth_mcux, with binding `nxp,kinetis-ethernet`. There is a new
+driver with binding `nxp,enet`, which is experimental and undergoing development, but will have
+enhanced capability, such as not hardcoding code for only one phy in the driver like eth_mcux.
+
+To build for this EVK with the new driver, include the experimental overlay to west build with
+the option `-DEXTRA_DTC_OVERLAY_FILE=nxp,enet-experimental.overlay`.

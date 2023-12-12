@@ -73,8 +73,15 @@ system clock are provided in the SOC, depending on your system requirements.
 OpenOCD Installation
 ====================
 
-You must download `Infineon OpenOCD`_ from Github to flash and debug.
-Extract the files and note the path.
+To get the OpenOCD package, it is required that you
+
+1. Download the software ModusToolbox 3.1. https://softwaretools.infineon.com/tools/com.ifx.tb.tool.modustoolbox
+2. Once downloaded add the path to access the Scripts folder provided by ModusToolbox
+   export PATH=$PATH:/path/to/ModusToolbox/tools_3.1/openocd/scripts
+3. Add the OpenOCD executable file's path to west flash/debug.
+4. Flash using: west flash --openocd path/to/infineon/openocd/bin/openocd
+5. Debug using: west debug --openocd path/to/infineon/openocd/bin/openocd
+
 
 Fetch Binary Blobs
 ******************
@@ -114,7 +121,7 @@ References
 **********
 
 .. _PSoC 63 BLE MCU SoC Website:
-    http://www.cypress.com/products/32-bit-arm-cortex-m4-psoc-6
+    https://www.cypress.com/products/32-bit-arm-cortex-m4-psoc-6
 
 .. _PSoC 63 BLE MCU Datasheet:
     https://www.infineon.com/dgdl/Infineon-PSoC_6_MCU_PSoC_63_with_BLE_Datasheet_Programmable_System-on-Chip_(PSoC)-DataSheet-v16_00-EN.pdf?fileId=8ac78c8c7d0d8da4017d0ee4efe46c37&utm_source=cypress&utm_medium=referral&utm_campaign=202110_globe_en_all_integration-files

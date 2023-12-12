@@ -20,7 +20,9 @@
 		led1 = &red_led;
 		watchdog0 = &wdog0;
 		sdhc0 = &usdhc1;
-		pwm-0 = &flexpwm2_pwm0;
+		gps1 = &lpuart2;
+		telem1 = &lpuart3;
+		telem4-gps2 = &lpuart5;
 	};
 
 	chosen {
@@ -49,8 +51,6 @@
 
 	/* This regulator controls VDD_3V3_SD_CARD onboard supply */
 	reg-3v3-sdcard {
-		pinctrl-0 = <&pinmux_sensor>;
-		pinctrl-names = "default";
 		compatible = "regulator-fixed";
 		regulator-name = "reg-3v3-sdcard";
 		enable-gpios = <&gpio4 13 GPIO_ACTIVE_HIGH>;
@@ -60,8 +60,6 @@
 
 	/* This regulator controls VDD_5V_PERIPH onboard supply */
 	reg-5v-periph {
-		pinctrl-0 = <&pinmux_sensor>;
-		pinctrl-names = "default";
 		compatible = "regulator-fixed";
 		regulator-name = "reg-5v-periph";
 		enable-gpios = <&gpio4 9 GPIO_ACTIVE_LOW>;
@@ -71,8 +69,6 @@
 
 	/* This regulator controls VDD_5V_HIPOWER onboard supply */
 	reg-5v-hipower {
-		pinctrl-0 = <&pinmux_sensor>;
-		pinctrl-names = "default";
 		compatible = "regulator-fixed";
 		regulator-name = "reg-5v-hipower";
 		enable-gpios = <&gpio4 6 GPIO_ACTIVE_LOW>;
@@ -82,8 +78,6 @@
 
 	/* This regulator controls the 3V3_S line, which powers sensors on-board. */
 	reg-3v3-sensor {
-		pinctrl-0 = <&pinmux_sensor>;
-		pinctrl-names = "default";
 		compatible = "regulator-fixed";
 		regulator-name = "reg-3v3-sensor";
 		enable-gpios = <&gpio3 27 GPIO_ACTIVE_HIGH>;
@@ -94,8 +88,6 @@
 
 	/* This regulator controls VDD_3V3_SPEKTRUM onboard supply */
 	reg-3v3-spektrum {
-		pinctrl-0 = <&pinmux_sensor>;
-		pinctrl-names = "default";
 		compatible = "regulator-fixed";
 		regulator-name = "reg-3v3-spektrum";
 		enable-gpios = <&gpio1 0 GPIO_ACTIVE_HIGH>;
@@ -105,8 +97,6 @@
 
 	/* This regulator controls ETH_VDD_3V3 supply to power up the TJA1103 PHY */
 	reg-eth-power {
-		pinctrl-0 = <&pinmux_sensor>;
-		pinctrl-names = "default";
 		compatible = "regulator-fixed";
 		regulator-name = "reg-eth-power";
 		enable-gpios = <&gpio5 1 GPIO_ACTIVE_HIGH>;
@@ -140,6 +130,7 @@
 	pinctrl-0 = <&pinmux_flexcan3>;
 	pinctrl-names = "default";
 	bus-speed = <125000>;
+	bus-speed-data = <1000000>;
 	can-transceiver {
 		max-bitrate = <5000000>;
 	};
@@ -284,6 +275,30 @@
 	pinctrl-names = "default", "sleep";
 };
 
+&lpuart2 {
+	status = "okay";
+	current-speed = <115200>;
+	pinctrl-0 = <&pinmux_lpuart2>;
+	pinctrl-1 = <&pinmux_lpuart2_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&lpuart3 {
+	status = "okay";
+	current-speed = <115200>;
+	pinctrl-0 = <&pinmux_lpuart3>;
+	pinctrl-1 = <&pinmux_lpuart3_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&lpuart5 {
+	status = "okay";
+	current-speed = <115200>;
+	pinctrl-0 = <&pinmux_lpuart5>;
+	pinctrl-1 = <&pinmux_lpuart5_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
 &lpspi1 {
 	status = "okay";
 	pinctrl-0 = <&pinmux_lpspi1>;
@@ -323,48 +338,56 @@
 	status = "okay";
 	pinctrl-0 = <&pinmux_flexpwm_fmu_ch1>;
 	pinctrl-names = "default";
+	nxp,prescaler = <64>;
 };
 
 &flexpwm2_pwm1 {
 	status = "okay";
 	pinctrl-0 = <&pinmux_flexpwm_fmu_ch2>;
 	pinctrl-names = "default";
+	nxp,prescaler = <64>;
 };
 
 &flexpwm2_pwm2	{
 	status = "okay";
 	pinctrl-0 = <&pinmux_flexpwm_fmu_ch3>;
 	pinctrl-names = "default";
+	nxp,prescaler = <64>;
 };
 
 &flexpwm2_pwm3	{
 	status = "okay";
 	pinctrl-0 = <&pinmux_flexpwm_fmu_ch4>;
 	pinctrl-names = "default";
+	nxp,prescaler = <64>;
 };
 
 &flexpwm3_pwm2	{
 	status = "okay";
 	pinctrl-0 = <&pinmux_flexpwm_fmu_ch5>;
 	pinctrl-names = "default";
+	nxp,prescaler = <64>;
 };
 
 &flexpwm3_pwm0	{
 	status = "okay";
 	pinctrl-0 = <&pinmux_flexpwm_fmu_ch6>;
 	pinctrl-names = "default";
+	nxp,prescaler = <64>;
 };
 
 &flexpwm4_pwm2	{
 	status = "okay";
 	pinctrl-0 = <&pinmux_flexpwm_fmu_ch7>;
 	pinctrl-names = "default";
+	nxp,prescaler = <64>;
 };
 
 &flexpwm4_pwm0	{
 	status = "okay";
 	pinctrl-0 = <&pinmux_flexpwm_fmu_ch8>;
 	pinctrl-names = "default";
+	nxp,prescaler = <64>;
 };
 
 &enet2 {

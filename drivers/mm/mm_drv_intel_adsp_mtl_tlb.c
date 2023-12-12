@@ -27,10 +27,12 @@
 #include <zephyr/debug/sparse.h>
 #include <zephyr/cache.h>
 
+#define SRAM_BANK_PAGE_NUM   (SRAM_BANK_SIZE / CONFIG_MM_DRV_PAGE_SIZE)
+
 static struct k_spinlock tlb_lock;
 extern struct k_spinlock sys_mm_drv_common_lock;
 
-static struct mem_drv_bank hpsram_bank[L2_SRAM_BANK_NUM];
+static struct sys_mm_drv_bank hpsram_bank[L2_SRAM_BANK_NUM];
 
 #ifdef CONFIG_SOC_INTEL_COMM_WIDGET
 #include <adsp_comm_widget.h>
@@ -331,6 +333,7 @@ int sys_mm_drv_unmap_page(void *virt)
 {
 	k_spinlock_key_t key;
 	uint32_t entry_idx, bank_idx;
+	uint16_t entry;
 	uint16_t *tlb_entries = UINT_TO_POINTER(TLB_BASE);
 	uintptr_t pa;
 	int ret = 0;
@@ -360,9 +363,11 @@ int sys_mm_drv_unmap_page(void *virt)
 	sys_cache_data_flush_range(virt, CONFIG_MM_DRV_PAGE_SIZE);
 
 	entry_idx = get_tlb_entry_idx(va);
-
-	/* Simply clear the enable bit */
-	tlb_entries[entry_idx] &= ~TLB_ENABLE_BIT;
+	/* Restore default entry settings */
+	entry = pa_to_tlb_entry(va) | TLB_EXEC_BIT | TLB_WRITE_BIT;
+	/* Clear the enable bit */
+	entry &= ~TLB_ENABLE_BIT;
+	tlb_entries[entry_idx] = entry;
 
 	pa = tlb_entry_to_pa(tlb_entries[entry_idx]);
 
@@ -622,7 +627,7 @@ static int sys_mm_drv_mm_init(const struct device *dev)
 
 	uint32_t avalible_memory_size = ace_hpsram_get_bank_count() * SRAM_BANK_SIZE;
 
-	L2_PHYS_SRAM_REGION.num_blocks = avalible_memory_size / CONFIG_MM_DRV_PAGE_SIZE;
+	L2_PHYS_SRAM_REGION.info.num_blocks = avalible_memory_size / CONFIG_MM_DRV_PAGE_SIZE;
 
 	ret = calculate_memory_regions(UNUSED_L2_START_ALIGNED);
 	CHECKIF(ret != 0) {
@@ -665,7 +670,7 @@ static int sys_mm_drv_mm_init(const struct device *dev)
 
 		__ASSERT(false,
 			 "unused l2 pointer is outside of l2 sram range %p\n",
-			 UNUSED_L2_START_ALIGNED);
+			 (void *)UNUSED_L2_START_ALIGNED);
 		return -EFAULT;
 	}
 
@@ -723,7 +728,8 @@ static void adsp_mm_save_context(void *storage_buffer)
 		entry_idx = get_tlb_entry_idx(phys_addr);
 		entry = pa_to_tlb_entry(phys_addr);
 
-		if ((tlb_entries[entry_idx] & TLB_PADDR_MASK) != entry) {
+		if (((tlb_entries[entry_idx] & TLB_PADDR_MASK) != entry) ||
+		    ((tlb_entries[entry_idx] & TLB_ENABLE_BIT) != TLB_ENABLE_BIT)) {
 			/* this page needs remapping, invalidate cache to avoid stalled data
 			 * all cache data has been flushed before
 			 * do this for pages to remap only

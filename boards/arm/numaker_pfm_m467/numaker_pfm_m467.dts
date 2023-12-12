@@ -8,6 +8,7 @@
 
 #include <nuvoton/m46x.dtsi>
 #include "numaker_pfm_m467-pinctrl.dtsi"
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 
 / {
 	model = "Nuvoton PFM M467 board";
@@ -28,6 +29,7 @@
 		zephyr,sram = &sram0;
 		zephyr,flash = &flash0;
 		zephyr,code-partition = &slot0_partition;
+		zephyr,canbus = &canfd0;
 	};
 
 
@@ -52,10 +54,12 @@
 		user_button_1: button_1 {
 			label = "User SW2";
 			gpios = <&gpioh 1 GPIO_ACTIVE_LOW>;
+			zephyr,code = <INPUT_KEY_0>;
 		};
 		user_button_2: button_2 {
 			label = "User SW3";
 			gpios = <&gpioh 0 GPIO_ACTIVE_LOW>;
+			zephyr,code = <INPUT_KEY_1>;
 		};
 	};
 };
@@ -102,6 +106,20 @@
 &uart0 {
 	current-speed = <115200>;
 	pinctrl-0 = <&uart0_default>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&canfd0 {
+	bus-speed = <125000>;
+	bus-speed-data = <1000000>;
+	pinctrl-0 = <&canfd0_default>;
+	pinctrl-names = "default";
+	status = "okay";
+};
+
+&emac {
+	pinctrl-0 = <&emac_default>;
 	pinctrl-names = "default";
 	status = "okay";
 };

@@ -157,7 +157,7 @@ static int w5500_writebuf(const struct device *dev, uint16_t offset, uint8_t *bu
 static int w5500_command(const struct device *dev, uint8_t cmd)
 {
 	uint8_t reg;
-	uint64_t end = sys_clock_timeout_end_calc(K_MSEC(100));
+	k_timepoint_t end = sys_timepoint_calc(K_MSEC(100));
 
 	w5500_spi_write(dev, W5500_S0_CR, &cmd, 1);
 	while (1) {
@@ -165,8 +165,7 @@ static int w5500_command(const struct device *dev, uint8_t cmd)
 		if (!reg) {
 			break;
 			}
-		int64_t remaining = end - sys_clock_tick_get();
-		if (remaining <= 0) {
+		if (sys_timepoint_expired(end)) {
 			return -EIO;
 			}
 		k_busy_wait(W5500_PHY_ACCESS_DELAY);
@@ -276,8 +275,12 @@ static void w5500_rx(const struct device *dev)
 	w5500_command(dev, S0_CR_RECV);
 }
 
-static void w5500_thread(const struct device *dev)
+static void w5500_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	const struct device *dev = p1;
 	uint8_t ir;
 	struct w5500_runtime *ctx = dev->data;
 	const struct w5500_config *config = dev->config;
@@ -507,7 +510,7 @@ static int w5500_init(const struct device *dev)
 		return -EINVAL;
 	}
 
-	if (!device_is_ready(config->interrupt.port)) {
+	if (!gpio_is_ready_dt(&config->interrupt)) {
 		LOG_ERR("GPIO port %s not ready", config->interrupt.port->name);
 		return -EINVAL;
 	}
@@ -528,7 +531,7 @@ static int w5500_init(const struct device *dev)
 					GPIO_INT_EDGE_FALLING);
 
 	if (config->reset.port) {
-		if (!device_is_ready(config->reset.port)) {
+		if (!gpio_is_ready_dt(&config->reset)) {
 			LOG_ERR("GPIO port %s not ready", config->reset.port->name);
 			return -EINVAL;
 		}
@@ -558,7 +561,7 @@ static int w5500_init(const struct device *dev)
 
 	k_thread_create(&ctx->thread, ctx->thread_stack,
 			CONFIG_ETH_W5500_RX_THREAD_STACK_SIZE,
-			(k_thread_entry_t)w5500_thread,
+			w5500_thread,
 			(void *)dev, NULL, NULL,
 			K_PRIO_COOP(CONFIG_ETH_W5500_RX_THREAD_PRIO),
 			0, K_NO_WAIT);

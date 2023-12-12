@@ -99,8 +99,6 @@ uint8_t ll_adv_sync_param_set(uint8_t handle, uint16_t interval, uint16_t flags)
 	}
 
 	if (IS_ENABLED(CONFIG_BT_CTLR_PARAM_CHECK)) {
-		uint8_t err;
-
 		err = adv_type_check(adv);
 		if (err) {
 			return err;
@@ -112,7 +110,6 @@ uint8_t ll_adv_sync_param_set(uint8_t handle, uint16_t interval, uint16_t flags)
 		struct pdu_adv *ter_pdu;
 		struct lll_adv *lll;
 		uint8_t chm_last;
-		int err;
 
 		sync = sync_acquire();
 		if (!sync) {
@@ -225,7 +222,7 @@ uint8_t ll_adv_sync_param_set(uint8_t handle, uint16_t interval, uint16_t flags)
 }
 
 #if defined(CONFIG_BT_CTLR_ADV_ISO) && defined(CONFIG_BT_TICKER_EXT_EXPIRE_INFO)
-void ull_adv_iso_created(struct ll_adv_sync_set *sync)
+void ull_adv_sync_iso_created(struct ll_adv_sync_set *sync)
 {
 	if (sync->lll.iso && sync->is_started) {
 		uint8_t iso_handle = sync->lll.iso->handle;
@@ -268,8 +265,6 @@ uint8_t ll_adv_sync_ad_data_set(uint8_t handle, uint8_t op, uint8_t len,
 
 	/* Check for advertising set type */
 	if (IS_ENABLED(CONFIG_BT_CTLR_PARAM_CHECK)) {
-		uint8_t err;
-
 		err = adv_type_check(adv);
 		if (err) {
 			return err;
@@ -408,6 +403,14 @@ uint8_t ll_adv_sync_ad_data_set(uint8_t handle, uint8_t op, uint8_t len,
 
 				/* No AD data overflow */
 				ad_len_overflow = 0U;
+
+				/* No chain PDU.
+				 * Note: Not required to assign as referencing
+				 * is guarded by the fact that ad_len_overflow
+				 * is zero; having the below to make compilers
+				 * not complain of uninitialized variable.
+				 */
+				ad_len_chain = 0U;
 			}
 		}
 	} else {
@@ -489,7 +492,16 @@ uint8_t ll_adv_sync_ad_data_set(uint8_t handle, uint8_t op, uint8_t len,
 			/* Proceed to add chain PDU */
 			err = 0U;
 		} else {
+			/* No AD data overflow */
 			ad_len_overflow = 0U;
+
+			/* No chain PDU.
+			 * Note: Not required to assign as referencing is
+			 * guarded by the fact that ad_len_overflow is zero;
+			 * having the below to make compilers not complain of
+			 * uninitialized variable.
+			 */
+			ad_len_chain = 0U;
 		}
 #endif /* CONFIG_BT_CTLR_ADV_SYNC_PDU_LINK */
 	}
@@ -757,8 +769,6 @@ uint8_t ll_adv_sync_enable(uint8_t handle, uint8_t enable)
 
 	/* Check for advertising set type */
 	if (IS_ENABLED(CONFIG_BT_CTLR_PARAM_CHECK)) {
-		uint8_t err;
-
 		err = adv_type_check(adv);
 		if (err) {
 			return BT_HCI_ERR_CMD_DISALLOWED;
@@ -1143,7 +1153,7 @@ uint32_t ull_adv_sync_evt_init(struct ll_adv_set *adv,
 		HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_XTAL_US);
 	sync->ull.ticks_preempt_to_start =
 		HAL_TICKER_US_TO_TICKS(EVENT_OVERHEAD_PREEMPT_MIN_US);
-	sync->ull.ticks_slot = HAL_TICKER_US_TO_TICKS(time_us);
+	sync->ull.ticks_slot = HAL_TICKER_US_TO_TICKS_CEIL(time_us);
 
 	ticks_slot_offset = MAX(sync->ull.ticks_active_to_start,
 				sync->ull.ticks_prepare_to_start);
@@ -1210,15 +1220,18 @@ uint32_t ull_adv_sync_start(struct ll_adv_set *adv,
 uint8_t ull_adv_sync_time_update(struct ll_adv_sync_set *sync,
 				 struct pdu_adv *pdu)
 {
-	uint32_t volatile ret_cb;
-	uint32_t ticks_minus;
-	uint32_t ticks_plus;
 	uint32_t time_ticks;
 	uint32_t time_us;
-	uint32_t ret;
 
 	time_us = sync_time_get(sync, pdu);
 	time_ticks = HAL_TICKER_US_TO_TICKS(time_us);
+
+#if !defined(CONFIG_BT_CTLR_JIT_SCHEDULING)
+	uint32_t volatile ret_cb;
+	uint32_t ticks_minus;
+	uint32_t ticks_plus;
+	uint32_t ret;
+
 	if (sync->ull.ticks_slot > time_ticks) {
 		ticks_minus = sync->ull.ticks_slot - time_ticks;
 		ticks_plus = 0U;
@@ -1239,6 +1252,7 @@ uint8_t ull_adv_sync_time_update(struct ll_adv_sync_set *sync,
 	if (ret != TICKER_STATUS_SUCCESS) {
 		return BT_HCI_ERR_CMD_DISALLOWED;
 	}
+#endif /* !CONFIG_BT_CTLR_JIT_SCHEDULING */
 
 	sync->ull.ticks_slot = time_ticks;
 
@@ -1351,9 +1365,7 @@ void ull_adv_sync_info_fill(struct ll_adv_sync_set *sync,
 	 * If sync_info is part of ADV PDU the offs_adjust field
 	 * is always set to 0.
 	 */
-	si->offs_units = OFFS_UNIT_VALUE_30_US;
-	si->offs_adjust = 0U;
-	si->offs = 0U;
+	PDU_ADV_SYNC_INFO_OFFS_SET(si, 0U, OFFS_UNIT_VALUE_30_US, 0U);
 
 	/* Fill the interval, access address and CRC init */
 	si->interval = sys_cpu_to_le16(sync->interval);
@@ -2210,18 +2222,19 @@ void ull_adv_sync_lll_syncinfo_fill(struct pdu_adv *pdu, struct lll_adv_aux *lll
 
 static void sync_info_offset_fill(struct pdu_adv_sync_info *si, uint32_t offs)
 {
+	uint8_t offs_adjust = 0U;
+
 	if (offs >= OFFS_ADJUST_US) {
 		offs -= OFFS_ADJUST_US;
-		si->offs_adjust = 1U;
+		offs_adjust = 1U;
 	}
 
 	offs = offs / OFFS_UNIT_30_US;
 	if (!!(offs >> OFFS_UNIT_BITS)) {
-		si->offs = sys_cpu_to_le16(offs / (OFFS_UNIT_300_US / OFFS_UNIT_30_US));
-		si->offs_units = OFFS_UNIT_VALUE_300_US;
+		PDU_ADV_SYNC_INFO_OFFS_SET(si, offs / (OFFS_UNIT_300_US / OFFS_UNIT_30_US),
+					   OFFS_UNIT_VALUE_300_US, offs_adjust);
 	} else {
-		si->offs = sys_cpu_to_le16(offs);
-		si->offs_units = OFFS_UNIT_VALUE_30_US;
+		PDU_ADV_SYNC_INFO_OFFS_SET(si, offs, OFFS_UNIT_VALUE_30_US, offs_adjust);
 	}
 }
 
@@ -2331,22 +2344,22 @@ static void sync_info_offset_fill(struct pdu_adv_sync_info *si,
 				  uint32_t remainder_us,
 				  uint32_t start_us)
 {
+	uint8_t offs_adjust = 0U;
 	uint32_t offs;
 
 	offs = HAL_TICKER_TICKS_TO_US(ticks_offset) + remainder_us - start_us;
 
 	if (offs >= OFFS_ADJUST_US) {
 		offs -= OFFS_ADJUST_US;
-		si->offs_adjust = 1U;
+		offs_adjust = 1U;
 	}
 
 	offs = offs / OFFS_UNIT_30_US;
 	if (!!(offs >> OFFS_UNIT_BITS)) {
-		si->offs = sys_cpu_to_le16(offs / (OFFS_UNIT_300_US / OFFS_UNIT_30_US));
-		si->offs_units = OFFS_UNIT_VALUE_300_US;
+		PDU_ADV_SYNC_INFO_OFFS_SET(si, offs / (OFFS_UNIT_300_US / OFFS_UNIT_30_US),
+					   OFFS_UNIT_VALUE_300_US, offs_adjust);
 	} else {
-		si->offs = sys_cpu_to_le16(offs);
-		si->offs_units = OFFS_UNIT_VALUE_30_US;
+		PDU_ADV_SYNC_INFO_OFFS_SET(si, offs, OFFS_UNIT_VALUE_30_US, offs_adjust);
 	}
 }
 

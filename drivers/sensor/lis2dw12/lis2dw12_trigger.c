@@ -301,8 +301,13 @@ static void lis2dw12_gpio_callback(const struct device *dev,
 }
 
 #ifdef CONFIG_LIS2DW12_TRIGGER_OWN_THREAD
-static void lis2dw12_thread(struct lis2dw12_data *lis2dw12)
+static void lis2dw12_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct lis2dw12_data *lis2dw12 = p1;
+
 	while (1) {
 		k_sem_take(&lis2dw12->gpio_sem, K_FOREVER);
 		lis2dw12_handle_interrupt(lis2dw12->dev);
@@ -432,7 +437,7 @@ int lis2dw12_init_interrupt(const struct device *dev)
 	int ret;
 
 	/* setup data ready gpio interrupt (INT1 or INT2) */
-	if (!device_is_ready(cfg->gpio_int.port)) {
+	if (!gpio_is_ready_dt(&cfg->gpio_int)) {
 		if (cfg->gpio_int.port) {
 			LOG_ERR("%s: device %s is not ready", dev->name,
 						cfg->gpio_int.port->name);
@@ -451,7 +456,7 @@ int lis2dw12_init_interrupt(const struct device *dev)
 
 	k_thread_create(&lis2dw12->thread, lis2dw12->thread_stack,
 		       CONFIG_LIS2DW12_THREAD_STACK_SIZE,
-		       (k_thread_entry_t)lis2dw12_thread, lis2dw12,
+		       lis2dw12_thread, lis2dw12,
 		       NULL, NULL, K_PRIO_COOP(CONFIG_LIS2DW12_THREAD_PRIORITY),
 		       0, K_NO_WAIT);
 #elif defined(CONFIG_LIS2DW12_TRIGGER_GLOBAL_THREAD)

@@ -16,7 +16,7 @@ LOG_MODULE_REGISTER(net_dumb_http_srv_mt_sample);
 
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/net_event.h>
-#include <zephyr/net/conn_mgr.h>
+#include <zephyr/net/conn_mgr_monitor.h>
 
 #define MY_PORT 8080
 
@@ -287,7 +287,7 @@ static int process_tcp(int *sock, int *accepted)
 			&tcp6_handler_thread[slot],
 			tcp6_handler_stack[slot],
 			K_THREAD_STACK_SIZEOF(tcp6_handler_stack[slot]),
-			(k_thread_entry_t)client_conn_handler,
+			client_conn_handler,
 			INT_TO_POINTER(slot),
 			&accepted[slot],
 			&tcp6_handler_tid[slot],
@@ -302,7 +302,7 @@ static int process_tcp(int *sock, int *accepted)
 			&tcp4_handler_thread[slot],
 			tcp4_handler_stack[slot],
 			K_THREAD_STACK_SIZEOF(tcp4_handler_stack[slot]),
-			(k_thread_entry_t)client_conn_handler,
+			client_conn_handler,
 			INT_TO_POINTER(slot),
 			&accepted[slot],
 			&tcp4_handler_tid[slot],
@@ -426,7 +426,7 @@ int main(void)
 					     event_handler, EVENT_MASK);
 		net_mgmt_add_event_callback(&mgmt_cb);
 
-		conn_mgr_resend_status();
+		conn_mgr_mon_resend_status();
 	}
 
 	if (!IS_ENABLED(CONFIG_NET_CONNECTION_MANAGER)) {

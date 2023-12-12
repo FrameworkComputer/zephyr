@@ -9,14 +9,16 @@
 
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/gpio.h>
+#include <zephyr/dt-bindings/sensor/bq274xx.h>
 
 /*** General Constant ***/
-#define BQ274XX_UNSEAL_KEY 0x8000 /* Secret code to unseal the BQ27441-G1A */
-#define BQ274XX_DEVICE_ID  0x0421 /* Default device ID */
+#define BQ274XX_UNSEAL_KEY_A 0x8000 /* Unseal code one on BQ27441-G1A and similar */
+#define BQ274XX_UNSEAL_KEY_B 0x8000 /* Unseal code two on BQ27441-G1A and similar */
+#define BQ27421_DEVICE_ID  0x0421
+#define BQ27427_DEVICE_ID  0x0427
 
 /*** Standard Commands ***/
-#define BQ274XX_CMD_CONTROL_LOW    0x00 /* Control() low register */
-#define BQ274XX_CMD_CONTROL_HIGH   0x01 /* Control() high register */
+#define BQ274XX_CMD_CONTROL        0x00 /* Control() register */
 #define BQ274XX_CMD_TEMP           0x02 /* Temperature() */
 #define BQ274XX_CMD_VOLTAGE        0x04 /* Voltage() */
 #define BQ274XX_CMD_FLAGS          0x06 /* Flags() */
@@ -58,6 +60,11 @@
 #define BQ274XX_CTRL_EXIT_CFGUPDATE  0x0043
 #define BQ274XX_CTRL_EXIT_RESIM      0x0044
 
+/* BQ27427 */
+#define BQ27427_CTRL_CHEM_A 0x0030
+#define BQ27427_CTRL_CHEM_B 0x0031
+#define BQ27427_CTRL_CHEM_C 0x0032
+
 /*** Extended Data Commands ***/
 #define BQ274XX_EXT_OPCONFIG                   0x3A /* OpConfig() */
 #define BQ274XX_EXT_CAPACITY                   0x3C /* DesignCapacity() */
@@ -67,18 +74,18 @@
 #define BQ274XX_EXT_BLKDAT_END                 0x5F /* BlockData_end() */
 #define BQ274XX_EXT_CHECKSUM                   0x60 /* BlockDataCheckSum() */
 #define BQ274XX_EXT_DATA_CONTROL               0x61 /* BlockDataControl() */
-#define BQ274XX_EXT_BLKDAT_DESIGN_CAP_HIGH     0x4A /* BlockData */
-#define BQ274XX_EXT_BLKDAT_DESIGN_CAP_LOW      0x4B
-#define BQ274XX_EXT_BLKDAT_DESIGN_ENR_HIGH     0x4C
-#define BQ274XX_EXT_BLKDAT_DESIGN_ENR_LOW      0x4D
-#define BQ274XX_EXT_BLKDAT_TERMINATE_VOLT_HIGH 0x50
-#define BQ274XX_EXT_BLKDAT_TERMINATE_VOLT_LOW  0x51
-#define BQ274XX_EXT_BLKDAT_TAPERRATE_HIGH      0x5B
-#define BQ274XX_EXT_BLKDAT_TAPERRATE_LOW       0x5C
+#define BQ274XX_EXT_BLKDAT(off)                (BQ274XX_EXT_BLKDAT_START + off)
 
-#define BQ274XX_DELAY 1000
+/* Hold the register offset for a device variant. */
+struct bq274xx_regs {
+	uint8_t dm_design_capacity;
+	uint8_t dm_design_energy;
+	uint8_t dm_terminate_voltage;
+	uint8_t dm_taper_rate;
+};
 
 struct bq274xx_data {
+	const struct bq274xx_regs *regs;
 	bool configured;
 	uint16_t voltage;
 	int16_t avg_current;
@@ -118,6 +125,7 @@ struct bq274xx_config {
 #if defined(CONFIG_BQ274XX_PM) || defined(CONFIG_BQ274XX_TRIGGER)
 	struct gpio_dt_spec int_gpios;
 #endif
+	uint16_t chemistry_id;
 	bool lazy_loading;
 };
 

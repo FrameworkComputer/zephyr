@@ -21,7 +21,13 @@ zephyr_syscall_header_ifdef(
 
 zephyr_syscall_header_ifdef(
   CONFIG_MMU
+  ${ZEPHYR_BASE}/include/zephyr/kernel/mm.h
   ${ZEPHYR_BASE}/include/zephyr/sys/mem_manage.h
+)
+
+zephyr_syscall_header_ifdef(
+  CONFIG_DEMAND_PAGING
+  ${ZEPHYR_BASE}/include/zephyr/kernel/mm/demand_paging.h
 )
 
 # If a pre-built static library containing kernel code exists in
@@ -38,9 +44,13 @@ target_link_libraries(kernel INTERFACE ${libkernel})
 
 else()
 
+# FIXME: SHADOW_VARS: Remove this once we have enabled -Wshadow globally.
+add_compile_options($<TARGET_PROPERTY:compiler,warning_shadow_variables>)
+
 list(APPEND kernel_files
   main_weak.c
   banner.c
+  busy_wait.c
   device.c
   errno.c
   fatal.c
@@ -103,6 +113,7 @@ target_sources_ifdef(CONFIG_POLL                  kernel PRIVATE poll.c)
 target_sources_ifdef(CONFIG_EVENTS                kernel PRIVATE events.c)
 target_sources_ifdef(CONFIG_PIPES                 kernel PRIVATE pipes.c)
 target_sources_ifdef(CONFIG_SCHED_THREAD_USAGE    kernel PRIVATE usage.c)
+target_sources_ifdef(CONFIG_OBJ_CORE              kernel PRIVATE obj_core.c)
 
 if(${CONFIG_KERNEL_MEM_POOL})
   target_sources(kernel PRIVATE mempool.c)
@@ -121,6 +132,12 @@ target_sources_ifdef(
   userspace_handler.c
   userspace.c
   )
+
+if(${CONFIG_DYNAMIC_THREAD})
+  target_sources(kernel PRIVATE dynamic.c)
+else()
+  target_sources(kernel PRIVATE dynamic_disabled.c)
+endif()
 
 target_include_directories(kernel PRIVATE
   ${ZEPHYR_BASE}/kernel/include

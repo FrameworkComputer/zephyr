@@ -56,7 +56,7 @@ menu "Build and Link Features"
 
 menu "Linker Options"
 
-choice
+choice LINKER_ORPHAN_CONFIGURATION
 	prompt "Linker Orphan Section Handling"
 	default LINKER_ORPHAN_SECTION_WARN
 
@@ -306,6 +306,24 @@ config LINKER_USE_RELAX
 
 endmenu # "Linker Sections"
 
+config LINKER_DEVNULL_SUPPORT
+	bool
+	default y if CPU_CORTEX_M || (RISCV && !64BIT)
+
+config LINKER_DEVNULL_MEMORY
+	bool "Devnull region"
+	depends on LINKER_DEVNULL_SUPPORT
+	help
+	  Devnull region is created. It is stripped from final binary but remains
+	  in byproduct elf file.
+
+config LINKER_DEVNULL_MEMORY_SIZE
+	int "Devnull region size"
+	depends on LINKER_DEVNULL_MEMORY
+	default 262144
+	help
+	  Size can be adjusted so it fits all data placed in that region.
+
 endmenu
 
 menu "Compiler Options"
@@ -316,13 +334,41 @@ config CODING_GUIDELINE_CHECK
 	  Use available compiler flags to check coding guideline rules during
 	  the build.
 
-config NATIVE_APPLICATION
-	bool "Build as a native host application"
+config NATIVE_LIBC
+	bool
 	select FULL_LIBC_SUPPORTED
-	select FULL_LIBCPP_SUPPORTED if CPP
+	help
+	  Zephyr will use the host system C library.
+
+config NATIVE_LIBCPP
+	bool
+	select FULL_LIBCPP_SUPPORTED
+	help
+	  Zephyr will use the host system C++ library
+
+config NATIVE_BUILD
+	bool
+	select NATIVE_LIBC if EXTERNAL_LIBC
+	select NATIVE_LIBCPP if EXTERNAL_LIBCPP
+	help
+	  Zephyr will be built targeting the host system for debug and
+	  development purposes.
+
+config NATIVE_APPLICATION
+	bool
+	default y if ARCH_POSIX
+	depends on !NATIVE_LIBRARY
+	select NATIVE_BUILD
 	help
 	  Build as a native application that can run on the host and using
 	  resources and libraries provided by the host.
+
+config NATIVE_LIBRARY
+	bool
+	select NATIVE_BUILD
+	help
+	  Build as a prelinked library for the native host target.
+	  This library can later be built into an executable for the host.
 
 config COMPILER_FREESTANDING
 	bool "Build in a freestanding compiler mode"
@@ -398,7 +444,7 @@ config COMPILER_COLOR_DIAGNOSTICS
 
 choice COMPILER_SECURITY_FORTIFY
 	prompt "Detect buffer overflows in libc calls"
-	default FORTIFY_SOURCE_NONE if NO_OPTIMIZATIONS || MINIMAL_LIBC || NATIVE_APPLICATION
+	default FORTIFY_SOURCE_NONE if NO_OPTIMIZATIONS || MINIMAL_LIBC || NATIVE_BUILD
 	default FORTIFY_SOURCE_COMPILE_TIME
 	help
 	  Buffer overflow checking in libc calls. Supported by Clang and
@@ -491,7 +537,6 @@ config OUTPUT_SYMBOLS
 
 config OUTPUT_DISASSEMBLY
 	bool "Create a disassembly file"
-	default y
 	help
 	  Create an .lst file with the assembly listing of the firmware.
 
@@ -521,7 +566,8 @@ config CLEANUP_INTERMEDIATE_FILES
 	bool "Remove all intermediate files"
 	help
 	  Delete intermediate files to save space and cleanup clutter resulting
-	  from the build process.
+	  from the build process. Note this breaks incremental builds, west spdx
+	  (Software Bill of Material generation), and maybe others.
 
 config BUILD_NO_GAP_FILL
 	bool "Don't fill gaps in generated hex/bin/s19 files."
@@ -577,7 +623,7 @@ if BUILD_OUTPUT_UF2
 
 config BUILD_OUTPUT_UF2_FAMILY_ID
 	string "UF2 device family ID"
-	default "0x1c5f21b0" if SOC_ESP32
+	default "0x1c5f21b0" if SOC_SERIES_ESP32
 	default "0x621e937a" if SOC_NRF52833_QIAA
 	default "0xada52840" if SOC_NRF52840_QIAA
 	default "0x4fb2d5bd" if SOC_SERIES_IMX_RT
@@ -658,6 +704,15 @@ config BUILD_OUTPUT_INFO_HEADER
 	  - VMA address of each segment
 	  - Size of each segment
 
+config BUILD_ALIGN_LMA
+	bool "Align LMA in output image"
+	default y if BUILD_OUTPUT_ADJUST_LMA!=""
+	help
+	  Ensure that the LMA for each section in the output image respects
+	  the alignment requirements of that section. This is required for
+	  some tooling, such as objcopy, to be able to adjust the LMA of the
+	  ELF file.
+
 config APPLICATION_DEFINED_SYSCALL
 	bool "Scan application folder for any syscall definition"
 	help
@@ -721,22 +776,18 @@ config BUILD_OUTPUT_STRIP_PATHS
 
 config CHECK_INIT_PRIORITIES
 	bool "Build time initialization priorities check"
+	default y
+	# If we are building a native_simulator target, we can only check the init priorities
+	# if we are building the final output but we are not assembling several images together
+	depends on !(NATIVE_LIBRARY && (!BUILD_OUTPUT_EXE || NATIVE_SIMULATOR_EXTRA_IMAGE_PATHS != ""))
+	depends on "$(ZEPHYR_TOOLCHAIN_VARIANT)" != "armclang"
 	help
 	  Check the build for initialization priority issues by comparing the
 	  initialization priority in the build with the device dependency
 	  derived from the devicetree definition.
 
 	  Fails the build on priority errors (dependent devices, inverted
-	  priority), see CHECK_INIT_PRIORITIES_FAIL_ON_WARNING to fail on
-	  warnings (dependent devices, same priority) as well.
-
-config CHECK_INIT_PRIORITIES_FAIL_ON_WARNING
-	bool "Fail the build on priority check warnings"
-	depends on CHECK_INIT_PRIORITIES
-	help
-	  Fail the build if the dependency check script identifies any pair of
-	  devices depending on each other but initialized with the same
-	  priority.
+	  priority).
 
 config EMIT_ALL_SYSCALLS
 	bool "Emit all possible syscalls in the tree"
@@ -811,7 +862,7 @@ config IS_BOOTLOADER
 
 config BOOTLOADER_SRAM_SIZE
 	int "SRAM reserved for bootloader"
-	default 16
+	default 0
 	depends on !XIP || IS_BOOTLOADER
 	depends on ARM || XTENSA
 	help
@@ -870,17 +921,6 @@ config BOOTLOADER_BOSSA_ADAFRUIT_UF2
 	  0xf01669ef as the magic value to enter the bootloader.
 
 endchoice
-
-endmenu
-
-menu "Compatibility"
-
-config COMPAT_INCLUDES
-	bool "Suppress warnings when using header shims"
-	default y
-	help
-	  Suppress any warnings from the pre-processor when including
-	  deprecated header files.
 
 endmenu
 

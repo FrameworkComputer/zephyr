@@ -8,6 +8,7 @@
 #include <helpers/nrfx_gppi.h>
 #include <zephyr/drivers/timer/nrf_rtc_timer.h>
 #include <zephyr/drivers/mbox.h>
+#include <zephyr/init.h>
 #include <zephyr/logging/log_ctrl.h>
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(sync_rtc, CONFIG_SYNC_RTC_LOG_LEVEL);
@@ -118,7 +119,7 @@ static void free_resources(union rtc_sync_channels channels)
 
 int z_nrf_rtc_timer_nrf53net_offset_get(void)
 {
-	if (!IS_ENABLED(CONFIG_SOC_NRF5340_CPUNET)) {
+	if (!IS_ENABLED(CONFIG_SOC_COMPATIBLE_NRF5340_CPUNET)) {
 		return -ENOSYS;
 	}
 
@@ -134,7 +135,7 @@ static void rtc_cb(int32_t id, uint64_t cc_value, void *user_data)
 
 	channels.raw = (uint32_t)user_data;
 	ppi_rtc_to_ipc(channels, false);
-	if (IS_ENABLED(CONFIG_SOC_NRF5340_CPUAPP)) {
+	if (IS_ENABLED(CONFIG_SOC_COMPATIBLE_NRF5340_CPUAPP)) {
 		/* APP: Synchronized completed */
 		free_resources(channels);
 	} else {
@@ -164,7 +165,7 @@ static void remote_callback(void *user_data)
 	/* Clear previous task,event */
 	ppi_ipc_to_rtc(channels, false);
 
-	if (IS_ENABLED(CONFIG_SOC_NRF5340_CPUAPP)) {
+	if (IS_ENABLED(CONFIG_SOC_COMPATIBLE_NRF5340_CPUAPP)) {
 		/* Setup new connection from RTC to IPC and set RTC to a new
 		 * interval that contains captured offset.
 		 */
@@ -257,7 +258,7 @@ static int sync_rtc_setup(void)
 
 	nrfx_gppi_channels_enable(BIT(channels.ch.ppi));
 
-	if (IS_ENABLED(CONFIG_SOC_NRF5340_CPUAPP)) {
+	if (IS_ENABLED(CONFIG_SOC_COMPATIBLE_NRF5340_CPUAPP)) {
 		ppi_ipc_to_rtc(channels, true);
 	} else {
 		ppi_rtc_to_ipc(channels, true);

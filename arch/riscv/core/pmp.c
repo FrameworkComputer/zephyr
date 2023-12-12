@@ -56,7 +56,7 @@ LOG_MODULE_REGISTER(mpu);
 
 #define PMP_NONE 0
 
-static void print_pmp_entries(unsigned int start, unsigned int end,
+static void print_pmp_entries(unsigned int pmp_start, unsigned int pmp_end,
 			      unsigned long *pmp_addr, unsigned long *pmp_cfg,
 			      const char *banner)
 {
@@ -64,7 +64,7 @@ static void print_pmp_entries(unsigned int start, unsigned int end,
 	unsigned int index;
 
 	LOG_DBG("PMP %s:", banner);
-	for (index = start; index < end; index++) {
+	for (index = pmp_start; index < pmp_end; index++) {
 		unsigned long start, end, tmp;
 
 		switch (pmp_n_cfg[index] & PMP_A) {
@@ -161,8 +161,8 @@ static bool set_pmp_entry(unsigned int *index_p, uint8_t perm,
 	unsigned int index = *index_p;
 	bool ok = true;
 
-	__ASSERT((start & 0x3) == 0, "misaligned start address");
-	__ASSERT((size & 0x3) == 0, "misaligned size");
+	__ASSERT((start & (CONFIG_PMP_GRANULARITY - 1)) == 0, "misaligned start address");
+	__ASSERT((size & (CONFIG_PMP_GRANULARITY - 1)) == 0, "misaligned size");
 
 	if (index >= index_limit) {
 		LOG_ERR("out of PMP slots");

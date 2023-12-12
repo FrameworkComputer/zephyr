@@ -30,8 +30,13 @@ static void adt7310_gpio_callback(const struct device *dev, struct gpio_callback
 }
 
 #if defined(CONFIG_ADT7310_TRIGGER_OWN_THREAD)
-static void adt7310_thread(struct adt7310_data *drv_data)
+static void adt7310_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct adt7310_data *drv_data = p1;
+
 	while (true) {
 		k_sem_take(&drv_data->gpio_sem, K_FOREVER);
 		if (drv_data->th_handler != NULL) {
@@ -103,7 +108,7 @@ int adt7310_init_interrupt(const struct device *dev)
 	const struct adt7310_dev_config *cfg = dev->config;
 	int ret;
 
-	if (!device_is_ready(cfg->int_gpio.port)) {
+	if (!gpio_is_ready_dt(&cfg->int_gpio)) {
 		LOG_ERR("%s: device %s is not ready", dev->name, cfg->int_gpio.port->name);
 		return -ENODEV;
 	}
@@ -125,7 +130,7 @@ int adt7310_init_interrupt(const struct device *dev)
 	k_sem_init(&drv_data->gpio_sem, 0, 1);
 	k_thread_create(&drv_data->thread, drv_data->thread_stack,
 			CONFIG_ADT7310_THREAD_STACK_SIZE,
-			(k_thread_entry_t)adt7310_thread, drv_data,
+			adt7310_thread, drv_data,
 			NULL, NULL, K_PRIO_COOP(CONFIG_ADT7310_THREAD_PRIORITY),
 			0, K_NO_WAIT);
 #elif defined(CONFIG_ADT7310_TRIGGER_GLOBAL_THREAD)

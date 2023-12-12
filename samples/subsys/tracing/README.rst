@@ -1,10 +1,7 @@
-.. _tracing_sample:
+.. zephyr:code-sample:: tracing
+   :name: Tracing
 
-Send Tracing Formatted Packet To The Host With Supported Backends
-#################################################################
-
-Overview
-********
+   Send tracing formatted packet to the host with supported backends.
 
 This application can be used to demonstrate the tracing feature. The tracing
 formatted packet will be sent to the host with the currently supported tracing
@@ -86,8 +83,7 @@ Build a POSIX-tracing image with:
 
 .. zephyr-app-commands::
 	:zephyr-app: samples/subsys/tracing
-	:board: native_posix
-	:conf: "prj_native_posix.conf"
+	:board: native_sim
 	:goals: build
 	:compact:
 
@@ -95,8 +91,22 @@ or:
 
 .. zephyr-app-commands::
 	:zephyr-app: samples/subsys/tracing
-	:board: native_posix
-	:conf: "prj_native_posix_ctf.conf"
+	:board: native_sim
+	:conf: "prj_native_ctf.conf"
+	:goals: build
+	:compact:
+
+After the application has run for a while, check the trace output file.
+
+Usage for USER Tracing Backend
+*******************************
+
+Build a USER-tracing image with:
+
+.. zephyr-app-commands::
+	:zephyr-app: samples/subsys/tracing
+	:board: qemu_x86
+	:conf: "prj_user.conf"
 	:goals: build
 	:compact:
 

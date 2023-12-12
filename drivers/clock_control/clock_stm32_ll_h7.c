@@ -16,6 +16,7 @@
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/drivers/clock_control/stm32_clock_control.h>
+#include "clock_stm32_ll_mco.h"
 #include "stm32_hsem.h"
 
 
@@ -106,6 +107,7 @@
 #define AHB_FREQ_MAX		275000000UL
 #define APBx_FREQ_MAX		137500000UL
 #elif defined(CONFIG_SOC_STM32H7A3XX) || defined(CONFIG_SOC_STM32H7A3XXQ) ||\
+	  defined(CONFIG_SOC_STM32H7B0XX) || defined(CONFIG_SOC_STM32H7B0XXQ) ||\
 	  defined(CONFIG_SOC_STM32H7B3XX) || defined(CONFIG_SOC_STM32H7B3XXQ)
 #define SYSCLK_FREQ_MAX		280000000UL
 #define AHB_FREQ_MAX		280000000UL
@@ -818,7 +820,7 @@ static int set_up_plls(void)
 }
 
 #if defined(CONFIG_CPU_CORTEX_M7)
-static int stm32_clock_control_init(const struct device *dev)
+int stm32_clock_control_init(const struct device *dev)
 {
 	uint32_t old_hclk_freq = 0;
 	uint32_t new_hclk_freq = 0;
@@ -828,6 +830,7 @@ static int stm32_clock_control_init(const struct device *dev)
 
 	/* HW semaphore Clock enable */
 #if defined(CONFIG_SOC_STM32H7A3XX) || defined(CONFIG_SOC_STM32H7A3XXQ) || \
+	defined(CONFIG_SOC_STM32H7B0XX) || defined(CONFIG_SOC_STM32H7B0XXQ) || \
 	defined(CONFIG_SOC_STM32H7B3XX) || defined(CONFIG_SOC_STM32H7B3XXQ)
 	LL_AHB2_GRP1_EnableClock(LL_AHB2_GRP1_PERIPH_HSEM);
 #else
@@ -835,6 +838,9 @@ static int stm32_clock_control_init(const struct device *dev)
 #endif
 
 	z_stm32_hsem_lock(CFG_HW_RCC_SEMID, HSEM_LOCK_DEFAULT_RETRY);
+
+	/* Configure MCO1/MCO2 based on Kconfig */
+	stm32_clock_control_mco_init();
 
 	/* Set up indiviual enabled clocks */
 	set_up_fixed_clock_sources();
@@ -913,7 +919,7 @@ static int stm32_clock_control_init(const struct device *dev)
 	return r;
 }
 #else
-static int stm32_clock_control_init(const struct device *dev)
+int stm32_clock_control_init(const struct device *dev)
 {
 	ARG_UNUSED(dev);
 

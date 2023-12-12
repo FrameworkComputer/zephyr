@@ -24,7 +24,6 @@ config EEPROM_INIT_PRIORITY
 
 config EEPROM_SHELL
 	bool "EEPROM shell"
-	default y
 	depends on SHELL
 	help
 	  Enable the EEPROM shell with EEPROM related commands.
@@ -97,11 +96,13 @@ source "drivers/eeprom/Kconfig.stm32"
 source "drivers/eeprom/Kconfig.eeprom_emu"
 source "drivers/eeprom/Kconfig.tmp116"
 source "drivers/eeprom/Kconfig.xec"
+source "drivers/eeprom/Kconfig.mb85rcxx"
 
 config EEPROM_SIMULATOR
 	bool "Simulated EEPROM driver"
 	default y
 	depends on DT_HAS_ZEPHYR_SIM_EEPROM_ENABLED
+	depends on !(ARCH_POSIX && !EXTERNAL_LIBC)
 	select STATS
 	select STATS_NAMES
 	help

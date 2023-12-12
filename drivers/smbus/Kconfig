@@ -12,7 +12,6 @@ if SMBUS
 
 config SMBUS_SHELL
 	bool "SMBus Shell"
-	default y
 	depends on SHELL
 	help
 	  Enable SMBus Shell.
@@ -38,6 +37,8 @@ config SMBUS_INTEL_PCH
 	bool "SMBus Intel PCH driver"
 	default y
 	depends on DT_HAS_INTEL_PCH_SMBUS_ENABLED
+	select PCIE
+	select DYNAMIC_INTERRUPTS
 	help
 	  Enable Intel Platform Controller Hub (PCH) SMBus driver.
 

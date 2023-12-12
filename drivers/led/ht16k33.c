@@ -247,8 +247,12 @@ static bool ht16k33_process_keyscan_data(const struct device *dev)
 	return pressed;
 }
 
-static void ht16k33_irq_thread(struct ht16k33_data *data)
+static void ht16k33_irq_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct ht16k33_data *data = p1;
 	bool pressed;
 
 	while (true) {
@@ -362,7 +366,7 @@ static int ht16k33_init(const struct device *dev)
 	if (config->irq_enabled) {
 		uint8_t keys[HT16K33_KEYSCAN_DATA_SIZE];
 
-		if (!device_is_ready(config->irq.port)) {
+		if (!gpio_is_ready_dt(&config->irq)) {
 			LOG_ERR("IRQ device not ready");
 			return -EINVAL;
 		}
@@ -420,7 +424,7 @@ static int ht16k33_init(const struct device *dev)
 
 	k_thread_create(&data->irq_thread, data->irq_thread_stack,
 			CONFIG_HT16K33_KEYSCAN_IRQ_THREAD_STACK_SIZE,
-			(k_thread_entry_t)ht16k33_irq_thread, data, NULL, NULL,
+			ht16k33_irq_thread, data, NULL, NULL,
 			K_PRIO_COOP(CONFIG_HT16K33_KEYSCAN_IRQ_THREAD_PRIO),
 			0, K_NO_WAIT);
 #endif /* CONFIG_HT16K33_KEYSCAN */

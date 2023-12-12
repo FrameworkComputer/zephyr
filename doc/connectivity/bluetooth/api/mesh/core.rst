@@ -3,7 +3,7 @@
 Core
 ####
 
-The core provides functionality for managing the general Bluetooth mesh
+The core provides functionality for managing the general Bluetooth Mesh
 state.
 
 .. _bluetooth_mesh_lpn:
@@ -67,6 +67,8 @@ vulnerability and flash wear out.
    the RPL between reboots, will make the device vulnerable to replay attacks
    and not perform the replay protection required by the spec.
 
+.. _bluetooth_mesh_persistent_storage:
+
 Persistent storage
 ******************
 
@@ -115,7 +117,7 @@ Advertisement identity
 
 All mesh stack bearers advertise data with the :c:macro:`BT_ID_DEFAULT` local identity.
 The value is preset in the mesh stack implementation. When Bluetooth® Low Energy (LE)
-and Bluetooth mesh coexist on the same device, the application should allocate and
+and Bluetooth Mesh coexist on the same device, the application should allocate and
 configure another local identity for Bluetooth LE purposes before starting the communication.
 
 API reference

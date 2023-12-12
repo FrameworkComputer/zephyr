@@ -11,3 +11,7 @@ zephyr_linker_sources_ifdef(CONFIG_BT_STM32_IPM
 zephyr_sources_ifdef(CONFIG_PM
   power.c
   )
+
+zephyr_sources_ifdef(CONFIG_POWEROFF poweroff.c)
+
+set(SOC_LINKER_SCRIPT ${ZEPHYR_BASE}/include/zephyr/arch/arm/cortex_m/scripts/linker.ld CACHE INTERNAL "")

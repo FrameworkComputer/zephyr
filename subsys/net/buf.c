@@ -221,17 +221,6 @@ static uint8_t *data_ref(struct net_buf *buf, uint8_t *data)
 	return pool->alloc->cb->ref(buf, data);
 }
 
-static void data_unref(struct net_buf *buf, uint8_t *data)
-{
-	struct net_buf_pool *pool = net_buf_pool_get(buf->pool_id);
-
-	if (buf->flags & NET_BUF_EXTERNAL_DATA) {
-		return;
-	}
-
-	pool->alloc->cb->unref(buf, data);
-}
-
 #if defined(CONFIG_NET_BUF_LOG)
 struct net_buf *net_buf_alloc_len_debug(struct net_buf_pool *pool, size_t size,
 					k_timeout_t timeout, const char *func,
@@ -241,7 +230,7 @@ struct net_buf *net_buf_alloc_len(struct net_buf_pool *pool, size_t size,
 				  k_timeout_t timeout)
 #endif
 {
-	uint64_t end = sys_clock_timeout_end_calc(timeout);
+	k_timepoint_t end = sys_timepoint_calc(timeout);
 	struct net_buf *buf;
 	k_spinlock_key_t key;
 
@@ -322,17 +311,7 @@ success:
 #if __ASSERT_ON
 		size_t req_size = size;
 #endif
-		if (!K_TIMEOUT_EQ(timeout, K_NO_WAIT) &&
-		    !K_TIMEOUT_EQ(timeout, K_FOREVER)) {
-			int64_t remaining = end - sys_clock_tick_get();
-
-			if (remaining <= 0) {
-				timeout = K_NO_WAIT;
-			} else {
-				timeout = Z_TIMEOUT_TICKS(remaining);
-			}
-		}
-
+		timeout = sys_timepoint_timeout(end);
 		buf->__buf = data_alloc(buf, &size, timeout);
 		if (!buf->__buf) {
 			NET_BUF_ERR("%s():%d: Failed to allocate data",
@@ -494,11 +473,6 @@ void net_buf_unref(struct net_buf *buf)
 			return;
 		}
 
-		if (buf->__buf) {
-			data_unref(buf, buf->__buf);
-			buf->__buf = NULL;
-		}
-
 		buf->data = NULL;
 		buf->frags = NULL;
 
@@ -531,7 +505,7 @@ struct net_buf *net_buf_ref(struct net_buf *buf)
 
 struct net_buf *net_buf_clone(struct net_buf *buf, k_timeout_t timeout)
 {
-	int64_t end = sys_clock_timeout_end_calc(timeout);
+	k_timepoint_t end = sys_timepoint_calc(timeout);
 	struct net_buf_pool *pool;
 	struct net_buf *clone;
 
@@ -555,16 +529,7 @@ struct net_buf *net_buf_clone(struct net_buf *buf, k_timeout_t timeout)
 	} else {
 		size_t size = buf->size;
 
-		if (!K_TIMEOUT_EQ(timeout, K_NO_WAIT) &&
-		    !K_TIMEOUT_EQ(timeout, K_FOREVER)) {
-			int64_t remaining = end - sys_clock_tick_get();
-
-			if (remaining <= 0) {
-				timeout = K_NO_WAIT;
-			} else {
-				timeout = Z_TIMEOUT_TICKS(remaining);
-			}
-		}
+		timeout = sys_timepoint_timeout(end);
 
 		clone->__buf = data_alloc(clone, &size, timeout);
 		if (!clone->__buf || size < buf->size) {

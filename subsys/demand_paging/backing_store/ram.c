@@ -8,6 +8,7 @@
 #include <mmu.h>
 #include <string.h>
 #include <kernel_arch_interface.h>
+#include <zephyr/kernel/mm/demand_paging.h>
 
 /*
  * TODO:
@@ -105,7 +106,7 @@ void k_mem_paging_backing_store_location_free(uintptr_t location)
 {
 	void *slab = location_to_slab(location);
 
-	k_mem_slab_free(&backing_slabs, &slab);
+	k_mem_slab_free(&backing_slabs, slab);
 	free_slabs++;
 }
 

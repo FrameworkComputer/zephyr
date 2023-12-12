@@ -32,8 +32,8 @@ extern "C" {
 #endif
 
 /**
- * @brief Generic Access Profile
- * @defgroup bt_gap Generic Access Profile
+ * @brief Generic Access Profile (GAP)
+ * @defgroup bt_gap Generic Access Profile (GAP)
  * @ingroup bluetooth
  * @{
  */
@@ -339,6 +339,12 @@ void bt_id_get(bt_addr_le_t *addrs, size_t *count);
  * and after that check with bt_id_get() how many identities were recovered.
  * If an insufficient amount of identities were recovered the app may then
  * call bt_id_create() to create new ones.
+ *
+ * If supported by the HCI driver (indicated by setting
+ * @kconfig{CONFIG_BT_HCI_SET_PUBLIC_ADDR}), the first call to this function can be
+ * used to set the controller's public identity address. This call must happen
+ * before calling bt_enable(). Subsequent calls always add/generate random
+ * static addresses.
  *
  * @param addr Address to use for the new identity. If NULL or initialized
  *             to BT_ADDR_LE_ANY the stack will generate a new random
@@ -685,6 +691,20 @@ enum {
 	 * @note Requires @ref BT_LE_ADV_OPT_USE_NAME
 	 */
 	BT_LE_ADV_OPT_FORCE_NAME_IN_AD = BIT(18),
+
+	/**
+	 * @brief Advertise using a Non-Resolvable Private Address.
+	 *
+	 * A new NRPA is set when updating the advertising parameters.
+	 *
+	 * This is an advanced feature; most users will want to enable
+	 * @kconfig{CONFIG_BT_EXT_ADV} instead.
+	 *
+	 * @note Not implemented when @kconfig{CONFIG_BT_PRIVACY}.
+	 *
+	 * @note Mutually exclusive with BT_LE_ADV_OPT_USE_IDENTITY.
+	 */
+	BT_LE_ADV_OPT_USE_NRPA = BIT(19),
 };
 
 /** LE Advertising Parameters. */
@@ -1675,6 +1695,10 @@ struct bt_le_per_adv_sync *bt_le_per_adv_sync_lookup_addr(const bt_addr_le_t *ad
  * Create a periodic advertising sync object that can try to synchronize
  * to periodic advertising reports from an advertiser. Scan shall either be
  * disabled or extended scan shall be enabled.
+ *
+ * This function does not timeout, and will continue to look for an advertiser until it either
+ * finds it or bt_le_per_adv_sync_delete() is called. It is thus suggested to implement a timeout
+ * when using this, if it is expected to find the advertiser within a reasonable timeframe.
  *
  * @param[in]  param     Periodic advertising sync parameters.
  * @param[out] out_sync  Periodic advertising sync object on.

@@ -86,12 +86,17 @@ static void usb_transfer_work(struct k_work *item)
 
 	if (trans->flags & USB_TRANS_WRITE) {
 		if (!trans->bsize) {
-			if (!(trans->flags & USB_TRANS_NO_ZLP)) {
-				LOG_DBG("Transfer ZLP");
-				usb_write(ep, NULL, 0, NULL);
+			if (trans->flags & USB_TRANS_NO_ZLP) {
+				trans->status = 0;
+				goto done;
 			}
-			trans->status = 0;
-			goto done;
+
+			/* Host have to read the ZLP just like any other DATA
+			 * packet. Set USB_TRANS_NO_ZLP flag so the transfer
+			 * will end next time we get ACK from host.
+			 */
+			LOG_DBG("Transfer ZLP");
+			trans->flags |= USB_TRANS_NO_ZLP;
 		}
 
 		ret = usb_write(ep, trans->buffer, trans->bsize, &bytes);
@@ -131,7 +136,7 @@ static void usb_transfer_work(struct k_work *item)
 	}
 
 done:
-	if (trans->status != -EBUSY && trans->cb) { /* Transfer complete */
+	if (trans->status != -EBUSY) { /* Transfer complete */
 		usb_transfer_callback cb = trans->cb;
 		int tsize = trans->tsize;
 		void *priv = trans->priv;
@@ -149,7 +154,9 @@ done:
 		k_sem_give(&trans->sem);
 
 		/* Transfer completion callback */
-		cb(ep, tsize, priv);
+		if (cb) {
+			cb(ep, tsize, priv);
+		}
 	}
 }
 

@@ -20,6 +20,7 @@ find_program(CMAKE_CXX_COMPILER clang++ ${find_program_clang_args})
 
 if(NOT "${ARCH}" STREQUAL "posix")
   include(${ZEPHYR_BASE}/cmake/gcc-m-cpu.cmake)
+  include(${ZEPHYR_BASE}/cmake/gcc-m-fpu.cmake)
 
   if("${ARCH}" STREQUAL "arm")
     list(APPEND TOOLCHAIN_C_FLAGS
@@ -29,7 +30,11 @@ if(NOT "${ARCH}" STREQUAL "posix")
       -fshort-enums
       )
 
-    include(${ZEPHYR_BASE}/cmake/compiler/gcc/target_arm.cmake)
+    include(${ZEPHYR_BASE}/cmake/compiler/clang/target_arm.cmake)
+  endif()
+
+  if(DEFINED CMAKE_C_COMPILER_TARGET)
+    set(clang_target_flag "--target=${CMAKE_C_COMPILER_TARGET}")
   endif()
 
   foreach(file_name include/stddef.h)
@@ -57,17 +62,18 @@ if(NOT "${ARCH}" STREQUAL "posix")
 
   # This libgcc code is partially duplicated in compiler/*/target.cmake
   execute_process(
-    COMMAND ${CMAKE_C_COMPILER} ${TOOLCHAIN_C_FLAGS} --print-libgcc-file-name
-    OUTPUT_VARIABLE LIBGCC_FILE_NAME
+    COMMAND ${CMAKE_C_COMPILER} ${clang_target_flag} ${TOOLCHAIN_C_FLAGS}
+            --print-libgcc-file-name
+    OUTPUT_VARIABLE RTLIB_FILE_NAME
     OUTPUT_STRIP_TRAILING_WHITESPACE
     )
 
-  get_filename_component(LIBGCC_DIR ${LIBGCC_FILE_NAME} DIRECTORY)
+  get_filename_component(RTLIB_DIR ${RTLIB_FILE_NAME} DIRECTORY)
+  get_filename_component(RTLIB_NAME_WITH_PREFIX ${RTLIB_FILE_NAME} NAME_WLE)
+  string(REPLACE lib "" RTLIB_NAME ${RTLIB_NAME_WITH_PREFIX})
 
-  list(APPEND LIB_INCLUDE_DIR "-L\"${LIBGCC_DIR}\"")
-  if(LIBGCC_DIR)
-    list(APPEND TOOLCHAIN_LIBS gcc)
-  endif()
+  list(APPEND LIB_INCLUDE_DIR -L${RTLIB_DIR})
+  list(APPEND TOOLCHAIN_LIBS ${RTLIB_NAME})
 
   list(APPEND CMAKE_REQUIRED_FLAGS -nostartfiles -nostdlib ${isystem_include_flags})
   string(REPLACE ";" " " CMAKE_REQUIRED_FLAGS "${CMAKE_REQUIRED_FLAGS}")

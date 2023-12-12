@@ -35,7 +35,7 @@ LOG_MODULE_REGISTER(soc);
 # define SHIM_GPDMA_CLKCTL(x)     (SHIM_GPDMA_BASE(x) + 0x4)
 # define SHIM_CLKCTL_LPGPDMAFDCGB BIT(0)
 
-#ifdef CONFIG_PM_POLICY_CUSTOM
+#ifdef CONFIG_PM
 #define SRAM_ALIAS_BASE		0x9E000000
 #define SRAM_ALIAS_MASK		0xFF000000
 #define SRAM_ALIAS_OFFSET	0x20000000
@@ -54,6 +54,9 @@ LOG_MODULE_REGISTER(soc);
 extern void rom_entry(void);
 
 struct core_state {
+	uint32_t a0;
+	uint32_t a1;
+	uint32_t excsave2;
 	uint32_t intenable;
 };
 
@@ -69,14 +72,59 @@ static struct core_state core_desc[CONFIG_MP_MAX_NUM_CPUS] = {{0}};
  * @param hpsram_pg_mask pointer to memory segments power gating mask
  * (each bit corresponds to one ebb)
  */
-extern void power_down_cavs(bool disable_lpsram, uint32_t *hpsram_pg_mask);
+extern void power_down_cavs(bool disable_lpsram, uint32_t __sparse_cache * hpsram_pg_mask);
 
 static inline void __sparse_cache *uncache_to_cache(void *address)
 {
 	return (void __sparse_cache *)((uintptr_t)(address) | SRAM_ALIAS_OFFSET);
 }
 
-__weak void pm_state_set(enum pm_state state, uint8_t substate_id)
+static ALWAYS_INLINE void _save_core_context(void)
+{
+	uint32_t core_id = arch_proc_id();
+
+	core_desc[core_id].excsave2 = XTENSA_RSR(ZSR_CPU_STR);
+	__asm__ volatile("mov %0, a0" : "=r"(core_desc[core_id].a0));
+	__asm__ volatile("mov %0, a1" : "=r"(core_desc[core_id].a1));
+	sys_cache_data_flush_range(&core_desc[core_id], sizeof(struct core_state));
+}
+
+static ALWAYS_INLINE void _restore_core_context(void)
+{
+	uint32_t core_id = arch_proc_id();
+
+	XTENSA_WSR(ZSR_CPU_STR, core_desc[core_id].excsave2);
+	__asm__ volatile("mov a0, %0" :: "r"(core_desc[core_id].a0));
+	__asm__ volatile("mov a1, %0" :: "r"(core_desc[core_id].a1));
+	__asm__ volatile("rsync");
+}
+
+void power_gate_exit(void)
+{
+	cpu_early_init();
+	sys_cache_data_flush_and_invd_all();
+	_restore_core_context();
+}
+
+__asm__(".align 4\n\t"
+	".global dsp_restore_vector\n\t"
+	"dsp_restore_vector:\n\t"
+	"  movi  a0, 0\n\t"
+	"  movi  a1, 1\n\t"
+	"  movi  a2, 0x40020\n\t"/* PS_UM|PS_WOE */
+	"  wsr   a2, PS\n\t"
+	"  wsr   a1, WINDOWSTART\n\t"
+	"  wsr   a0, WINDOWBASE\n\t"
+	"  rsync\n\t"
+	"  movi  a1, z_interrupt_stacks\n\t"
+	"  rsr   a2, PRID\n\t"
+	"  movi  a3, " STRINGIFY(CONFIG_ISR_STACK_SIZE) "\n\t"
+	"  mull  a2, a2, a3\n\t"
+	"  add   a2, a2, a3\n\t"
+	"  add   a1, a1, a2\n\t"
+	"  call0 power_gate_exit\n\t");
+
+void pm_state_set(enum pm_state state, uint8_t substate_id)
 {
 	ARG_UNUSED(substate_id);
 	uint32_t cpu = arch_proc_id();
@@ -84,26 +132,31 @@ __weak void pm_state_set(enum pm_state state, uint8_t substate_id)
 	if (state == PM_STATE_SOFT_OFF) {
 		core_desc[cpu].intenable = XTENSA_RSR("INTENABLE");
 		z_xt_ints_off(0xffffffff);
+		xthal_window_spill();
+		_save_core_context();
 		soc_cpus_active[cpu] = false;
 		sys_cache_data_flush_and_invd_all();
 		if (cpu == 0) {
-			uint32_t hpsram_mask[HPSRAM_SEGMENTS];
+			uint32_t hpsram_mask[HPSRAM_SEGMENTS] = {0};
 
 			struct imr_header hdr = {
 				.adsp_imr_magic = ADSP_IMR_MAGIC_VALUE,
 				.imr_restore_vector = rom_entry,
 			};
 			struct imr_layout *imr_layout =
-			  arch_xtensa_uncached_ptr((struct imr_layout *)L3_MEM_BASE_ADDR);
+				z_soc_uncached_ptr((__sparse_force void __sparse_cache *)
+						   L3_MEM_BASE_ADDR);
+
 			imr_layout->imr_state.header = hdr;
 
+#ifdef CONFIG_ADSP_POWER_DOWN_HPSRAM
 			/* turn off all HPSRAM banks - get a full bitmap */
 			for (int i = 0; i < HPSRAM_SEGMENTS; i++)
 				hpsram_mask[i] = HPSRAM_MEMMASK(i);
+#endif /* CONFIG_ADSP_POWER_DOWN_HPSRAM */
 			/* do power down - this function won't return */
 			power_down_cavs(true, uncache_to_cache(&hpsram_mask[0]));
 		} else {
-			z_xt_ints_on(core_desc[cpu].intenable);
 			k_cpu_idle();
 		}
 	} else {
@@ -112,7 +165,7 @@ __weak void pm_state_set(enum pm_state state, uint8_t substate_id)
 }
 
 /* Handle SOC specific activity after Low Power Mode Exit */
-__weak void pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id)
+void pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id)
 {
 	ARG_UNUSED(substate_id);
 	uint32_t cpu = arch_proc_id();
@@ -125,7 +178,52 @@ __weak void pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id)
 		__ASSERT(false, "invalid argument - unsupported power state");
 	}
 }
-#endif /* CONFIG_PM_POLICY_CUSTOM */
+#endif /* CONFIG_PM */
+
+#ifdef CONFIG_ARCH_CPU_IDLE_CUSTOM
+/* xt-clang removes any NOPs more than 8. So we need to set
+ * no optimization to avoid those NOPs from being removed.
+ *
+ * This function is simply enough and full of hand written
+ * assembly that optimization is not really meaningful
+ * anyway. So we can skip optimization unconditionally.
+ * Re-evalulate its use and add #ifdef if this assumption
+ * is no longer valid.
+ */
+__no_optimization
+void arch_cpu_idle(void)
+{
+	sys_trace_idle();
+
+	/* Just spin forever with interrupts unmasked, for platforms
+	 * where WAITI can't be used or where its behavior is
+	 * complicated (Intel DSPs will power gate on idle entry under
+	 * some circumstances)
+	 */
+	if (IS_ENABLED(CONFIG_XTENSA_CPU_IDLE_SPIN)) {
+		__asm__ volatile("rsil a0, 0");
+		__asm__ volatile("loop_forever: j loop_forever");
+		return;
+	}
+
+	/* Cribbed from SOF: workaround for a bug in some versions of
+	 * the LX6 IP.	Preprocessor ugliness avoids the need to
+	 * figure out how to get the compiler to unroll a loop.
+	 */
+	if (IS_ENABLED(CONFIG_XTENSA_WAITI_BUG)) {
+#define NOP4 __asm__ volatile("nop; nop; nop; nop");
+#define NOP32 NOP4 NOP4 NOP4 NOP4 NOP4 NOP4 NOP4 NOP4
+#define NOP128() NOP32 NOP32 NOP32 NOP32
+		NOP128();
+#undef NOP128
+#undef NOP32
+#undef NOP4
+		__asm__ volatile("isync; extw");
+	}
+
+__asm__ volatile ("waiti 0");
+}
+#endif
 
 __imr void power_init(void)
 {

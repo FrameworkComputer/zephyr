@@ -43,7 +43,7 @@ Fetching blobs
 ==============
 
 Blobs are fetched from official third-party sources by the :ref:`west blobs
-command <west-blobs>` command.
+<west-blobs>` command.
 
 The blobs themselves must be specified in the :ref:`module.yml
 <modules-bin-blobs>` files included in separate Zephyr :ref:`module repositories
@@ -216,6 +216,12 @@ over bit-rot, security issues, etc.
 
 The submitter of the proposal to integrate a binary blob must commit to maintain
 the integration of such blob for the foreseeable future.
+
+Regarding Continuous Integration, binary blobs will **not** be fetched in the
+project's CI infrastructure that builds and optionally executes tests and samples
+to prevent regressions and issues from entering the codebase. This includes
+both CI ran when a new GitHub Pull Request is opened as well as any other
+regularly scheduled execution of the CI infrastructure.
 
 .. _blobs-process:
 

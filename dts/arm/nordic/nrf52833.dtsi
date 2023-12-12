@@ -121,6 +121,7 @@
 			reg = <0x40003000 0x1000>;
 			clock-frequency = <I2C_BITRATE_STANDARD>;
 			interrupts = <3 NRF_DEFAULT_IRQ_PRIORITY>;
+			easydma-maxcnt-bits = <16>;
 			status = "disabled";
 		};
 
@@ -156,6 +157,7 @@
 			reg = <0x40004000 0x1000>;
 			clock-frequency = <I2C_BITRATE_STANDARD>;
 			interrupts = <4 NRF_DEFAULT_IRQ_PRIORITY>;
+			easydma-maxcnt-bits = <16>;
 			status = "disabled";
 		};
 
@@ -265,6 +267,7 @@
 			reg = <0x4000f000 0x1000>;
 			interrupts = <15 NRF_DEFAULT_IRQ_PRIORITY>;
 			length-field-length-8-bits;
+			headermask-supported;
 			status = "okay";
 		};
 
@@ -530,14 +533,6 @@
 			status = "disabled";
 			port = <1>;
 		};
-	};
-
-	sw_pwm: sw-pwm {
-		compatible = "nordic,nrf-sw-pwm";
-		status = "disabled";
-		generator = <&timer2>;
-		clock-prescaler = <0>;
-		#pwm-cells = <3>;
 	};
 };
 

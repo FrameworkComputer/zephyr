@@ -7,6 +7,7 @@
 #include <st/l5/stm32l562Xe.dtsi>
 #include <st/l5/stm32l562qeixq-pinctrl.dtsi>
 #include "arduino_r3_connector.dtsi"
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 
 / {
 	leds {
@@ -26,6 +27,7 @@
 		user_button: button {
 			label = "User";
 			gpios = <&gpioc 13 GPIO_ACTIVE_HIGH>;
+			zephyr,code = <INPUT_KEY_0>;
 		};
 	};
 
@@ -35,10 +37,6 @@
 		volt-sensor0 = &vref;
 		volt-sensor1 = &vbat;
 	};
-};
-
-&cpu0 {
-	cpu-power-states = <&stop0 &stop1 &stop2>;
 };
 
 &clk_hsi48 {
@@ -113,7 +111,7 @@
 &spi1 {
 	pinctrl-0 = <&spi1_sck_pg2 &spi1_miso_pg3 &spi1_mosi_pg4>;
 	pinctrl-names = "default";
-	cs-gpios = <&gpiog 5 (GPIO_ACTIVE_HIGH | GPIO_PULL_UP)>;
+	cs-gpios = <&gpiog 5 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 	status = "okay";
 
 	spbtle-rf@0 {
@@ -122,6 +120,8 @@
 		irq-gpios = <&gpiog 6 (GPIO_ACTIVE_HIGH | GPIO_PULL_DOWN)>;
 		reset-gpios = <&gpiog 8 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
 		spi-max-frequency = <2000000>;
+		controller-data-delay-us = <0>;  /* No need for extra delay for BlueNRG-MS */
+		spi-hold-cs;
 	};
 };
 
@@ -204,6 +204,8 @@
 &adc1 {
 	pinctrl-0 = <&adc1_in13_pc4>;
 	pinctrl-names = "default";
+	st,adc-clock-source = <SYNC>;
+	st,adc-prescaler = <4>;
 	status = "okay";
 };
 

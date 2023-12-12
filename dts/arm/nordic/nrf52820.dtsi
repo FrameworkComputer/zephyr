@@ -88,9 +88,15 @@
 			interrupts = <1 NRF_DEFAULT_IRQ_PRIORITY>;
 			status = "okay";
 			dfe-supported;
+			ieee802154-supported;
 			ble-2mbps-supported;
 			ble-coded-phy-supported;
 			tx-high-power-supported;
+
+			ieee802154: ieee802154 {
+				compatible = "nordic,nrf-ieee802154";
+				status = "disabled";
+			};
 		};
 
 		uart0: uart@40002000 {
@@ -116,6 +122,7 @@
 			reg = <0x40003000 0x1000>;
 			clock-frequency = <I2C_BITRATE_STANDARD>;
 			interrupts = <3 NRF_DEFAULT_IRQ_PRIORITY>;
+			easydma-maxcnt-bits = <15>;
 			status = "disabled";
 		};
 
@@ -151,6 +158,7 @@
 			reg = <0x40004000 0x1000>;
 			clock-frequency = <I2C_BITRATE_STANDARD>;
 			interrupts = <4 NRF_DEFAULT_IRQ_PRIORITY>;
+			easydma-maxcnt-bits = <15>;
 			status = "disabled";
 		};
 
@@ -245,6 +253,7 @@
 			reg = <0x4000f000 0x1000>;
 			interrupts = <15 NRF_DEFAULT_IRQ_PRIORITY>;
 			length-field-length-8-bits;
+			headermask-supported;
 			status = "okay";
 		};
 
@@ -381,14 +390,6 @@
 			status = "disabled";
 			port = <0>;
 		};
-	};
-
-	sw_pwm: sw-pwm {
-		compatible = "nordic,nrf-sw-pwm";
-		status = "disabled";
-		generator = <&timer2>;
-		clock-prescaler = <0>;
-		#pwm-cells = <3>;
 	};
 };
 

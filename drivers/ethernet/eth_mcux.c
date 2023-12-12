@@ -622,8 +622,9 @@ static void eth_mcux_phy_work(struct k_work *item)
 
 static void eth_mcux_delayed_phy_work(struct k_work *item)
 {
+	struct k_work_delayable *dwork = k_work_delayable_from_work(item);
 	struct eth_context *context =
-		CONTAINER_OF(item, struct eth_context, delayed_phy_work);
+		CONTAINER_OF(dwork, struct eth_context, delayed_phy_work);
 
 	eth_mcux_phy_event(context);
 }
@@ -860,7 +861,7 @@ static int eth_rx(struct eth_context *context)
 			ptpTimeData.second--;
 		}
 
-		pkt->timestamp.nanosecond = ptpTimeData.nanosecond;
+		pkt->timestamp.nanosecond = ts;
 		pkt->timestamp.second = ptpTimeData.second;
 	} else {
 		/* Invalid value. */
@@ -1041,6 +1042,8 @@ static void eth_mcux_init(const struct device *dev)
 	enet_config.interrupt |= kENET_MiiInterrupt;
 #endif
 	enet_config.miiMode = kENET_RmiiMode;
+	enet_config.callback = eth_callback;
+	enet_config.userData = context;
 
 	if (IS_ENABLED(CONFIG_ETH_MCUX_PROMISCUOUS_MODE)) {
 		enet_config.macSpecialConfig |= kENET_ControlPromiscuousEnable;
@@ -1097,7 +1100,6 @@ static void eth_mcux_init(const struct device *dev)
 	/* Enable reclaim of tx descriptors that will have the tx timestamp */
 	ENET_SetTxReclaim(&context->enet_handle, true, 0);
 #endif
-	ENET_SetCallback(&context->enet_handle, eth_callback, context);
 
 	eth_mcux_phy_start(context);
 }
@@ -1161,7 +1163,7 @@ static int eth_init(const struct device *dev)
 	return 0;
 }
 
-#if defined(CONFIG_NET_IPV6)
+#if defined(CONFIG_NET_NATIVE_IPV4) || defined(CONFIG_NET_NATIVE_IPV6)
 static void net_if_mcast_cb(struct net_if *iface,
 			    const struct net_addr *addr,
 			    bool is_joined)
@@ -1170,11 +1172,13 @@ static void net_if_mcast_cb(struct net_if *iface,
 	struct eth_context *context = dev->data;
 	struct net_eth_addr mac_addr;
 
-	if (addr->family != AF_INET6) {
+	if (IS_ENABLED(CONFIG_NET_IPV4) && addr->family == AF_INET) {
+		net_eth_ipv4_mcast_to_mac_addr(&addr->in_addr, &mac_addr);
+	} else if (IS_ENABLED(CONFIG_NET_IPV6) && addr->family == AF_INET6) {
+		net_eth_ipv6_mcast_to_mac_addr(&addr->in6_addr, &mac_addr);
+	} else {
 		return;
 	}
-
-	net_eth_ipv6_mcast_to_mac_addr(&addr->in6_addr, &mac_addr);
 
 	if (is_joined) {
 		ENET_AddMulticastGroup(context->base, mac_addr.addr);
@@ -1182,18 +1186,18 @@ static void net_if_mcast_cb(struct net_if *iface,
 		ENET_LeaveMulticastGroup(context->base, mac_addr.addr);
 	}
 }
-#endif /* CONFIG_NET_IPV6 */
+#endif /* CONFIG_NET_NATIVE_IPV4 || CONFIG_NET_NATIVE_IPV6 */
 
 static void eth_iface_init(struct net_if *iface)
 {
 	const struct device *dev = net_if_get_device(iface);
 	struct eth_context *context = dev->data;
 
-#if defined(CONFIG_NET_IPV6)
+#if defined(CONFIG_NET_NATIVE_IPV4) || defined(CONFIG_NET_NATIVE_IPV6)
 	static struct net_if_mcast_monitor mon;
 
 	net_if_mcast_mon_register(&mon, iface, net_if_mcast_cb);
-#endif /* CONFIG_NET_IPV6 */
+#endif /* CONFIG_NET_NATIVE_IPV4 || CONFIG_NET_NATIVE_IPV6 */
 
 	net_if_set_link_addr(iface, context->mac_addr,
 			     sizeof(context->mac_addr),

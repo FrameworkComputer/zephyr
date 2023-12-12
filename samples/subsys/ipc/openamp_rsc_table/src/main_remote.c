@@ -31,10 +31,10 @@ LOG_MODULE_REGISTER(openamp_rsc_table, LOG_LEVEL_DBG);
 #define SHM_START_ADDR	DT_REG_ADDR(SHM_NODE)
 #define SHM_SIZE		DT_REG_SIZE(SHM_NODE)
 
-#define APP_TASK_STACK_SIZE (512)
+#define APP_TASK_STACK_SIZE (1024)
 
-/* Add 512 extra bytes for the TTY task stack for the "tx_buff" buffer. */
-#define APP_TTY_TASK_STACK_SIZE (1024)
+/* Add 1024 extra bytes for the TTY task stack for the "tx_buff" buffer. */
+#define APP_TTY_TASK_STACK_SIZE (1536)
 
 K_THREAD_STACK_DEFINE(thread_mng_stack, APP_TASK_STACK_SIZE);
 K_THREAD_STACK_DEFINE(thread_rp__client_stack, APP_TASK_STACK_SIZE);
@@ -106,11 +106,11 @@ static int rpmsg_recv_cs_callback(struct rpmsg_endpoint *ept, void *data,
 static int rpmsg_recv_tty_callback(struct rpmsg_endpoint *ept, void *data,
 				   size_t len, uint32_t src, void *priv)
 {
-	struct rpmsg_rcv_msg *tty_msg = priv;
+	struct rpmsg_rcv_msg *msg = priv;
 
 	rpmsg_hold_rx_buffer(ept, data);
-	tty_msg->data = data;
-	tty_msg->len = len;
+	msg->data = data;
+	msg->len = len;
 	k_sem_give(&data_tty_sem);
 
 	return RPMSG_SUCCESS;
@@ -276,6 +276,7 @@ void app_rpmsg_client_sample(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
+
 	unsigned int msg_cnt = 0;
 	int ret = 0;
 
@@ -302,6 +303,7 @@ void app_rpmsg_tty(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
+
 	unsigned char tx_buff[512];
 	int ret = 0;
 
@@ -335,6 +337,7 @@ void rpmsg_mng_task(void *arg1, void *arg2, void *arg3)
 	ARG_UNUSED(arg1);
 	ARG_UNUSED(arg2);
 	ARG_UNUSED(arg3);
+
 	unsigned char *msg;
 	unsigned int len;
 	int ret = 0;
@@ -375,13 +378,13 @@ int main(void)
 {
 	printk("Starting application threads!\n");
 	k_thread_create(&thread_mng_data, thread_mng_stack, APP_TASK_STACK_SIZE,
-			(k_thread_entry_t)rpmsg_mng_task,
+			rpmsg_mng_task,
 			NULL, NULL, NULL, K_PRIO_COOP(8), 0, K_NO_WAIT);
 	k_thread_create(&thread_rp__client_data, thread_rp__client_stack, APP_TASK_STACK_SIZE,
-			(k_thread_entry_t)app_rpmsg_client_sample,
+			app_rpmsg_client_sample,
 			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 	k_thread_create(&thread_tty_data, thread_tty_stack, APP_TTY_TASK_STACK_SIZE,
-			(k_thread_entry_t)app_rpmsg_tty,
+			app_rpmsg_tty,
 			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 	return 0;
 }

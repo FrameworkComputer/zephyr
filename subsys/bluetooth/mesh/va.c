@@ -100,7 +100,7 @@ uint8_t bt_mesh_va_del(const uint8_t *uuid)
 		return STATUS_CANNOT_REMOVE;
 	}
 
-	va = CONTAINER_OF(uuid, struct bt_mesh_va, uuid);
+	va = CONTAINER_OF(uuid, struct bt_mesh_va, uuid[0]);
 
 	if (!PART_OF_ARRAY(virtual_addrs, va) || va->ref == 0) {
 		return STATUS_CANNOT_REMOVE;
@@ -123,7 +123,7 @@ const uint8_t *bt_mesh_va_uuid_get(uint16_t addr, const uint8_t *uuid, uint16_t 
 	if (uuid != NULL) {
 		struct bt_mesh_va *va;
 
-		va = CONTAINER_OF(uuid, struct bt_mesh_va, uuid);
+		va = CONTAINER_OF(uuid, struct bt_mesh_va, uuid[0]);
 		i = ARRAY_INDEX(virtual_addrs, va);
 	}
 
@@ -200,7 +200,7 @@ int bt_mesh_va_get_idx_by_uuid(const uint8_t *uuid, uint16_t *uuidx)
 		return -ENOENT;
 	}
 
-	va = CONTAINER_OF(uuid, struct bt_mesh_va, uuid);
+	va = CONTAINER_OF(uuid, struct bt_mesh_va, uuid[0]);
 
 	if (!PART_OF_ARRAY(virtual_addrs, va) || va->ref == 0) {
 		return -ENOENT;
@@ -305,6 +305,10 @@ void bt_mesh_va_pending_store(void)
 void bt_mesh_va_clear(void)
 {
 	int i;
+
+	if (CONFIG_BT_MESH_LABEL_COUNT == 0) {
+		return;
+	}
 
 	for (i = 0; i < ARRAY_SIZE(virtual_addrs); i++) {
 		if (virtual_addrs[i].ref) {

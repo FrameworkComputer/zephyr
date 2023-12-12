@@ -78,6 +78,23 @@ these references:
 - `MIMXRT1160-EVK Website`_
 - `MIMXRT1160-EVK Board Hardware User's Guide`_
 
+External Memory
+===============
+
+This platform has the following external memories:
+
++--------------------+------------+-------------------------------------+
+| Device             | Controller | Status                              |
++====================+============+=====================================+
+| W9825G6KH          | SEMC       | Enabled via device configuration    |
+|                    |            | data block, which sets up SEMC at   |
+|                    |            | boot time                           |
++--------------------+------------+-------------------------------------+
+| IS25WP128          | FLEXSPI    | Enabled via flash configurationn    |
+|                    |            | block, which sets up FLEXSPI at     |
+|                    |            | boot time.                          |
++--------------------+------------+-------------------------------------+
+
 Supported Features
 ==================
 
@@ -337,3 +354,13 @@ should see the following message in the terminal:
 
 .. _AN13264:
    https://www.nxp.com/docs/en/application-note/AN13264.pdf
+
+Experimental ENET Driver
+========================
+
+Current default ethernet driver is eth_mcux, with binding `nxp,kinetis-ethernet`. There is a new
+driver with binding `nxp,enet`, which is experimental and undergoing development, but will have
+enhanced capability, such as not hardcoding code for only one phy in the driver like eth_mcux.
+
+To build for this EVK with the new driver, include the experimental overlay to west build with
+the option `-DEXTRA_DTC_OVERLAY_FILE=nxp,enet-experimental.overlay`.

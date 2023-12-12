@@ -16,11 +16,16 @@ import sys
 import tempfile
 import traceback
 import shlex
+import shutil
+import textwrap
 
 from yamllint import config, linter
 
 from junitparser import TestCase, TestSuite, JUnitXml, Skipped, Error, Failure
 import magic
+
+from west.manifest import Manifest
+from west.manifest import ManifestProject
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from get_maintainer import Maintainers, MaintainersError
@@ -265,10 +270,12 @@ class KconfigCheck(ComplianceTest):
     for example using undefined Kconfig variables.
     """
     name = "Kconfig"
-    doc = "See https://docs.zephyrproject.org/latest/guides/kconfig/index.html for more details."
+    doc = "See https://docs.zephyrproject.org/latest/build/kconfig/tips.html for more details."
     path_hint = "<zephyr-base>"
 
-    def run(self, full=True):
+    def run(self, full=True, no_modules=False):
+        self.no_modules = no_modules
+
         kconf = self.parse_kconfig()
 
         self.check_top_menu_not_too_long(kconf)
@@ -287,6 +294,11 @@ class KconfigCheck(ComplianceTest):
         This is needed to complete Kconfig sanity tests.
 
         """
+        if self.no_modules:
+            with open(modules_file, 'w') as fp_module_file:
+                fp_module_file.write("# Empty\n")
+            return
+
         # Invoke the script directly using the Python executable since this is
         # not a module nor a pip-installed Python utility
         zephyr_module_path = os.path.join(ZEPHYR_BASE, "scripts",
@@ -346,6 +358,8 @@ class KconfigCheck(ComplianceTest):
         if not os.path.exists(kconfig_path):
             self.error(kconfig_path + " not found")
 
+        kconfiglib_dir = tempfile.mkdtemp(prefix="kconfiglib_")
+
         sys.path.insert(0, kconfig_path)
         # Import globally so that e.g. kconfiglib.Symbol can be referenced in
         # tests
@@ -360,7 +374,7 @@ class KconfigCheck(ComplianceTest):
         os.environ["ARCH_DIR"] = "arch/"
         os.environ["BOARD_DIR"] = "boards/*/*"
         os.environ["ARCH"] = "*"
-        os.environ["KCONFIG_BINARY_DIR"] = tempfile.gettempdir()
+        os.environ["KCONFIG_BINARY_DIR"] = kconfiglib_dir
         os.environ['DEVICETREE_CONF'] = "dummy"
         os.environ['TOOLCHAIN_HAS_NEWLIB'] = "y"
 
@@ -369,10 +383,9 @@ class KconfigCheck(ComplianceTest):
         os.environ["GENERATED_DTS_BOARD_CONF"] = "dummy"
 
         # For multi repo support
-        self.get_modules(os.path.join(tempfile.gettempdir(), "Kconfig.modules"))
-
+        self.get_modules(os.path.join(kconfiglib_dir, "Kconfig.modules"))
         # For Kconfig.dts support
-        self.get_kconfig_dts(os.path.join(tempfile.gettempdir(), "Kconfig.dts"))
+        self.get_kconfig_dts(os.path.join(kconfiglib_dir, "Kconfig.dts"))
 
         # Tells Kconfiglib to generate warnings for all references to undefined
         # symbols within Kconfig files
@@ -387,6 +400,9 @@ class KconfigCheck(ComplianceTest):
         except kconfiglib.KconfigError as e:
             self.failure(str(e))
             raise EndTest
+        finally:
+            # Clean up the temporary directory
+            shutil.rmtree(kconfiglib_dir)
 
     def get_defined_syms(self, kconf):
         # Returns a set() with the names of all defined Kconfig symbols (with no
@@ -440,9 +456,13 @@ deliberately adding new entries, then bump the 'max_top_items' variable in
         # Checks that no symbols are (re)defined in defconfigs.
 
         for node in kconf.node_iter():
+            # 'kconfiglib' is global
+            # pylint: disable=undefined-variable
             if "defconfig" in node.filename and (node.prompt or node.help):
+                name = (node.item.name if node.item not in
+                        (kconfiglib.MENU, kconfiglib.COMMENT) else str(node))
                 self.failure(f"""
-Kconfig node '{node.item.name}' found with prompt or help in {node.filename}.
+Kconfig node '{name}' found with prompt or help in {node.filename}.
 Options must not be defined in defconfig files.
 """)
                 continue
@@ -601,6 +621,9 @@ flagged.
                               # toolchain Kconfig which is sourced based on
                               # Zephyr toolchain variant and therefore not
                               # visible to compliance.
+        "BOOT_ENCRYPTION_KEY_FILE", # Used in sysbuild
+        "BOOT_ENCRYPT_IMAGE", # Used in sysbuild
+        "BINDESC_", # Used in documentation as a prefix
         "BOOT_UPGRADE_ONLY", # Used in example adjusting MCUboot config, but
                              # symbol is defined in MCUboot itself.
         "BOOT_SERIAL_BOOT_MODE",     # Used in (sysbuild-based) test/
@@ -608,18 +631,24 @@ flagged.
         "BOOT_SERIAL_CDC_ACM",       # Used in (sysbuild-based) test
         "BOOT_SERIAL_ENTRANCE_GPIO", # Used in (sysbuild-based) test
         "BOOT_SERIAL_IMG_GRP_HASH",  # Used in documentation
-        "BOOT_SIGNATURE_KEY_FILE", # MCUboot setting used by sysbuild
+        "BOOT_SHARE_DATA",           # Used in Kconfig text
+        "BOOT_SHARE_DATA_BOOTINFO", # Used in (sysbuild-based) test
+        "BOOT_SHARE_BACKEND_RETENTION", # Used in Kconfig text
+        "BOOT_SIGNATURE_KEY_FILE",   # MCUboot setting used by sysbuild
         "BOOT_SIGNATURE_TYPE_ECDSA_P256", # MCUboot setting used by sysbuild
-        "BOOT_SIGNATURE_TYPE_ED25519", # MCUboot setting used by sysbuild
-        "BOOT_SIGNATURE_TYPE_NONE", # MCUboot setting used by sysbuild
-        "BOOT_SIGNATURE_TYPE_RSA", # MCUboot setting used by sysbuild
+        "BOOT_SIGNATURE_TYPE_ED25519",    # MCUboot setting used by sysbuild
+        "BOOT_SIGNATURE_TYPE_NONE",       # MCUboot setting used by sysbuild
+        "BOOT_SIGNATURE_TYPE_RSA",        # MCUboot setting used by sysbuild
         "BOOT_VALIDATE_SLOT0",       # Used in (sysbuild-based) test
         "BOOT_WATCHDOG_FEED",        # Used in (sysbuild-based) test
         "BTTESTER_LOG_LEVEL",  # Used in tests/bluetooth/tester
         "BTTESTER_LOG_LEVEL_DBG",  # Used in tests/bluetooth/tester
         "CDC_ACM_PORT_NAME_",
+        "CHRE",  # Optional module
+        "CHRE_LOG_LEVEL_DBG",  # Optional module
         "CLOCK_STM32_SYSCLK_SRC_",
         "CMU",
+        "COMPILER_RT_RTLIB",
         "BT_6LOWPAN",  # Defined in Linux, mentioned in docs
         "CMD_CACHE",  # Defined in U-Boot, mentioned in docs
         "COUNTER_RTC_STM32_CLOCK_SRC",
@@ -636,6 +665,7 @@ flagged.
         "FOO_SETTING_1",
         "FOO_SETTING_2",
         "LSM6DSO_INT_PIN",
+        "LIBGCC_RTLIB",
         "LLVM_USE_LD",   # Both LLVM_USE_* are in cmake/toolchain/llvm/Kconfig
         "LLVM_USE_LLD",  # which are only included if LLVM is selected but
                          # not other toolchains. Compliance check would complain,
@@ -649,6 +679,9 @@ flagged.
         "MCUBOOT_CLEANUP_ARM_CORE", # Used in (sysbuild-based) test
         "MCUBOOT_SERIAL",           # Used in (sysbuild-based) test/
                                     # documentation
+        "MCUMGR_GRP_EXAMPLE", # Used in documentation
+        "MCUMGR_GRP_EXAMPLE_LOG_LEVEL", # Used in documentation
+        "MCUMGR_GRP_EXAMPLE_OTHER_HOOK", # Used in documentation
         "MISSING",
         "MODULES",
         "MYFEATURE",
@@ -659,6 +692,7 @@ flagged.
         "PEDO_THS_MIN",
         "REG1",
         "REG2",
+        "RIMAGE_SIGNING_SCHEMA",  # Optional module
         "SAMPLE_MODULE_LOG_LEVEL",  # Used as an example in samples/subsys/logging
         "SAMPLE_MODULE_LOG_LEVEL_DBG",  # Used in tests/subsys/logging/log_api
         "LOG_BACKEND_MOCK_OUTPUT_DEFAULT", #Referenced in tests/subsys/logging/log_syst
@@ -701,11 +735,23 @@ class KconfigBasicCheck(KconfigCheck):
     references inside the Kconfig tree.
     """
     name = "KconfigBasic"
-    doc = "See https://docs.zephyrproject.org/latest/guides/kconfig/index.html for more details."
+    doc = "See https://docs.zephyrproject.org/latest/build/kconfig/tips.html for more details."
     path_hint = "<zephyr-base>"
 
     def run(self):
         super().run(full=False)
+
+class KconfigBasicNoModulesCheck(KconfigCheck):
+    """
+    Checks if we are introducing any new warnings/errors with Kconfig when no
+    modules are available. Catches symbols used in the main repository but
+    defined only in a module.
+    """
+    name = "KconfigBasicNoModules"
+    doc = "See https://docs.zephyrproject.org/latest/build/kconfig/tips.html for more details."
+    path_hint = "<zephyr-base>"
+    def run(self):
+        super().run(full=False, no_modules=True)
 
 
 class Nits(ComplianceTest):
@@ -747,7 +793,7 @@ class Nits(ComplianceTest):
         if re.match(r"\s*#\s*(K|k)config[\w.-]*\s*-", contents):
             self.failure(f"""
 Please use this format for the header in '{fname}' (see
-https://docs.zephyrproject.org/latest/guides/kconfig/index.html#header-comments-and-other-nits):
+https://docs.zephyrproject.org/latest/build/kconfig/tips.html#header-comments-and-other-nits):
 
     # <Overview of symbols defined in the file, preferably in plain English>
     (Blank line)
@@ -1047,14 +1093,48 @@ class MaintainersFormat(ComplianceTest):
     def run(self):
         MAINTAINERS_FILES = ["MAINTAINERS.yml", "MAINTAINERS.yaml"]
 
-        for file in get_files(filter="d"):
-            if file not in MAINTAINERS_FILES:
+        for file in MAINTAINERS_FILES:
+            if not os.path.exists(file):
                 continue
 
             try:
                 Maintainers(file)
             except MaintainersError as ex:
                 self.failure(f"Error parsing {file}: {ex}")
+
+class ModulesMaintainers(ComplianceTest):
+    """
+    Check that all modules have a MAINTAINERS entry.
+    """
+    name = "ModulesMaintainers"
+    doc = "Check that all modules have a MAINTAINERS entry."
+    path_hint = "<git-top>"
+
+    def run(self):
+        MAINTAINERS_FILES = ["MAINTAINERS.yml", "MAINTAINERS.yaml"]
+
+        manifest = Manifest.from_file()
+
+        maintainers_file = None
+        for file in MAINTAINERS_FILES:
+            if os.path.exists(file):
+                maintainers_file = file
+                break
+        if not maintainers_file:
+            return
+
+        maintainers = Maintainers(maintainers_file)
+
+        for project in manifest.get_projects([]):
+            if not manifest.is_active(project):
+                continue
+
+            if isinstance(project, ManifestProject):
+                continue
+
+            area = f"West project: {project.name}"
+            if area not in maintainers.areas:
+                self.failure(f"Missing {maintainers_file} entry for: \"{area}\"")
 
 
 class YAMLLint(ComplianceTest):
@@ -1086,6 +1166,76 @@ class YAMLLint(ComplianceTest):
                     self.fmtd_failure('warning', f'YAMLLint ({p.rule})', file,
                                       p.line, col=p.column, desc=p.desc)
 
+
+class KeepSorted(ComplianceTest):
+    """
+    Check for blocks of code or config that should be kept sorted.
+    """
+    name = "KeepSorted"
+    doc = "Check for blocks of code or config that should be kept sorted."
+    path_hint = "<git-top>"
+
+    MARKER = "zephyr-keep-sorted"
+
+    def block_is_sorted(self, block_data):
+        lines = []
+
+        for line in textwrap.dedent(block_data).splitlines():
+            if len(lines) > 0 and line.startswith((" ", "\t")):
+                # Fold back indented lines
+                lines[-1] += line.strip()
+            else:
+                lines.append(line.strip())
+
+        if lines != sorted(lines):
+            return False
+
+        return True
+
+    def check_file(self, file, fp):
+        mime_type = magic.from_file(file, mime=True)
+
+        if not mime_type.startswith("text/"):
+            return
+
+        block_data = ""
+        in_block = False
+
+        start_marker = f"{self.MARKER}-start"
+        stop_marker = f"{self.MARKER}-stop"
+
+        for line_num, line in enumerate(fp.readlines(), start=1):
+            if start_marker in line:
+                if in_block:
+                    desc = f"nested {start_marker}"
+                    self.fmtd_failure("error", "KeepSorted", file, line_num,
+                                     desc=desc)
+                in_block = True
+                block_data = ""
+            elif stop_marker in line:
+                if not in_block:
+                    desc = f"{stop_marker} without {start_marker}"
+                    self.fmtd_failure("error", "KeepSorted", file, line_num,
+                                     desc=desc)
+                in_block = False
+
+                if not self.block_is_sorted(block_data):
+                    desc = f"sorted block is not sorted"
+                    self.fmtd_failure("error", "KeepSorted", file, line_num,
+                                      desc=desc)
+            elif not line.strip() or line.startswith("#"):
+                # Ignore comments and blank lines
+                continue
+            elif in_block:
+                block_data += line
+
+        if in_block:
+            self.failure(f"unterminated {start_marker} in {file}")
+
+    def run(self):
+        for file in get_files(filter="d"):
+            with open(file, "r") as fp:
+                self.check_file(file, fp)
 
 def init_logs(cli_arg):
     # Initializes logging

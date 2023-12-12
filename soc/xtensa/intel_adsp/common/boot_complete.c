@@ -5,6 +5,7 @@
 #include <zephyr/arch/xtensa/arch.h>
 #include <zephyr/device.h>
 #include <zephyr/devicetree.h>
+#include <zephyr/init.h>
 #include <errno.h>
 #include <soc.h>
 
@@ -28,4 +29,4 @@ int boot_complete(void)
 	return 0;
 }
 
-SYS_INIT(boot_complete, EARLY, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);
+SYS_INIT(boot_complete, PRE_KERNEL_1, CONFIG_KERNEL_INIT_PRIORITY_DEVICE);

@@ -30,6 +30,7 @@
 /* length of time in milliseconds to wait for buffer allocations */
 #define BUF_ALLOC_TIMEOUT K_SECONDS(1)
 
+
 /**
  * @brief Validates that writing is a legal operation on the field given by the object in
  * @p obj_inst and the resource id in @p msg. Returns the field to obj_field (if it exists).
@@ -95,6 +96,36 @@ int bootstrap_delete(struct lwm2m_message *msg);
 int lwm2m_engine_add_service(k_work_handler_t service, uint32_t period_ms);
 
 /**
+ * @brief Update the period of a given service or remove it.
+ *
+ * Allow the period modification on an existing service created with
+ * lwm2m_engine_add_service(). When period is zero, service is removed.
+ *
+ * @param[in] service Handler of the periodic_service
+ * @param[in] period_ms New period for the periodic_service (in milliseconds) or zero.
+ *
+ * @return 0 for success, 1 when service was removed or negative in case of error.
+ */
+int lwm2m_engine_update_service_period(k_work_handler_t service, uint32_t period_ms);
+
+/**
+ * @brief Call specific service handler only once at given timestamp.
+ *
+ * @param[in] service service to be called
+ * @param[in] timestamp Time when to call
+ * @return 0 for success or negative in case of error
+ */
+int lwm2m_engine_call_at(k_work_handler_t service, int64_t timestamp);
+
+/**
+ * @brief Call given handler from engine context.
+ *
+ * @param[in] service Service callback to be called.
+ * @return 0 for success or negative in case of error
+ */
+int lwm2m_engine_call_now(k_work_handler_t service);
+
+/**
  * @brief Returns the index in the security objects list corresponding to the object instance
  * id given by @p obj_inst_id
  *
@@ -104,6 +135,14 @@ int lwm2m_engine_add_service(k_work_handler_t service, uint32_t period_ms);
 int lwm2m_security_inst_id_to_index(uint16_t obj_inst_id);
 
 /**
+ * @brief Returns the object instance id of the security having ssid given by @p short_id.
+ *
+ * @param[in] short_id ssid of the security object
+ * @return Object instance id or negative in case not found
+ */
+int lwm2m_security_short_id_to_inst(uint16_t short_id);
+
+/**
  * @brief Returns the object instance id of the security object instance at @p index
  * in the security object list.
  *
@@ -111,45 +150,6 @@ int lwm2m_security_inst_id_to_index(uint16_t obj_inst_id);
  * @return Object instance id of the security instance or negative in case of error
  */
 int lwm2m_security_index_to_inst_id(int index);
-
-/**
- * @brief Returns the default minimum period for an observation set for the server
- * with object instance id given by @p obj_inst_id.
- *
- * @param[in] obj_inst_id Object instance id of the server object instance
- * @return int32_t pmin value
- */
-int32_t lwm2m_server_get_pmin(uint16_t obj_inst_id);
-
-/**
- * @brief Returns the default maximum period for an observation set for the server
- * with object instance id given by @p obj_inst_id.
- *
- * @param[in] obj_inst_id Object instance id of the server object instance
- * @return int32_t pmax value
- */
-int32_t lwm2m_server_get_pmax(uint16_t obj_inst_id);
-
-/**
- * @brief Returns the Short Server ID of the server object instance with
- * object instance id given by @p obj_inst_id.
- *
- * @param[in] obj_inst_id Object instance id of the server object
- * @return SSID or negative in case not found
- */
-int lwm2m_server_get_ssid(uint16_t obj_inst_id);
-
-/**
- * @brief Returns the object instance id of the server having ssid given by @p short_id.
- *
- * @param[in] short_id ssid of the server object
- * @return Object instance id or negative in case not found
- */
-int lwm2m_server_short_id_to_inst(uint16_t short_id);
-
-#if defined(CONFIG_LWM2M_SERVER_OBJECT_VERSION_1_1)
-bool lwm2m_server_get_mute_send(uint16_t obj_inst_id);
-#endif
 
 #if defined(CONFIG_LWM2M_FIRMWARE_UPDATE_OBJ_SUPPORT)
 /**
@@ -306,4 +306,13 @@ int lwm2m_push_queued_buffers(struct lwm2m_ctx *client_ctx);
 /* Resources */
 struct lwm2m_ctx **lwm2m_sock_ctx(void);
 int lwm2m_sock_nfds(void);
+
+/**
+ * @brief Trigger the LwM2M engine to run.
+ *
+ * This function wakes up ongoing poll() from the socket-loop.
+ * It should be called when new transmissions are scheduled or service schedules are modified.
+ */
+void lwm2m_engine_wake_up(void);
+
 #endif /* LWM2M_ENGINE_H */

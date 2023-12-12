@@ -7,6 +7,7 @@
 /dts-v1/;
 #include <nordic/nrf5340_cpunet_qkaa.dtsi>
 #include "thingy53_nrf5340_cpunet-pinctrl.dtsi"
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 
 / {
 	model = "Nordic Thingy53 NRF5340 Network";
@@ -18,7 +19,7 @@
 		zephyr,uart-mcumgr = &uart0;
 		zephyr,bt-mon-uart = &uart0;
 		zephyr,bt-c2h-uart = &uart0;
-		zephyr,bt-hci-rpmsg-ipc = &ipc0;
+		zephyr,bt-hci-ipc = &ipc0;
 		nordic,802154-spinel-ipc = &ipc0;
 		zephyr,sram = &sram1;
 		zephyr,flash = &flash1;
@@ -31,10 +32,12 @@
 		button0: button_0 {
 			gpios = <&gpio1 14 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Push button 1";
+			zephyr,code = <INPUT_KEY_0>;
 		};
 		button1: button_1 {
 			gpios = <&gpio1 13 (GPIO_PULL_UP | GPIO_ACTIVE_LOW)>;
 			label = "Push button 2";
+			zephyr,code = <INPUT_KEY_1>;
 		};
 	};
 

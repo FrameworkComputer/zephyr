@@ -95,6 +95,13 @@ config ADSP_INIT_HPSRAM
 	help
 	  Need to init HP SRAM.
 
+config ADSP_POWER_DOWN_HPSRAM
+	bool
+	default n if ZTEST
+	default y
+	help
+	 Switch off HP SRAM during power down.
+
 config ADSP_DISABLE_L2CACHE_AT_BOOT
 	bool
 
@@ -105,5 +112,17 @@ config ADSP_IMR_CONTEXT_SAVE
 	  When true, FW will store its entire context into IMR before
 	  entering D3 state. Later this context can be used to FW restore
 	  when Host power up DSP again.
+
+config XTENSA_CPU_IDLE_SPIN
+	bool "Use busy loop for k_cpu_idle"
+	help
+	  Use a spin loop instead of WAITI for the CPU idle state.
+
+config XTENSA_WAITI_BUG
+	bool "Workaround sequence for WAITI bug on LX6"
+	help
+	  SOF traditionally contains this workaround on its ADSP
+	  platforms which prefixes a WAITI entry with 128 NOP
+	  instructions followed by an ISYNC and EXTW.
 
 endif # SOC_FAMILY_INTEL_ADSP

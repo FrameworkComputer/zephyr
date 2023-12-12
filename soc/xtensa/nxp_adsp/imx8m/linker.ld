@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021 NXP
+ * Copyright 2021, 2023 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -15,7 +15,7 @@ OUTPUT_ARCH(xtensa)
 
 #include <zephyr/devicetree.h>
 #include <xtensa/config/core-isa.h>
-#include <soc/memory.h>
+#include <memory.h>
 #include <zephyr/linker/sections.h>
 
 #include <zephyr/linker/linker-defs.h>
@@ -171,6 +171,12 @@ EXTERN(ext_man_fw_ver)
 
 SECTIONS
 {
+#ifdef CONFIG_OPENAMP_RSC_TABLE
+    SECTION_PROLOGUE(.resource_table,, SUBALIGN(4))
+    {
+      KEEP(*(.resource_table*))
+    } GROUP_LINK_IN(ROMABLE_REGION)
+#endif
 
 #include <zephyr/linker/rel-sections.ld>
   .ResetVector.text : ALIGN(4)
@@ -346,7 +352,7 @@ SECTIONS
   .text : ALIGN(4)
   {
     _stext = .;
-    _text_start = ABSOLUTE(.);
+    __text_region_start = ABSOLUTE(.);
     KEEP (*(.ResetVector.text))
     *(.ResetVector.literal)
     *(.entry.text)
@@ -356,7 +362,7 @@ SECTIONS
     *(.fini.literal)
     KEEP(*(.fini))
     *(.gnu.version)
-    _text_end = ABSOLUTE(.);
+    __text_region_end = ABSOLUTE(.);
     _etext = .;
   } >sdram0 :sdram0_phdr
 
@@ -409,6 +415,11 @@ SECTIONS
 
 #include <zephyr/linker/common-ram.ld>
 
+  /* Used for C++ build */
+  .tm_clone_table : {
+    *(.tm_clone_table)
+  } >sdram0 :sdram0_phdr
+
   .bss (NOLOAD) : ALIGN(8)
   {
     . = ALIGN (8);
@@ -442,6 +453,8 @@ SECTIONS
   _end = ALIGN (8);
   PROVIDE(end = ALIGN (8));
 
+  /* Mostly unused, though newlib likes them */
+  _heap_sentry = .;
   __stack = SDRAM1_BASE + SDRAM1_SIZE;
   .comment  0 :  { *(.comment) }
   .debug  0 :  { *(.debug) }
@@ -514,4 +527,6 @@ SECTIONS
     KEEP (*(.fw_metadata))
     . = ALIGN(_EXT_MAN_ALIGN_);
   } >fw_metadata_seg :metadata_entries_phdr
+
+  #include <snippets-sections.ld>
 }

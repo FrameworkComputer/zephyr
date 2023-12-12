@@ -204,6 +204,14 @@ static const struct stack_cfg {
 		enum bt_mesh_feat_state state;
 		uint8_t transmit;
 	} relay;
+#ifdef CONFIG_BT_MESH_PRIV_BEACONS
+	uint8_t priv_beacon;
+	uint8_t priv_beacon_int;
+	uint8_t priv_beacon_gatt;
+#endif
+#ifdef CONFIG_BT_MESH_OD_PRIV_PROXY_SRV
+	uint8_t priv_proxy_val;
+#endif
 } stack_cfgs[] = {
 	{
 		.beacon = 1,
@@ -212,6 +220,14 @@ static const struct stack_cfg {
 		.friend = 1,
 		.net_transmit = BT_MESH_TRANSMIT(3, 20),
 		.relay = { .state = BT_MESH_FEATURE_ENABLED, .transmit = BT_MESH_TRANSMIT(2, 20) },
+#ifdef CONFIG_BT_MESH_PRIV_BEACONS
+		.priv_beacon = 1,
+		.priv_beacon_int = 123,
+		.priv_beacon_gatt = 0,
+#endif
+#ifdef CONFIG_BT_MESH_OD_PRIV_PROXY_SRV
+		.priv_proxy_val = 10,
+#endif
 	},
 	{
 		.beacon = 0,
@@ -220,11 +236,17 @@ static const struct stack_cfg {
 		.friend = 0,
 		.net_transmit = BT_MESH_TRANSMIT(1, 30),
 		.relay = { .state = BT_MESH_FEATURE_ENABLED, .transmit = BT_MESH_TRANSMIT(1, 10) },
+#ifdef CONFIG_BT_MESH_PRIV_BEACONS
+		.priv_beacon = 1,
+		.priv_beacon_int = 100,
+		.priv_beacon_gatt = 1,
+#endif
+#ifdef CONFIG_BT_MESH_OD_PRIV_PROXY_SRV
+		.priv_proxy_val = 20,
+#endif
 	},
 };
 static const struct stack_cfg *current_stack_cfg;
-
-static bool clear_settings;
 
 static void test_args_parse(int argc, char *argv[])
 {
@@ -245,14 +267,7 @@ static void test_args_parse(int argc, char *argv[])
 			.name = "{0, 1}",
 			.option = "stack-cfg",
 			.descript = ""
-		},
-		{
-			.dest = &clear_settings,
-			.type = 'b',
-			.name = "{0, 1}",
-			.option = "clear-settings",
-			.descript = "",
-		},
+		}
 	};
 
 	bs_args_parse_all_cmd_line(argc, argv, args_struct);
@@ -323,7 +338,7 @@ static void check_mod_pub_params(const struct bt_mesh_cfg_cli_mod_pub *expected,
 	ASSERT_EQUAL(expected->transmit, got->transmit);
 }
 
-int test_model_settings_set(struct bt_mesh_model *model,
+int test_model_settings_set(const struct bt_mesh_model *model,
 			    const char *name, size_t len_rd,
 			    settings_read_cb read_cb, void *cb_arg)
 {
@@ -349,12 +364,12 @@ int test_model_settings_set(struct bt_mesh_model *model,
 	return 0;
 }
 
-void test_model_reset(struct bt_mesh_model *model)
+void test_model_reset(const struct bt_mesh_model *model)
 {
 	ASSERT_OK(bt_mesh_model_data_store(test_model, false, TEST_MOD_DATA_NAME, NULL, 0));
 }
 
-int test_vnd_model_settings_set(struct bt_mesh_model *model,
+int test_vnd_model_settings_set(const struct bt_mesh_model *model,
 				const char *name, size_t len_rd,
 				settings_read_cb read_cb, void *cb_arg)
 {
@@ -380,7 +395,7 @@ int test_vnd_model_settings_set(struct bt_mesh_model *model,
 	return 0;
 }
 
-void test_vnd_model_reset(struct bt_mesh_model *model)
+void test_vnd_model_reset(const struct bt_mesh_model *model)
 {
 	ASSERT_OK(bt_mesh_model_data_store(test_vnd_model, true, TEST_VND_MOD_DATA_NAME, NULL, 0));
 }
@@ -445,7 +460,6 @@ static void provisioner_setup(void)
 
 static void test_provisioning_data_save(void)
 {
-	bt_mesh_test_host_files_remove();
 	bt_mesh_test_cfg_set(NULL, WAIT_TIME);
 
 	if (device_setup_and_self_provision()) {
@@ -529,6 +543,17 @@ static void node_configure(void)
 	uint8_t status;
 	uint16_t va;
 	struct bt_mesh_cfg_cli_mod_pub pub_params;
+
+	/* Set Network Transmit Count state on the device greater than on provisioner to increase
+	 * probability of reception responses.
+	 */
+	uint8_t net_transmit;
+
+	net_transmit = BT_MESH_TRANSMIT(3, 50);
+	err = bt_mesh_cfg_cli_net_transmit_set(test_netkey_idx, TEST_ADDR, net_transmit, &status);
+	if (err || status != net_transmit) {
+		FAIL("Net transmit set failed (err %d, transmit %x)", err, status);
+	}
 
 	struct test_appkey_t test_appkeys[] = {
 		{ .idx = TEST_APPKEY_0_IDX, .key = TEST_APPKEY_0_KEY },
@@ -636,7 +661,6 @@ static void node_configure(void)
 
 static void test_access_data_save(void)
 {
-	bt_mesh_test_host_files_remove();
 	bt_mesh_test_cfg_set(NULL, WAIT_TIME);
 
 	if (device_setup_and_self_provision()) {
@@ -876,7 +900,6 @@ static void test_cfg_save(void)
 
 	ASSERT_TRUE(current_stack_cfg != NULL);
 
-	bt_mesh_test_host_files_remove();
 	bt_mesh_test_cfg_set(NULL, WAIT_TIME);
 
 	if (device_setup_and_self_provision()) {
@@ -923,6 +946,37 @@ static void test_cfg_save(void)
 		FAIL("Relay set failed (err %d, status %u, transmit %x)", err, status,
 		     current_stack_cfg->relay.transmit);
 	}
+
+#ifdef CONFIG_BT_MESH_PRIV_BEACONS
+	struct bt_mesh_priv_beacon priv_beacon_state = {
+		.enabled = current_stack_cfg->priv_beacon,
+		.rand_interval = current_stack_cfg->priv_beacon_int,
+	};
+
+	err = bt_mesh_priv_beacon_cli_set(test_netkey_idx, TEST_ADDR, &priv_beacon_state,
+					  &priv_beacon_state);
+	if (err) {
+		FAIL("Failed to enable Private Beacon (err %d)", err);
+	}
+
+	uint8_t priv_beacon_gatt = current_stack_cfg->priv_beacon_gatt;
+
+	err = bt_mesh_priv_beacon_cli_gatt_proxy_set(test_netkey_idx, TEST_ADDR, priv_beacon_gatt,
+						     &priv_beacon_gatt);
+	if (err) {
+		FAIL("Failed to enable Private Beacon GATT proxy (err %d)", err);
+	}
+#endif
+
+#if defined(CONFIG_BT_MESH_OD_PRIV_PROXY_SRV) && defined(CONFIG_BT_MESH_OD_PRIV_PROXY_CLI)
+	uint8_t priv_proxy_val;
+
+	err = bt_mesh_od_priv_proxy_cli_set(test_netkey_idx, TEST_ADDR,
+					    current_stack_cfg->priv_proxy_val, &priv_proxy_val);
+	if (err || priv_proxy_val != current_stack_cfg->priv_proxy_val) {
+		FAIL("Failed to set OD Private proxy (err %d, value %d)", err, priv_proxy_val);
+	}
+#endif
 
 	k_sleep(K_SECONDS(CONFIG_BT_MESH_STORE_TIMEOUT));
 
@@ -975,6 +1029,33 @@ static void test_cfg_load(void)
 		FAIL("Relay get failed (err %d, state %u, transmit %x)", err, status, transmit);
 	}
 
+#ifdef CONFIG_BT_MESH_PRIV_BEACONS
+	struct bt_mesh_priv_beacon priv_beacon_state;
+	uint8_t priv_beacon_gatt;
+
+	err = bt_mesh_priv_beacon_cli_get(test_netkey_idx, TEST_ADDR, &priv_beacon_state);
+	if (err || priv_beacon_state.enabled != current_stack_cfg->priv_beacon ||
+	    priv_beacon_state.rand_interval != current_stack_cfg->priv_beacon_int) {
+		FAIL("Private beacon get failed (err %d, enabled %u, interval %x)", err,
+		     priv_beacon_state.enabled, priv_beacon_state.rand_interval);
+	}
+
+	err = bt_mesh_priv_beacon_cli_gatt_proxy_get(test_netkey_idx, TEST_ADDR, &priv_beacon_gatt);
+	if (err || priv_beacon_gatt != current_stack_cfg->priv_beacon_gatt) {
+		FAIL("Private beacon GATT proxy get failed (err %d, enabled %u)", err,
+		     priv_beacon_gatt);
+	}
+#endif
+
+#if defined(CONFIG_BT_MESH_OD_PRIV_PROXY_SRV) && defined(CONFIG_BT_MESH_OD_PRIV_PROXY_CLI)
+	uint8_t priv_proxy_val;
+
+	err = bt_mesh_od_priv_proxy_cli_get(test_netkey_idx, TEST_ADDR, &priv_proxy_val);
+	if (err || priv_proxy_val != current_stack_cfg->priv_proxy_val) {
+		FAIL("Private proxy get failed (err %d, value %u)", err, priv_proxy_val);
+	}
+#endif
+
 	PASS();
 }
 
@@ -992,10 +1073,6 @@ static int mesh_settings_load_cb(const char *key, size_t len, settings_read_cb r
  */
 static void test_reprovisioning_device(void)
 {
-	if (clear_settings) {
-		bt_mesh_test_host_files_remove();
-	}
-
 	bt_mesh_test_cfg_set(NULL, WAIT_TIME);
 
 	device_setup();
@@ -1027,7 +1104,6 @@ static void test_reprovisioning_provisioner(void)
 	int err;
 	bool status;
 
-	bt_mesh_test_host_files_remove();
 	bt_mesh_test_cfg_set(NULL, WAIT_TIME);
 
 	provisioner_setup();

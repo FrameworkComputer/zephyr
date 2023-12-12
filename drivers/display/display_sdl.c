@@ -9,14 +9,17 @@
 
 #include <zephyr/drivers/display.h>
 
-#include <SDL.h>
 #include <string.h>
 #include <soc.h>
 #include <zephyr/sys/byteorder.h>
+#include "display_sdl_bottom.h"
+#include "cmdline.h"
 
 #define LOG_LEVEL CONFIG_DISPLAY_LOG_LEVEL
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(display_sdl);
+
+static uint32_t sdl_display_zoom_pct;
 
 struct sdl_display_config {
 	uint16_t height;
@@ -24,9 +27,9 @@ struct sdl_display_config {
 };
 
 struct sdl_display_data {
-	SDL_Window *window;
-	SDL_Renderer *renderer;
-	SDL_Texture *texture;
+	void *window;
+	void *renderer;
+	void *texture;
 	bool display_on;
 	enum display_pixel_format current_pixel_format;
 	uint8_t *buf;
@@ -54,36 +57,21 @@ static int sdl_display_init(const struct device *dev)
 #endif /* SDL_DISPLAY_DEFAULT_PIXEL_FORMAT */
 		;
 
-	disp_data->window =
-	    SDL_CreateWindow("Zephyr Display", SDL_WINDOWPOS_UNDEFINED,
-			     SDL_WINDOWPOS_UNDEFINED, config->width,
-			     config->height, SDL_WINDOW_SHOWN);
-	if (disp_data->window == NULL) {
-		LOG_ERR("Failed to create SDL window: %s", SDL_GetError());
-		return -EIO;
+	if (sdl_display_zoom_pct == UINT32_MAX) {
+		sdl_display_zoom_pct = CONFIG_SDL_DISPLAY_ZOOM_PCT;
 	}
 
-	disp_data->renderer =
-	    SDL_CreateRenderer(disp_data->window, -1, SDL_RENDERER_ACCELERATED);
-	if (disp_data->renderer == NULL) {
-		LOG_ERR("Failed to create SDL renderer: %s",
-			    SDL_GetError());
-		return -EIO;
-	}
+	int rc = sdl_display_init_bottom(config->height, config->width,
+					 sdl_display_zoom_pct,
+					 &disp_data->window, &disp_data->renderer,
+					 &disp_data->texture);
 
-	disp_data->texture = SDL_CreateTexture(
-	    disp_data->renderer, SDL_PIXELFORMAT_ARGB8888,
-	    SDL_TEXTUREACCESS_STATIC, config->width,
-	    config->height);
-	if (disp_data->texture == NULL) {
-		LOG_ERR("Failed to create SDL texture: %s", SDL_GetError());
+	if (rc != 0) {
+		LOG_ERR("Failed to create SDL display");
 		return -EIO;
 	}
 
 	disp_data->display_on = false;
-	SDL_SetRenderDrawColor(disp_data->renderer, 0, 0, 0, 0xFF);
-	SDL_RenderClear(disp_data->renderer);
-	SDL_RenderPresent(disp_data->renderer);
 
 	return 0;
 }
@@ -222,7 +210,6 @@ static int sdl_display_write(const struct device *dev, const uint16_t x,
 {
 	const struct sdl_display_config *config = dev->config;
 	struct sdl_display_data *disp_data = dev->data;
-	SDL_Rect rect;
 
 	LOG_DBG("Writing %dx%d (w,h) bitmap @ %dx%d (x,y)", desc->width,
 			desc->height, x, y);
@@ -257,20 +244,9 @@ static int sdl_display_write(const struct device *dev, const uint16_t x,
 		sdl_display_write_bgr565(disp_data->buf, desc, buf);
 	}
 
-	rect.x = x;
-	rect.y = y;
-	rect.w = desc->width;
-	rect.h = desc->height;
-
-	SDL_UpdateTexture(disp_data->texture, &rect, disp_data->buf,
-			4 * rect.w);
-
-	if (disp_data->display_on) {
-		SDL_RenderClear(disp_data->renderer);
-		SDL_RenderCopy(disp_data->renderer, disp_data->texture, NULL,
-				NULL);
-		SDL_RenderPresent(disp_data->renderer);
-	}
+	sdl_display_write_bottom(desc->height, desc->width, x, y,
+				 disp_data->renderer, disp_data->texture,
+				 disp_data->buf, disp_data->display_on);
 
 	return 0;
 }
@@ -281,12 +257,6 @@ static int sdl_display_read(const struct device *dev, const uint16_t x,
 			    void *buf)
 {
 	struct sdl_display_data *disp_data = dev->data;
-	SDL_Rect rect;
-
-	rect.x = x;
-	rect.y = y;
-	rect.w = desc->width;
-	rect.h = desc->height;
 
 	LOG_DBG("Reading %dx%d (w,h) bitmap @ %dx%d (x,y)", desc->width,
 			desc->height, x, y);
@@ -295,13 +265,8 @@ static int sdl_display_read(const struct device *dev, const uint16_t x,
 	__ASSERT((desc->pitch * 3U * desc->height) <= desc->buf_size,
 			"Input buffer to small");
 
-	return SDL_RenderReadPixels(disp_data->renderer, &rect, 0, buf,
-			desc->pitch * 4U);
-}
-
-static void *sdl_display_get_framebuffer(const struct device *dev)
-{
-	return NULL;
+	return sdl_display_read_bottom(desc->height, desc->width, x, y,
+				       disp_data->renderer, buf, desc->pitch);
 }
 
 static int sdl_display_blanking_off(const struct device *dev)
@@ -312,9 +277,7 @@ static int sdl_display_blanking_off(const struct device *dev)
 
 	disp_data->display_on = true;
 
-	SDL_RenderClear(disp_data->renderer);
-	SDL_RenderCopy(disp_data->renderer, disp_data->texture, NULL, NULL);
-	SDL_RenderPresent(disp_data->renderer);
+	sdl_display_blanking_off_bottom(disp_data->renderer, disp_data->texture);
 
 	return 0;
 }
@@ -327,21 +290,8 @@ static int sdl_display_blanking_on(const struct device *dev)
 
 	disp_data->display_on = false;
 
-	SDL_RenderClear(disp_data->renderer);
-	SDL_RenderPresent(disp_data->renderer);
+	sdl_display_blanking_on_bottom(disp_data->renderer);
 	return 0;
-}
-
-static int sdl_display_set_brightness(const struct device *dev,
-		const uint8_t brightness)
-{
-	return -ENOTSUP;
-}
-
-static int sdl_display_set_contrast(const struct device *dev,
-		const uint8_t contrast)
-{
-	return -ENOTSUP;
 }
 
 static void sdl_display_get_capabilities(
@@ -386,20 +336,7 @@ static int sdl_display_set_pixel_format(const struct device *dev,
 
 static void sdl_display_cleanup(struct sdl_display_data *disp_data)
 {
-	if (disp_data->texture != NULL) {
-		SDL_DestroyTexture(disp_data->texture);
-		disp_data->texture = NULL;
-	}
-
-	if (disp_data->renderer != NULL) {
-		SDL_DestroyRenderer(disp_data->renderer);
-		disp_data->renderer = NULL;
-	}
-
-	if (disp_data->window != NULL) {
-		SDL_DestroyWindow(disp_data->window);
-		disp_data->window = NULL;
-	}
+	sdl_display_cleanup_bottom(&disp_data->window, &disp_data->renderer, &disp_data->texture);
 }
 
 static const struct display_driver_api sdl_display_api = {
@@ -407,9 +344,6 @@ static const struct display_driver_api sdl_display_api = {
 	.blanking_off = sdl_display_blanking_off,
 	.write = sdl_display_write,
 	.read = sdl_display_read,
-	.get_framebuffer = sdl_display_get_framebuffer,
-	.set_brightness = sdl_display_set_brightness,
-	.set_contrast = sdl_display_set_contrast,
 	.get_capabilities = sdl_display_get_capabilities,
 	.set_pixel_format = sdl_display_set_pixel_format,
 };
@@ -429,7 +363,7 @@ static const struct display_driver_api sdl_display_api = {
 	DEVICE_DT_INST_DEFINE(n, &sdl_display_init, NULL,		\
 			      &sdl_data_##n,				\
 			      &sdl_config_##n,				\
-			      APPLICATION,				\
+			      POST_KERNEL,				\
 			      CONFIG_DISPLAY_INIT_PRIORITY,		\
 			      &sdl_display_api);			\
 									\
@@ -441,3 +375,22 @@ static const struct display_driver_api sdl_display_api = {
 	NATIVE_TASK(sdl_display_cleanup_##n, ON_EXIT, 1);
 
 DT_INST_FOREACH_STATUS_OKAY(DISPLAY_SDL_DEFINE)
+
+static void display_sdl_native_posix_options(void)
+{
+	static struct args_struct_t sdl_display_options[] = {
+		{ .option = "display_zoom_pct",
+		  .name = "pct",
+		  .type = 'u',
+		  .dest = (void *)&sdl_display_zoom_pct,
+		  .descript = "Display zoom percentage (100 == 1:1 scale), "
+			      "by default " STRINGIFY(CONFIG_SDL_DISPLAY_ZOOM_PCT)
+			      " = CONFIG_SDL_DISPLAY_ZOOM_PCT"
+		},
+		ARG_TABLE_ENDMARKER
+	};
+
+	native_add_command_line_opts(sdl_display_options);
+}
+
+NATIVE_TASK(display_sdl_native_posix_options, PRE_BOOT_1, 1);

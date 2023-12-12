@@ -20,13 +20,29 @@ static char sample_packet[PACKET_SIZE_MAX];
 
 static struct zperf_async_upload_context tcp_async_upload_ctx;
 
+static ssize_t sendall(int sock, const void *buf, size_t len)
+{
+	while (len) {
+		ssize_t out_len = zsock_send(sock, buf, len, 0);
+
+		if (out_len < 0) {
+			return out_len;
+		}
+
+		buf = (const char *)buf + out_len;
+		len -= out_len;
+	}
+
+	return 0;
+}
+
 static int tcp_upload(int sock,
 		      unsigned int duration_in_ms,
 		      unsigned int packet_size,
 		      struct zperf_results *results)
 {
-	int64_t duration = sys_clock_timeout_end_calc(K_MSEC(duration_in_ms));
-	int64_t start_time, last_print_time, end_time, remaining;
+	k_timepoint_t end = sys_timepoint_calc(K_MSEC(duration_in_ms));
+	int64_t start_time, end_time;
 	uint32_t nb_packets = 0U, nb_errors = 0U;
 	uint32_t alloc_errors = 0U;
 	int ret = 0;
@@ -39,7 +55,6 @@ static int tcp_upload(int sock,
 
 	/* Start the loop */
 	start_time = k_uptime_ticks();
-	last_print_time = start_time;
 
 	(void)memset(sample_packet, 'z', sizeof(sample_packet));
 
@@ -51,7 +66,7 @@ static int tcp_upload(int sock,
 
 	do {
 		/* Send the packet */
-		ret = zsock_send(sock, sample_packet, packet_size, 0);
+		ret = sendall(sock, sample_packet, packet_size);
 		if (ret < 0) {
 			if (nb_errors == 0 && ret != -ENOMEM) {
 				NET_ERR("Failed to send the packet (%d)", errno);
@@ -80,8 +95,7 @@ static int tcp_upload(int sock,
 		k_yield();
 #endif
 
-		remaining = duration - k_uptime_ticks();
-	} while (remaining > 0);
+	} while (!sys_timepoint_expired(end));
 
 	end_time = k_uptime_ticks();
 
@@ -119,7 +133,7 @@ int zperf_tcp_upload(const struct zperf_upload_params *param,
 	}
 
 	sock = zperf_prepare_upload_sock(&param->peer_addr, param->options.tos,
-					 IPPROTO_TCP);
+					 param->options.priority, IPPROTO_TCP);
 	if (sock < 0) {
 		return sock;
 	}

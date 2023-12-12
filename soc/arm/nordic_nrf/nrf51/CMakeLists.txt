@@ -6,11 +6,9 @@ zephyr_library_sources(
   soc.c
   )
 
-zephyr_library_sources_ifdef(CONFIG_PM
-  power.c
-  )
-
 zephyr_library_include_directories(
   ${ZEPHYR_BASE}/kernel/include
   ${ZEPHYR_BASE}/arch/arm/include
   )
+
+set(SOC_LINKER_SCRIPT ${ZEPHYR_BASE}/include/zephyr/arch/arm/cortex_m/scripts/linker.ld CACHE INTERNAL "")

@@ -127,6 +127,17 @@
 #define CAN_MCAN_PSR_ACT  GENMASK(4, 3)
 #define CAN_MCAN_PSR_LEC  GENMASK(2, 0)
 
+enum can_mcan_psr_lec {
+	CAN_MCAN_PSR_LEC_NO_ERROR    = 0,
+	CAN_MCAN_PSR_LEC_STUFF_ERROR = 1,
+	CAN_MCAN_PSR_LEC_FORM_ERROR  = 2,
+	CAN_MCAN_PSR_LEC_ACK_ERROR   = 3,
+	CAN_MCAN_PSR_LEC_BIT1_ERROR  = 4,
+	CAN_MCAN_PSR_LEC_BIT0_ERROR  = 5,
+	CAN_MCAN_PSR_LEC_CRC_ERROR   = 6,
+	CAN_MCAN_PSR_LEC_NO_CHANGE   = 7
+};
+
 /* Transmitter Delay Compensation register */
 #define CAN_MCAN_TDCR      0x048
 #define CAN_MCAN_TDCR_TDCO GENMASK(14, 8)
@@ -573,13 +584,25 @@
  * @brief Get the Bosch M_CAN Message RAM base address
  *
  * For devicetree nodes with dedicated Message RAM area defined via devicetree, this macro returns
- * the base address of the Message RAM, taking in the Message RAM offset into account.
+ * the base address of the Message RAM.
  *
  * @param node_id node identifier
- * @return the Bosch M_CAN Message RAM base address
+ * @return the Bosch M_CAN Message RAM base address (MRBA)
+ */
+#define CAN_MCAN_DT_MRBA(node_id)                                                                  \
+	(mem_addr_t)DT_REG_ADDR_BY_NAME(node_id, message_ram)
+
+/**
+ * @brief Get the Bosch M_CAN Message RAM address
+ *
+ * For devicetree nodes with dedicated Message RAM area defined via devicetree, this macro returns
+ * the address of the Message RAM, taking in the Message RAM offset into account.
+ *
+ * @param node_id node identifier
+ * @return the Bosch M_CAN Message RAM address
  */
 #define CAN_MCAN_DT_MRAM_ADDR(node_id)                                                             \
-	(mem_addr_t)(DT_REG_ADDR_BY_NAME(node_id, message_ram) + CAN_MCAN_DT_MRAM_OFFSET(node_id))
+	(mem_addr_t)(CAN_MCAN_DT_MRBA(node_id) + CAN_MCAN_DT_MRAM_OFFSET(node_id))
 
 /**
  * @brief Get the Bosch M_CAN Message RAM size
@@ -617,7 +640,7 @@
  */
 #define CAN_MCAN_DT_MRAM_DEFINE(node_id, _name)                                                    \
 	BUILD_ASSERT(CAN_MCAN_DT_MRAM_OFFSET(node_id) == 0, "offset must be 0");                   \
-	static char __noinit __nocache __aligned(4) _name[CAN_MCAN_DT_MRAM_ELEMENTS_SIZE(node_id)];
+	static char __nocache_noinit __aligned(4) _name[CAN_MCAN_DT_MRAM_ELEMENTS_SIZE(node_id)];
 
 /**
  * @brief Assert that the Message RAM configuration meets the Bosch M_CAN IP core restrictions
@@ -783,9 +806,17 @@
 #define CAN_MCAN_DT_INST_MCAN_ADDR(inst) CAN_MCAN_DT_MCAN_ADDR(DT_DRV_INST(inst))
 
 /**
+ * @brief Equivalent to CAN_MCAN_DT_MRBA(DT_DRV_INST(inst))
+ * @param inst DT_DRV_COMPAT instance number
+ * @return the Bosch M_CAN Message RAM Base Address (MRBA)
+ * @see CAN_MCAN_DT_MRBA()
+ */
+#define CAN_MCAN_DT_INST_MRBA(inst) CAN_MCAN_DT_MRBA(DT_DRV_INST(inst))
+
+/**
  * @brief Equivalent to CAN_MCAN_DT_MRAM_ADDR(DT_DRV_INST(inst))
  * @param inst DT_DRV_COMPAT instance number
- * @return the Bosch M_CAN Message RAM base address
+ * @return the Bosch M_CAN Message RAM address
  * @see CAN_MCAN_DT_MRAM_ADDR()
  */
 #define CAN_MCAN_DT_INST_MRAM_ADDR(inst) CAN_MCAN_DT_MRAM_ADDR(DT_DRV_INST(inst))

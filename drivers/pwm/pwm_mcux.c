@@ -96,8 +96,8 @@ static int mcux_pwm_set_cycles(const struct device *dev, uint32_t channel,
 		data->channel[channel].level = level;
 
 		status = PWM_SetupPwm(config->base, config->index,
-				      &data->channel[channel], CHANNEL_COUNT,
-				      config->mode, 1, clock_freq);
+				      &data->channel[channel], 1U,
+				      config->mode, 1U, clock_freq);
 		if (status != kStatus_Success) {
 			LOG_ERR("Could not set up pwm");
 			return -ENOTSUP;
@@ -199,7 +199,9 @@ static int pwm_mcux_init(const struct device *dev)
 	pwm_config.reloadLogic = config->reload;
 	pwm_config.clockSource = kPWM_BusClock;
 	pwm_config.enableDebugMode = config->run_debug;
+#if !defined(FSL_FEATURE_PWM_HAS_NO_WAITEN) || (!FSL_FEATURE_PWM_HAS_NO_WAITEN)
 	pwm_config.enableWait = config->run_wait;
+#endif
 
 	status = PWM_Init(config->base, config->index, &pwm_config);
 	if (status != kStatus_Success) {

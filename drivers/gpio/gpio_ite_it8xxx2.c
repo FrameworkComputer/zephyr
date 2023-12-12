@@ -10,6 +10,7 @@
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/dt-bindings/gpio/ite-it8xxx2-gpio.h>
 #include <zephyr/dt-bindings/interrupt-controller/ite-intc.h>
+#include <zephyr/init.h>
 #include <zephyr/irq.h>
 #include <zephyr/types.h>
 #include <zephyr/sys/util.h>
@@ -148,7 +149,7 @@ static const struct {
 	[IT8XXX2_IRQ_WU63] = {BIT(3), 6, BIT(3)},
 	[IT8XXX2_IRQ_WU64] = {BIT(4), 6, BIT(4)},
 	[IT8XXX2_IRQ_WU65] = {BIT(5), 6, BIT(5)},
-	[IT8XXX2_IRQ_WU65] = {BIT(6), 6, BIT(6)},
+	[IT8XXX2_IRQ_WU66] = {BIT(6), 6, BIT(6)},
 	[IT8XXX2_IRQ_WU67] = {BIT(7), 6, BIT(7)},
 	[IT8XXX2_IRQ_WU70] = {BIT(0), 7, BIT(0)},
 	[IT8XXX2_IRQ_WU71] = {BIT(1), 7, BIT(1)},

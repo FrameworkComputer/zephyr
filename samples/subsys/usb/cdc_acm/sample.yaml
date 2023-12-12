@@ -17,6 +17,7 @@ tests:
     platform_allow:
       - nrf52840dk_nrf52840
       - frdm_k64f
+      - 96b_carbon
     harness: console
     harness_config:
       type: one_line
@@ -26,7 +27,9 @@ tests:
     depends_on: usb_device
     tags: usb
     arch_exclude: posix
-    extra_args: OVERLAY_CONFIG=overlay-composite-cdc-msc.conf
+    extra_args:
+      - OVERLAY_CONFIG=overlay-composite-cdc-msc.conf
+      - EXTRA_DTC_OVERLAY_FILE="ramdisk.overlay"
     harness: console
     harness_config:
       type: one_line
@@ -38,4 +41,4 @@ tests:
     arch_allow: posix
     build_only: true
     integration_platforms:
-      - native_posix
+      - native_sim

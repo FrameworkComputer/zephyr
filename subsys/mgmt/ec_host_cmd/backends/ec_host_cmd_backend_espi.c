@@ -89,7 +89,7 @@ static void espi_handler(const struct device *dev, struct espi_callback *cb,
 
 	/* Even in case of errors, let the general handler send response */
 	hc_espi->state = ESPI_STATE_PROCESSING;
-	k_sem_give(&hc_espi->rx_ctx->handler_owns);
+	ec_host_cmd_rx_notify();
 }
 
 static int ec_host_cmd_espi_init(const struct ec_host_cmd_backend *backend,
@@ -113,6 +113,10 @@ static int ec_host_cmd_espi_init(const struct ec_host_cmd_backend *backend,
 			      (uint32_t *)&tx->buf);
 	espi_read_lpc_request(hc_espi->espi_dev, ECUSTOM_HOST_CMD_GET_PARAM_MEMORY_SIZE,
 			      &tx->len_max);
+
+	/* Set the max len for RX as the min of buffer to store data and shared memory. */
+	hc_espi->rx_ctx->len_max =
+		MIN(CONFIG_EC_HOST_CMD_HANDLER_RX_BUFFER_SIZE, hc_espi->tx->len_max);
 
 	hc_espi->state = ESPI_STATE_READY_TO_RECV;
 

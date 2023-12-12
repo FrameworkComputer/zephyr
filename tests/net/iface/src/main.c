@@ -2,6 +2,7 @@
 
 /*
  * Copyright (c) 2016 Intel Corporation
+ * Copyright (c) 2023 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -18,7 +19,7 @@ LOG_MODULE_REGISTER(net_test, NET_LOG_LEVEL);
 #include <errno.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/linker/sections.h>
-#include <zephyr/random/rand32.h>
+#include <zephyr/random/random.h>
 
 #include <zephyr/ztest.h>
 
@@ -55,8 +56,7 @@ static struct in6_addr ll_addr = { { { 0xfe, 0x80, 0x43, 0xb8, 0, 0, 0, 0,
 				       0, 0, 0, 0xf2, 0xaa, 0x29, 0x02,
 				       0x04 } } };
 
-static struct in6_addr in6addr_mcast = { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0,
-					     0, 0, 0, 0, 0, 0, 0, 0x1 } } };
+static struct in6_addr in6addr_mcast;
 
 static struct net_if *iface1;
 static struct net_if *iface2;
@@ -776,8 +776,12 @@ ZTEST(net_iface, test_v4_addr_add_rm)
 #define MY_ADDR_V4_USER      { { { 10, 0, 0, 2 } } }
 #define UNKNOWN_ADDR_V4_USER { { { 5, 6, 7, 8 } } }
 
-static void v4_addr_add_user(void)
+static void v4_addr_add_user(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	struct in_addr my_addr = MY_ADDR_V4_USER;
 	bool ret;
 
@@ -788,7 +792,7 @@ static void v4_addr_add_user(void)
 static void v4_addr_add_user_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)v4_addr_add_user, NULL,
+	k_thread_user_mode_enter(v4_addr_add_user, NULL,
 				 NULL, NULL);
 }
 
@@ -805,8 +809,12 @@ static void v4_addr_lookup_user(void)
 	zassert_equal(ret, 0, "IPv4 address found");
 }
 
-static void v4_addr_rm_user(void)
+static void v4_addr_rm_user(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	struct in_addr my_addr = MY_ADDR_V4_USER;
 	bool ret;
 
@@ -817,7 +825,7 @@ static void v4_addr_rm_user(void)
 static void v4_addr_rm_user_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)v4_addr_rm_user, NULL,
+	k_thread_user_mode_enter(v4_addr_rm_user, NULL,
 				 NULL, NULL);
 }
 
@@ -880,14 +888,72 @@ ZTEST(net_iface, test_v6_addr_add_rm)
 	v6_addr_rm();
 }
 
+ZTEST(net_iface, test_v6_addr_add_rm_solicited)
+{
+	const struct in6_addr prefix = { { { 0x20, 0x01, 0x1b, 0x98, 0x24, 0xb8, 0x7e, 0xbb,
+					     0, 0, 0, 0, 0, 0, 0, 0 } } };
+	struct in6_addr iid_addr = { };
+	struct in6_addr iid_addr_mcast = { };
+	struct in6_addr unicast_addr = { };
+	struct in6_addr unicast_addr_mcast = { };
+	struct net_if_addr *ifaddr;
+	struct net_if_mcast_addr *maddr;
+	bool ret;
+
+	/* Add a link-local address based on the interface identifier */
+	net_ipv6_addr_create_iid(&iid_addr, net_if_get_link_addr(iface4));
+	ifaddr = net_if_ipv6_addr_add(iface4, &iid_addr,
+				      NET_ADDR_AUTOCONF, 0);
+	zassert_not_null(ifaddr, "Cannot add IPv6 link-local address");
+
+	/* Add the corresponding solicited-node multicast address */
+	net_ipv6_addr_create_solicited_node(&iid_addr, &iid_addr_mcast);
+	maddr = net_if_ipv6_maddr_add(iface4, &iid_addr_mcast);
+	zassert_not_null(maddr, "Cannot add solicited-node multicast address");
+
+	/* Add an autoconfigured global unicast address */
+	net_ipv6_addr_create_iid(&unicast_addr, net_if_get_link_addr(iface4));
+	memcpy(&unicast_addr, &prefix, sizeof(prefix) / 2);
+	ifaddr = net_if_ipv6_addr_add(iface4, &unicast_addr,
+				      NET_ADDR_AUTOCONF, 0);
+	zassert_not_null(ifaddr, "Cannot add IPv6 global unicast address");
+
+	/* Add the corresponding solicited-node multicast address (should exist) */
+	net_ipv6_addr_create_solicited_node(&unicast_addr, &unicast_addr_mcast);
+	zassert_mem_equal(&unicast_addr_mcast, &iid_addr_mcast,
+			  sizeof(struct in6_addr));
+	maddr = net_if_ipv6_maddr_add(iface4, &unicast_addr_mcast);
+	zassert_is_null(maddr, "Solicited-node multicast address was added twice");
+
+	/* Remove the global unicast address */
+	ret = net_if_ipv6_addr_rm(iface4, &unicast_addr);
+	zassert_true(ret, "Cannot remove IPv6 global unicast address");
+
+	/* The solicited-node multicast address should stay */
+	maddr = net_if_ipv6_maddr_lookup(&iid_addr_mcast, &iface4);
+	zassert_not_null(maddr, "Solicited-node multicast address was removed");
+
+	/* Remove the link-local address */
+	ret = net_if_ipv6_addr_rm(iface4, &iid_addr);
+	zassert_true(ret, "Cannot remove IPv6 link-local address");
+
+	/* The solicited-node multicast address should be gone */
+	maddr = net_if_ipv6_maddr_lookup(&iid_addr_mcast, &iface4);
+	zassert_is_null(maddr, "Solicited-node multicast address was not removed");
+}
+
 #define MY_ADDR_V6_USER { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, \
 			      0, 0, 0, 0, 0, 0, 0, 0x65 } } }
 
 #define UNKNOWN_ADDR_V6_USER { { { 0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, \
 			      0, 0, 0, 0, 0, 0, 0, 0x66 } } }
 
-static void v6_addr_add_user(void)
+static void v6_addr_add_user(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	struct in6_addr my_addr = MY_ADDR_V6_USER;
 	bool ret;
 
@@ -898,7 +964,7 @@ static void v6_addr_add_user(void)
 static void v6_addr_add_user_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)v6_addr_add_user, NULL,
+	k_thread_user_mode_enter(v6_addr_add_user, NULL,
 				 NULL, NULL);
 }
 
@@ -915,8 +981,12 @@ static void v6_addr_lookup_user(void)
 	zassert_equal(ret, 0, "IPv6 address found");
 }
 
-static void v6_addr_rm_user(void)
+static void v6_addr_rm_user(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	struct in6_addr my_addr = MY_ADDR_V6_USER;
 	bool ret;
 
@@ -930,7 +1000,7 @@ static void v6_addr_rm_user(void)
 static void v6_addr_rm_user_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)v6_addr_rm_user, NULL,
+	k_thread_user_mode_enter(v6_addr_rm_user, NULL,
 				 NULL, NULL);
 }
 
@@ -941,8 +1011,12 @@ ZTEST(net_iface, test_v6_addr_add_rm_user_from_userspace)
 	v6_addr_rm_user_from_userspace();
 }
 
-static void netmask_addr_add(void)
+static void netmask_addr_add(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	struct in_addr my_netmask = { { { 255, 255, 255, 0 } } };
 	bool ret;
 
@@ -952,13 +1026,13 @@ static void netmask_addr_add(void)
 
 ZTEST(net_iface, test_netmask_addr_add)
 {
-	netmask_addr_add();
+	netmask_addr_add(NULL, NULL, NULL);
 }
 
 static void netmask_addr_add_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)netmask_addr_add, NULL,
+	k_thread_user_mode_enter(netmask_addr_add, NULL,
 				 NULL, NULL);
 }
 
@@ -967,8 +1041,12 @@ ZTEST(net_iface, test_netmask_addr_add_from_userspace)
 	netmask_addr_add_from_userspace();
 }
 
-static void gw_addr_add(void)
+static void gw_addr_add(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	struct in_addr my_gw = { { { 192, 0, 2, 254 } } };
 	bool ret;
 
@@ -978,13 +1056,13 @@ static void gw_addr_add(void)
 
 ZTEST(net_iface, test_gw_addr_add)
 {
-	gw_addr_add();
+	gw_addr_add(NULL, NULL, NULL);
 }
 
 static void gw_addr_add_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)gw_addr_add, NULL,
+	k_thread_user_mode_enter(gw_addr_add, NULL,
 				 NULL, NULL);
 }
 
@@ -993,27 +1071,142 @@ ZTEST(net_iface, test_gw_addr_add_from_userspace)
 	gw_addr_add_from_userspace();
 }
 
-static void get_by_index(void)
+static void get_by_index(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	zassert_not_null(net_if_get_by_index(1),
 			 "Cannot get interface at index 1");
 }
 
 ZTEST(net_iface, test_get_by_index)
 {
-	get_by_index();
+	get_by_index(NULL, NULL, NULL);
 }
 
 static void get_by_index_from_userspace(void)
 {
 	k_thread_access_grant(k_current_get(), net_if_get_by_index(1));
-	k_thread_user_mode_enter((k_thread_entry_t)get_by_index, NULL,
+	k_thread_user_mode_enter(get_by_index, NULL,
 				 NULL, NULL);
 }
 
 ZTEST(net_iface, test_get_by_index_from_userspace)
 {
 	get_by_index_from_userspace();
+}
+
+static void foreach_ipv4_addr_check(struct net_if *iface,
+				    struct net_if_addr *if_addr,
+				    void *user_data)
+{
+	int *count = (int *)user_data;
+
+	(*count)++;
+
+	zassert_equal_ptr(iface, iface1, "Callback called on wrong interface");
+	zassert_mem_equal(&if_addr->address.in_addr, &my_ipv4_addr1,
+			  sizeof(struct in_addr), "Wrong IPv4 address");
+}
+
+ZTEST(net_iface, test_ipv4_addr_foreach)
+{
+	int count = 0;
+
+	/* iface1 has one IPv4 address configured */
+	net_if_ipv4_addr_foreach(iface1, foreach_ipv4_addr_check, &count);
+	zassert_equal(count, 1, "Incorrect number of callback calls");
+
+	count = 0;
+
+	/* iface4 has no IPv4 address configured */
+	net_if_ipv4_addr_foreach(iface4, foreach_ipv4_addr_check, &count);
+	zassert_equal(count, 0, "Incorrect number of callback calls");
+}
+
+static void foreach_ipv6_addr_check(struct net_if *iface,
+				    struct net_if_addr *if_addr,
+				    void *user_data)
+{
+	int *count = (int *)user_data;
+
+	(*count)++;
+
+	zassert_equal_ptr(iface, iface1, "Callback called on wrong interface");
+
+	if (net_ipv6_is_ll_addr(&if_addr->address.in6_addr)) {
+		zassert_mem_equal(&if_addr->address.in6_addr, &ll_addr,
+				  sizeof(struct in6_addr), "Wrong IPv6 address");
+	} else {
+		zassert_mem_equal(&if_addr->address.in6_addr, &my_addr1,
+				  sizeof(struct in6_addr), "Wrong IPv6 address");
+	}
+}
+
+ZTEST(net_iface, test_ipv6_addr_foreach)
+{
+	int count = 0;
+
+	/* iface1 has two IPv6 addresses configured */
+	net_if_ipv6_addr_foreach(iface1, foreach_ipv6_addr_check, &count);
+	zassert_equal(count, 2, "Incorrect number of callback calls");
+
+	count = 0;
+
+	/* iface4 has no IPv6 address configured */
+	net_if_ipv6_addr_foreach(iface4, foreach_ipv6_addr_check, &count);
+	zassert_equal(count, 0, "Incorrect number of callback calls");
+}
+
+ZTEST(net_iface, test_interface_name)
+{
+	int ret;
+
+#if defined(CONFIG_NET_INTERFACE_NAME)
+	char buf[CONFIG_NET_INTERFACE_NAME_LEN + 1];
+	struct net_if *iface;
+	char *name;
+
+	iface = net_if_get_default();
+	memset(buf, 0, sizeof(buf));
+
+	ret = net_if_get_name(NULL, NULL, -1);
+	zassert_equal(ret, -EINVAL, "Unexpected value returned");
+
+	ret = net_if_get_name(iface, NULL, -1);
+	zassert_equal(ret, -EINVAL, "Unexpected value returned");
+
+	ret = net_if_get_name(iface, buf, 0);
+	zassert_equal(ret, -EINVAL, "Unexpected value returned");
+
+	name = "mynetworkiface0";
+	ret = net_if_set_name(iface, name);
+	zassert_equal(ret, -ENAMETOOLONG, "Unexpected value (%d) returned", ret);
+
+	name = "abc0";
+	ret = net_if_set_name(iface, name);
+	zassert_equal(ret, 0, "Unexpected value (%d) returned", ret);
+
+	ret = net_if_get_name(iface, buf, 1);
+	zassert_equal(ret, -ERANGE, "Unexpected value (%d) returned", ret);
+
+	ret = net_if_get_name(iface, buf, strlen(name) - 1);
+	zassert_equal(ret, -ERANGE, "Unexpected value (%d) returned", ret);
+
+	ret = net_if_get_name(iface, buf, sizeof(buf) - 1);
+	zassert_equal(ret, strlen(name), "Unexpected value (%d) returned", ret);
+
+	ret = net_if_get_by_name(name);
+	zassert_equal(ret, net_if_get_by_iface(iface), "Unexpected value (%d) returned", ret);
+
+	ret = net_if_get_by_name("ENOENT");
+	zassert_equal(ret, -ENOENT, "Unexpected value (%d) returned", ret);
+#else
+	ret = net_if_get_name(NULL, NULL, -1);
+	zassert_equal(ret, -ENOTSUP, "Invalid value returned");
+#endif
 }
 
 ZTEST_SUITE(net_iface, NULL, iface_setup, NULL, NULL, iface_teardown);

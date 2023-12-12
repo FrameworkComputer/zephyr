@@ -8,6 +8,8 @@
 #include <st/f4/stm32f446Xe.dtsi>
 #include <st/f4/stm32f446r(c-e)tx-pinctrl.dtsi>
 #include "arduino_r3_connector.dtsi"
+#include "st_morpho_connector.dtsi"
+#include <zephyr/dt-bindings/input/input-event-codes.h>
 
 / {
 	model = "STMicroelectronics STM32F446RE-NUCLEO board";
@@ -21,11 +23,18 @@
 		zephyr,canbus = &can2;
 	};
 
-	leds {
+	leds: leds {
 		compatible = "gpio-leds";
 		green_led_2: led_2 {
 			gpios = <&gpioa 5 GPIO_ACTIVE_HIGH>;
 			label = "User LD2";
+		};
+	};
+
+	pwmleds {
+		compatible = "pwm-leds";
+		green_pwm_led: green_pwm_led {
+			pwms = <&pwm2 1 PWM_MSEC(20) PWM_POLARITY_NORMAL>;
 		};
 	};
 
@@ -34,11 +43,13 @@
 		user_button: button {
 			label = "User";
 			gpios = <&gpioc 13 GPIO_ACTIVE_LOW>;
+			zephyr,code = <INPUT_KEY_0>;
 		};
 	};
 
 	aliases {
 		led0 = &green_led_2;
+		pwm-led0 = &green_pwm_led;
 		sw0 = &user_button;
 	};
 };
@@ -110,6 +121,16 @@
 		     &spi1_miso_pa6 &spi1_mosi_pa7>;
 	pinctrl-names = "default";
 	status = "okay";
+};
+
+&timers2 {
+	status = "okay";
+
+	pwm2: pwm {
+		status = "okay";
+		pinctrl-0 = <&tim2_ch1_pa5>;
+		pinctrl-names = "default";
+	};
 };
 
 &rtc {

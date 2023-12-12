@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2021 Argentum Systems Ltd.
+ * Copyright (c) 2023 Gerson Fernando Budke <nandojve@gmail.com>
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,12 +10,11 @@
  * @brief Atmel SAML MCU series initialization code
  */
 
-#include <zephyr/arch/cpu.h>
-#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <soc.h>
+#include <cmsis_core.h>
 
 /* the SAML21 currently operates only in Performance Level 2... sleep
  * and low-power operation are not currently supported by the BSP
@@ -215,6 +215,18 @@ static inline void gclk_main_configure(void)
 	GCLK->GENCTRL[0].bit.SRC = GCLK_GENCTRL_SRC_DFLL48M_Val;
 }
 
+#if !CONFIG_USB_DC_SAM0
+#define gclk_usb_configure()
+#else
+static inline void gclk_usb_configure(void)
+{
+	GCLK->GENCTRL[2].reg = 0
+		| GCLK_GENCTRL_SRC_DFLL48M
+		| GCLK_GENCTRL_DIV(1)
+		| GCLK_GENCTRL_GENEN;
+}
+#endif
+
 #if !CONFIG_ADC_SAM0
 #define gclk_adc_configure()
 #else
@@ -243,13 +255,8 @@ static inline void pause_for_debug(void)
 static inline void pause_for_debug(void) {}
 #endif
 
-static int atmel_saml_init(void)
+void z_arm_platform_init(void)
 {
-	uint32_t key;
-
-
-	key = irq_lock();
-
 	pause_for_debug();
 
 	gclk_reset();
@@ -260,16 +267,6 @@ static int atmel_saml_init(void)
 	flash_waitstates_init();
 	pm_init();
 	gclk_main_configure();
+	gclk_usb_configure();
 	gclk_adc_configure();
-
-	/* Install default handler that simply resets the CPU
-	 * if configured in the kernel, NOP otherwise
-	 */
-	NMI_INIT();
-
-	irq_unlock(key);
-
-	return 0;
 }
-
-SYS_INIT(atmel_saml_init, PRE_KERNEL_1, 0);

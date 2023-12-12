@@ -17,6 +17,7 @@ tests:
       - frdm_k64f
       - qemu_cortex_m3
       - frdm_kw41z
+      - qemu_cortex_a53
     integration_platforms:
       - qemu_x86
   sample.net.sockets.echo_server.802154:
@@ -84,15 +85,6 @@ tests:
     tags:
       - net
       - usb
-  sample.net.sockets.echo_server.usbnet_composite:
-    depends_on: usb_device
-    harness: net
-    extra_args: OVERLAY_CONFIG="overlay-netusb.conf"
-    extra_configs:
-      - CONFIG_USB_COMPOSITE_DEVICE=y
-    tags:
-      - net
-      - usb
   sample.net.sockets.echo_server.nrf_openthread:
     extra_args: OVERLAY_CONFIG="overlay-ot.conf"
     slow: true
@@ -100,7 +92,7 @@ tests:
       - net
       - openthread
     platform_allow: nrf52840dk_nrf52840
-    filter: TOOLCHAIN_HAS_NEWLIB == 1
+    filter: CONFIG_FULL_LIBC_SUPPORTED and not CONFIG_NATIVE_LIBC
   sample.net.sockets.echo_server.b91_openthread:
     extra_args: OVERLAY_CONFIG="overlay-ot.conf"
     slow: true
@@ -108,7 +100,7 @@ tests:
       - net
       - openthread
     platform_allow: tlsr9518adk80d
-    filter: TOOLCHAIN_HAS_NEWLIB == 1
+    filter: CONFIG_FULL_LIBC_SUPPORTED and not CONFIG_NATIVE_LIBC
   sample.net.sockets.echo_server.kw41z_openthread:
     extra_args: OVERLAY_CONFIG="overlay-ot.conf"
     slow: true
@@ -116,7 +108,7 @@ tests:
       - net
       - openthread
     platform_allow: frdm_kw41z
-    filter: TOOLCHAIN_HAS_NEWLIB == 1
+    filter: CONFIG_FULL_LIBC_SUPPORTED and not CONFIG_NATIVE_LIBC
   sample.net.sockets.echo_server.e1000:
     extra_args: OVERLAY_CONFIG="overlay-e1000.conf"
     tags: net

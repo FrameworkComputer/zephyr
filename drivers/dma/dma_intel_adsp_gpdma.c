@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <adsp_interrupt.h>
 #include <zephyr/drivers/dma.h>
 #include <zephyr/cache.h>
 
@@ -292,7 +293,7 @@ static void intel_adsp_gpdma_release_ownership(const struct device *dev)
 #ifdef CONFIG_SOC_SERIES_INTEL_ACE
 	const struct intel_adsp_gpdma_cfg *const dev_cfg = dev->config;
 	uint32_t reg = dev_cfg->shim + GPDMA_CTL_OFFSET;
-	uint32_t val = sys_read32(reg) & ~GPDMA_OSEL(0x0);
+	uint32_t val = sys_read32(reg) & ~GPDMA_OSEL(0x3);
 
 	sys_write32(val, reg);
 	/* CHECKME: Do CAVS platforms set ownership over DMA,
@@ -319,6 +320,7 @@ static int intel_adsp_gpdma_enable(const struct device *dev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_DEVICE
 static int intel_adsp_gpdma_disable(const struct device *dev)
 {
 	const struct intel_adsp_gpdma_cfg *const dev_cfg = dev->config;
@@ -327,7 +329,8 @@ static int intel_adsp_gpdma_disable(const struct device *dev)
 	sys_write32(sys_read32(reg) & ~SHIM_CLKCTL_LPGPDMA_SPA, reg);
 	return 0;
 }
-#endif
+#endif /* CONFIG_PM_DEVICE */
+#endif /* CONFIG_SOC_SERIES_INTEL_ACE */
 
 static int intel_adsp_gpdma_power_on(const struct device *dev)
 {
@@ -425,6 +428,16 @@ int intel_adsp_gpdma_get_attribute(const struct device *dev, uint32_t type, uint
 	return 0;
 }
 
+#ifdef CONFIG_SOC_SERIES_INTEL_ACE
+static inline void ace_gpdma_intc_unmask(void)
+{
+	ACE_DINT[0].ie[ACE_INTL_GPDMA] = BIT(0);
+}
+#else
+static inline void ace_gpdma_intc_unmask(void) {}
+#endif
+
+
 int intel_adsp_gpdma_init(const struct device *dev)
 {
 	struct dw_dma_dev_data *const dev_data = dev->data;
@@ -433,6 +446,9 @@ int intel_adsp_gpdma_init(const struct device *dev)
 	dev_data->dma_ctx.magic = DMA_MAGIC;
 	dev_data->dma_ctx.dma_channels = DW_MAX_CHAN;
 	dev_data->dma_ctx.atomic = dev_data->channels_atomic;
+
+	ace_gpdma_intc_unmask();
+
 #if CONFIG_PM_DEVICE && CONFIG_SOC_SERIES_INTEL_ACE
 	if (pm_device_on_power_domain(dev)) {
 		pm_device_init_off(dev);

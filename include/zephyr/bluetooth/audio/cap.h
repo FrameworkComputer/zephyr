@@ -166,6 +166,43 @@ struct bt_cap_stream {
  */
 void bt_cap_stream_ops_register(struct bt_cap_stream *stream, struct bt_bap_stream_ops *ops);
 
+/**
+ * @brief Send data to Common Audio Profile stream
+ *
+ * See bt_bap_stream_send() for more information
+ *
+ * @note Support for sending must be supported, determined by @kconfig{CONFIG_BT_AUDIO_TX}.
+ *
+ * @param stream   Stream object.
+ * @param buf      Buffer containing data to be sent.
+ * @param seq_num  Packet Sequence number. This value shall be incremented for each call to this
+ *                 function and at least once per SDU interval for a specific channel.
+ * @param ts       Timestamp of the SDU in microseconds (us). This value can be used to transmit
+ *                 multiple SDUs in the same SDU interval in a CIG or BIG. Can be omitted by using
+ *                 @ref BT_ISO_TIMESTAMP_NONE which will simply enqueue the ISO SDU in a FIFO
+ *                 manner.
+ *
+ * @retval -EINVAL if stream object is NULL
+ * @retval Any return value from bt_bap_stream_send()
+ */
+int bt_cap_stream_send(struct bt_cap_stream *stream, struct net_buf *buf, uint16_t seq_num,
+		       uint32_t ts);
+
+/**
+ * @brief Get ISO transmission timing info for a Common Audio Profile stream
+ *
+ * See bt_bap_stream_get_tx_sync() for more information
+ *
+ * @note Support for sending must be supported, determined by @kconfig{CONFIG_BT_AUDIO_TX}.
+ *
+ * @param[in]  stream Stream object.
+ * @param[out] info   Transmit info object.
+ *
+ * @retval -EINVAL if stream object is NULL
+ * @retval Any return value from bt_bap_stream_get_tx_sync()
+ */
+int bt_cap_stream_get_tx_sync(struct bt_cap_stream *stream, struct bt_iso_tx_info *info);
+
 struct bt_cap_unicast_audio_start_stream_param {
 	/** Coordinated or ad-hoc set member. */
 	union bt_cap_set_member member;
@@ -179,14 +216,11 @@ struct bt_cap_unicast_audio_start_stream_param {
 	/**
 	 * @brief Codec configuration.
 	 *
-	 * The @p codec.meta shall include a list of CCIDs
+	 * The @p codec_cfg.meta shall include a list of CCIDs
 	 * (@ref BT_AUDIO_METADATA_TYPE_CCID_LIST) as well as a non-0
 	 * stream context (@ref BT_AUDIO_METADATA_TYPE_STREAM_CONTEXT) bitfield.
 	 */
-	struct bt_codec *codec;
-
-	/** Quality of Service configuration. */
-	struct bt_codec_qos *qos;
+	struct bt_audio_codec_cfg *codec_cfg;
 };
 
 struct bt_cap_unicast_audio_start_param {
@@ -204,15 +238,15 @@ struct bt_cap_unicast_audio_update_param {
 	/** @brief Stream for the @p member */
 	struct bt_cap_stream *stream;
 
-	/** The number of entries in @p meta. */
-	size_t meta_count;
+	/** The length of @p meta. */
+	size_t meta_len;
 
 	/** @brief The new metadata.
 	 *
 	 * The metadata shall a list of CCIDs as
 	 * well as a non-0 context bitfield.
 	 */
-	struct bt_codec_data *meta;
+	uint8_t *meta;
 };
 
 /**
@@ -303,14 +337,14 @@ struct bt_cap_initiator_broadcast_stream_param {
 	/** Audio stream */
 	struct bt_cap_stream *stream;
 
-	/** The number of elements in the %p data array.
+	/** The length of the %p data array.
 	 *
 	 * The BIS specific data may be omitted and this set to 0.
 	 */
-	size_t data_count;
+	size_t data_len;
 
 	/** BIS Codec Specific Configuration */
-	struct bt_codec_data *data;
+	uint8_t *data;
 };
 
 struct bt_cap_initiator_broadcast_subgroup_param {
@@ -321,7 +355,7 @@ struct bt_cap_initiator_broadcast_subgroup_param {
 	struct bt_cap_initiator_broadcast_stream_param *stream_params;
 
 	/** Subgroup Codec configuration. */
-	struct bt_codec *codec;
+	struct bt_audio_codec_cfg *codec_cfg;
 };
 
 struct bt_cap_initiator_broadcast_create_param {
@@ -332,7 +366,7 @@ struct bt_cap_initiator_broadcast_create_param {
 	struct bt_cap_initiator_broadcast_subgroup_param *subgroup_params;
 
 	/** Quality of Service configuration. */
-	struct bt_codec_qos *qos;
+	struct bt_audio_codec_qos *qos;
 
 	/** @brief Broadcast Source packing mode.
 	 *
@@ -359,13 +393,41 @@ struct bt_cap_initiator_broadcast_create_param {
 	 *   [42 72 6F 61 64 63 61 73 74 20 43 6F 64 65 00 00]
 	 */
 	uint8_t broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE];
+
+#if defined(CONFIG_BT_ISO_TEST_PARAMS)
+	/** @brief Immediate Repetition Count
+	 *
+	 *  The number of times the scheduled payloads are transmitted in a
+	 *  given event.
+	 *
+	 *  Value range from @ref BT_ISO_MIN_IRC to @ref BT_ISO_MAX_IRC.
+	 */
+	uint8_t irc;
+
+	/** @brief Pre-transmission offset
+	 *
+	 *  Offset used for pre-transmissions.
+	 *
+	 *  Value range from @ref BT_ISO_MIN_PTO to @ref BT_ISO_MAX_PTO.
+	 */
+	uint8_t pto;
+
+	/** @brief ISO interval
+	 *
+	 *  Time between consecutive BIS anchor points.
+	 *
+	 *  Value range from @ref BT_ISO_ISO_INTERVAL_MIN to
+	 *  @ref BT_ISO_ISO_INTERVAL_MAX.
+	 */
+	uint16_t iso_interval;
+#endif /* CONFIG_BT_ISO_TEST_PARAMS */
 };
 
 /**
  * @brief Create a Common Audio Profile broadcast source.
  *
  * Create a new audio broadcast source with one or more audio streams.
- * * *
+ *
  * @note @kconfig{CONFIG_BT_CAP_INITIATOR} and
  * @kconfig{CONFIG_BT_BAP_BROADCAST_SOURCE} must be enabled for this function
  * to be enabled.
@@ -408,15 +470,14 @@ int bt_cap_initiator_broadcast_audio_start(struct bt_cap_broadcast_source *broad
  * to be enabled.
  *
  * @param broadcast_source The broadcast source to update.
- * @param meta_count       The number of entries in @p meta.
  * @param meta             The new metadata. The metadata shall contain a list
  *                         of CCIDs as well as a non-0 context bitfield.
+ * @param meta_len         The length of @p meta.
  *
  * @return 0 on success or negative error value on failure.
  */
 int bt_cap_initiator_broadcast_audio_update(struct bt_cap_broadcast_source *broadcast_source,
-					    const struct bt_codec_data meta[],
-					    size_t meta_count);
+					    const uint8_t meta[], size_t meta_len);
 
 /**
  * @brief Stop broadcast audio streams for a Common Audio Profile broadcast source.
@@ -432,7 +493,7 @@ int bt_cap_initiator_broadcast_audio_update(struct bt_cap_broadcast_source *broa
  */
 int bt_cap_initiator_broadcast_audio_stop(struct bt_cap_broadcast_source *broadcast_source);
 
-/*
+/**
  * @brief Delete Common Audio Profile broadcast source
  *
  * This can only be done after the broadcast source has been stopped by calling
@@ -575,6 +636,244 @@ struct bt_cap_broadcast_to_unicast_param {
 int bt_cap_initiator_broadcast_to_unicast(const struct bt_cap_broadcast_to_unicast_param *param,
 					  struct bt_bap_unicast_group **unicast_group);
 
+/**
+ * @brief Discovers audio support on a remote device.
+ *
+ * This will discover the Common Audio Service (CAS) on the remote device, to
+ * verify if the remote device supports the Common Audio Profile.
+ *
+ * @note @kconfig{CONFIG_BT_CAP_COMMANDER} must be enabled for this function. If
+ * @kconfig{CONFIG_BT_CAP_INITIATOR} is also enabled, it does not matter if
+ * bt_cap_commander_unicast_discover() or bt_cap_initiator_unicast_discover() is used.
+ *
+ * @param conn Connection to a remote server.
+ *
+ * @return 0 on success or negative error value on failure.
+ */
+int bt_cap_commander_unicast_discover(struct bt_conn *conn);
+
+struct bt_cap_commander_broadcast_reception_start_member_param {
+	/** Coordinated or ad-hoc set member. */
+	union bt_cap_set_member member;
+
+	/** Address of the advertiser. */
+	bt_addr_le_t addr;
+
+	/** SID of the advertising set. */
+	uint8_t adv_sid;
+
+	/**
+	 * @brief Periodic advertising interval in milliseconds.
+	 *
+	 * BT_BAP_PA_INTERVAL_UNKNOWN if unknown.
+	 */
+	uint16_t pa_interval;
+
+	/** 24-bit broadcast ID */
+	uint32_t broadcast_id;
+
+	/**
+	 * @brief Pointer to array of subgroups
+	 *
+	 * At least one bit in one of the subgroups bis_sync parameters shall be set.
+	 */
+	struct bt_bap_scan_delegator_subgroup *subgroups;
+
+	/** Number of subgroups */
+	size_t num_subgroups;
+};
+
+/** Parameters for starting broadcast reception  */
+struct bt_cap_commander_broadcast_reception_start_param {
+	/** The type of the set. */
+	enum bt_cap_set_type type;
+
+	/** The set of devices for this procedure */
+	struct bt_cap_commander_broadcast_reception_start_member_param *param;
+
+	/** The number of parameters in @p param */
+	size_t count;
+};
+
+/**
+ * @brief Starts the reception of broadcast audio on one or more remote Common Audio Profile
+ * Acceptors
+ *
+ * @param param The parameters to start the broadcast audio
+ *
+ * @return 0 on success or negative error value on failure.
+ */
+int bt_cap_commander_broadcast_reception_start(
+	const struct bt_cap_commander_broadcast_reception_start_param *param);
+
+/** Parameters for stopping broadcast reception  */
+struct bt_cap_commander_broadcast_reception_stop_param {
+	/** The type of the set. */
+	enum bt_cap_set_type type;
+
+	/** Coordinated or ad-hoc set member. */
+	union bt_cap_set_member *members;
+
+	/** The number of members in @p members */
+	size_t count;
+};
+
+/**
+ * @brief Stops the reception of broadcast audio on one or more remote Common Audio Profile
+ * Acceptors
+ *
+ * @param param The parameters to stop the broadcast audio
+ *
+ * @return 0 on success or negative error value on failure.
+ */
+int bt_cap_commander_broadcast_reception_stop(
+	const struct bt_cap_commander_broadcast_reception_stop_param *param);
+
+/** Parameters for changing absolute volume  */
+struct bt_cap_commander_change_volume_param {
+	/** The type of the set. */
+	enum bt_cap_set_type type;
+
+	/** Coordinated or ad-hoc set member. */
+	union bt_cap_set_member *members;
+
+	/** The number of members in @p members */
+	size_t count;
+
+	/** The absolute volume to set */
+	uint8_t volume;
+};
+
+/**
+ * @brief Change the volume on one or more Common Audio Profile Acceptors
+ *
+ * @param param The parameters for the volume change
+ *
+ * @return 0 on success or negative error value on failure.
+ */
+int bt_cap_commander_change_volume(const struct bt_cap_commander_change_volume_param *param);
+
+struct bt_cap_commander_change_volume_offset_member_param {
+	/** Coordinated or ad-hoc set member. */
+	union bt_cap_set_member member;
+
+	/**
+	 * @brief  The offset to set
+	 *
+	 * Value shall be between @ref BT_VOCS_MIN_OFFSET and @ref BT_VOCS_MAX_OFFSET
+	 */
+	int16_t offset;
+};
+
+/** Parameters for changing volume offset */
+struct bt_cap_commander_change_volume_offset_param {
+	/** The type of the set. */
+	enum bt_cap_set_type type;
+
+	/** The set of devices for this procedure */
+	struct bt_cap_commander_change_volume_offset_member_param *param;
+
+	/** The number of parameters in @p param */
+	size_t count;
+};
+
+/**
+ * @brief Change the volume offset on one or more Common Audio Profile Acceptors
+ *
+ * @param param The parameters for the volume offset change
+ *
+ * @return 0 on success or negative error value on failure.
+ */
+int bt_cap_commander_change_volume_offset(
+	const struct bt_cap_commander_change_volume_offset_param *param);
+
+/** Parameters for changing volume mute state */
+struct bt_cap_commander_change_volume_mute_state_param {
+	/** The type of the set. */
+	enum bt_cap_set_type type;
+
+	/** Coordinated or ad-hoc set member. */
+	union bt_cap_set_member *members;
+
+	/** The number of members in @p members */
+	size_t count;
+
+	/**
+	 * @brief The volume mute state to set
+	 *
+	 * true to mute, and false to unmute
+	 */
+	bool mute;
+};
+
+/**
+ * @brief Change the volume mute state on one or more Common Audio Profile Acceptors
+ *
+ * @param param The parameters for the volume mute state change
+ *
+ * @return 0 on success or negative error value on failure.
+ */
+int bt_cap_commander_change_volume_mute_state(
+	const struct bt_cap_commander_change_volume_mute_state_param *param);
+
+/** Parameters for changing microphone mute state */
+struct bt_cap_commander_change_microphone_mute_state_param {
+	/** The type of the set. */
+	enum bt_cap_set_type type;
+
+	/** Coordinated or ad-hoc set member. */
+	union bt_cap_set_member *members;
+
+	/** The number of members in @p members */
+	size_t count;
+
+	/**
+	 * @brief The microphone mute state to set
+	 *
+	 * true to mute, and false to unmute
+	 */
+	bool mute;
+};
+
+/**
+ * @brief Change the microphone mute state on one or more Common Audio Profile Acceptors
+ *
+ * @param param The parameters for the microphone mute state change
+ *
+ * @return 0 on success or negative error value on failure.
+ */
+int bt_cap_commander_change_microphone_mute_state(
+	const struct bt_cap_commander_change_microphone_mute_state_param *param);
+
+struct bt_cap_commander_change_microphone_gain_setting_member_param {
+	/** Coordinated or ad-hoc set member. */
+	union bt_cap_set_member member;
+
+	/** @brief The microphone gain setting to set */
+	int8_t gain;
+};
+
+/** Parameters for changing microphone mute state */
+struct bt_cap_commander_change_microphone_gain_setting_param {
+	/** The type of the set. */
+	enum bt_cap_set_type type;
+
+	/** The set of devices for this procedure */
+	struct bt_cap_commander_change_microphone_gain_setting_member_param *param;
+
+	/** The number of parameters in @p param */
+	size_t count;
+};
+
+/**
+ * @brief Change the microphone gain setting on one or more Common Audio Profile Acceptors
+ *
+ * @param param The parameters for the microphone gain setting change
+ *
+ * @return 0 on success or negative error value on failure.
+ */
+int bt_cap_commander_change_microphone_gain_setting(
+	const struct bt_cap_commander_change_microphone_gain_setting_param *param);
 #ifdef __cplusplus
 }
 #endif

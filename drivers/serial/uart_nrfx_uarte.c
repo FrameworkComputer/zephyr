@@ -40,29 +40,39 @@ LOG_MODULE_REGISTER(uart_nrfx_uarte, CONFIG_UART_LOG_LEVEL);
 #endif
 
 
-#if	(defined(CONFIG_UART_0_NRF_UARTE) &&         \
+#if	(defined(CONFIG_HAS_HW_NRF_UARTE0) &&         \
 	 defined(CONFIG_UART_0_INTERRUPT_DRIVEN)) || \
-	(defined(CONFIG_UART_1_NRF_UARTE) &&         \
+	(defined(CONFIG_HAS_HW_NRF_UARTE1) &&         \
 	 defined(CONFIG_UART_1_INTERRUPT_DRIVEN)) || \
-	(defined(CONFIG_UART_2_NRF_UARTE) &&         \
+	(defined(CONFIG_HAS_HW_NRF_UARTE2) &&         \
 	 defined(CONFIG_UART_2_INTERRUPT_DRIVEN)) || \
-	(defined(CONFIG_UART_3_NRF_UARTE) &&         \
+	(defined(CONFIG_HAS_HW_NRF_UARTE3) &&         \
 	 defined(CONFIG_UART_3_INTERRUPT_DRIVEN))
 	#define UARTE_INTERRUPT_DRIVEN	1
 #endif
 
-#if	(defined(CONFIG_UART_0_NRF_UARTE) && !defined(CONFIG_UART_0_ASYNC)) || \
-	(defined(CONFIG_UART_1_NRF_UARTE) && !defined(CONFIG_UART_1_ASYNC)) || \
-	(defined(CONFIG_UART_2_NRF_UARTE) && !defined(CONFIG_UART_2_ASYNC)) || \
-	(defined(CONFIG_UART_3_NRF_UARTE) && !defined(CONFIG_UART_3_ASYNC))
+#if	(defined(CONFIG_HAS_HW_NRF_UARTE0) && !defined(CONFIG_UART_0_ASYNC)) || \
+	(defined(CONFIG_HAS_HW_NRF_UARTE1) && !defined(CONFIG_UART_1_ASYNC)) || \
+	(defined(CONFIG_HAS_HW_NRF_UARTE2) && !defined(CONFIG_UART_2_ASYNC)) || \
+	(defined(CONFIG_HAS_HW_NRF_UARTE3) && !defined(CONFIG_UART_3_ASYNC))
 #define UARTE_ANY_NONE_ASYNC 1
 #endif
 
-#if	(defined(CONFIG_UART_0_NRF_UARTE) && defined(CONFIG_UART_0_ASYNC)) || \
-	(defined(CONFIG_UART_1_NRF_UARTE) && defined(CONFIG_UART_1_ASYNC)) || \
-	(defined(CONFIG_UART_2_NRF_UARTE) && defined(CONFIG_UART_2_ASYNC)) || \
-	(defined(CONFIG_UART_3_NRF_UARTE) && defined(CONFIG_UART_3_ASYNC))
+#if	(defined(CONFIG_HAS_HW_NRF_UARTE0) && defined(CONFIG_UART_0_ASYNC)) || \
+	(defined(CONFIG_HAS_HW_NRF_UARTE1) && defined(CONFIG_UART_1_ASYNC)) || \
+	(defined(CONFIG_HAS_HW_NRF_UARTE2) && defined(CONFIG_UART_2_ASYNC)) || \
+	(defined(CONFIG_HAS_HW_NRF_UARTE3) && defined(CONFIG_UART_3_ASYNC))
 #define UARTE_ANY_ASYNC 1
+#endif
+
+#if	defined(CONFIG_UART_0_NRF_HW_ASYNC) || defined(CONFIG_UART_1_NRF_HW_ASYNC) || \
+	defined(CONFIG_UART_2_NRF_HW_ASYNC) || defined(CONFIG_UART_3_NRF_HW_ASYNC)
+#define UARTE_HW_ASYNC 1
+#endif
+
+#if	defined(CONFIG_UART_0_ENHANCED_POLL_OUT) || defined(CONFIG_UART_1_ENHANCED_POLL_OUT) || \
+	defined(CONFIG_UART_2_ENHANCED_POLL_OUT) || defined(CONFIG_UART_3_ENHANCED_POLL_OUT)
+#define UARTE_ENHANCED_POLL_OUT 1
 #endif
 
 /*
@@ -205,7 +215,7 @@ static void endtx_isr(const struct device *dev)
  *
  * @param arg Argument to ISR.
  */
-static void uarte_nrfx_isr_int(void *arg)
+static void uarte_nrfx_isr_int(const void *arg)
 {
 	const struct device *dev = arg;
 	const struct uarte_nrfx_config *config = dev->config;
@@ -498,7 +508,7 @@ static int wait_tx_ready(const struct device *dev)
  * where static inline fails on linking.
  */
 #define HW_RX_COUNTING_ENABLED(data) \
-	(IS_ENABLED(CONFIG_UARTE_NRF_HW_ASYNC) ? data->async->hw_rx_counting : false)
+	(IS_ENABLED(UARTE_HW_ASYNC) ? data->async->hw_rx_counting : false)
 
 #endif /* UARTE_ANY_ASYNC */
 
@@ -844,15 +854,7 @@ static int uarte_nrfx_rx_enable(const struct device *dev, uint8_t *buf,
 	}
 
 	data->async->rx_timeout = timeout;
-	/* Set minimum interval to 3 RTC ticks. 3 is used due to RTC limitation
-	 * which cannot set timeout for next tick. Assuming delay in processing
-	 * 3 instead of 2 is used. Note that lower value would work in a similar
-	 * way but timeouts would always occur later than expected,  most likely
-	 * after ~3 ticks.
-	 */
-	data->async->rx_timeout_slab =
-		MAX(timeout / RX_TIMEOUT_DIV,
-		    NRFX_CEIL_DIV(3 * 1000000, CONFIG_SYS_CLOCK_TICKS_PER_SEC));
+	data->async->rx_timeout_slab = timeout / RX_TIMEOUT_DIV;
 
 	data->async->rx_buf = buf;
 	data->async->rx_buf_len = len;
@@ -1753,7 +1755,7 @@ static int uarte_instance_init(const struct device *dev,
 		return err;
 	}
 
-	if (IS_ENABLED(CONFIG_UART_ENHANCED_POLL_OUT) &&
+	if (IS_ENABLED(UARTE_ENHANCED_POLL_OUT) &&
 	    cfg->flags & UARTE_CFG_FLAG_PPI_ENDTX) {
 		err = endtx_stoptx_ppi_init(uarte, data);
 		if (err < 0) {
@@ -2058,18 +2060,18 @@ static int uarte_nrfx_pm_action(const struct device *dev,
 			DT_PHANDLE(UARTE(idx), memory_regions)))))),	       \
 		())
 
-#ifdef CONFIG_UART_0_NRF_UARTE
+#ifdef CONFIG_HAS_HW_NRF_UARTE0
 UART_NRF_UARTE_DEVICE(0);
 #endif
 
-#ifdef CONFIG_UART_1_NRF_UARTE
+#ifdef CONFIG_HAS_HW_NRF_UARTE1
 UART_NRF_UARTE_DEVICE(1);
 #endif
 
-#ifdef CONFIG_UART_2_NRF_UARTE
+#ifdef CONFIG_HAS_HW_NRF_UARTE2
 UART_NRF_UARTE_DEVICE(2);
 #endif
 
-#ifdef CONFIG_UART_3_NRF_UARTE
+#ifdef CONFIG_HAS_HW_NRF_UARTE3
 UART_NRF_UARTE_DEVICE(3);
 #endif

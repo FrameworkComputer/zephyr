@@ -12,6 +12,11 @@ supported:
   - i2c
   - spi
   - eeprom
+  - watchdog
+  - mbox
+  - flash
+  - dma
 testing:
   ignore_tags:
     - bluetooth
+vendor: andestech

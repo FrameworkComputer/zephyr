@@ -196,6 +196,7 @@ enum ethernet_config_type {
 	ETHERNET_CONFIG_TYPE_PRIORITY_QUEUES_NUM,
 	ETHERNET_CONFIG_TYPE_FILTER,
 	ETHERNET_CONFIG_TYPE_PORTS_NUM,
+	ETHERNET_CONFIG_TYPE_T1S_PARAM,
 };
 
 enum ethernet_qav_param_type {
@@ -206,7 +207,53 @@ enum ethernet_qav_param_type {
 	ETHERNET_QAV_PARAM_TYPE_STATUS,
 };
 
+enum ethernet_t1s_param_type {
+	ETHERNET_T1S_PARAM_TYPE_PLCA_CONFIG,
+};
+
 /** @endcond */
+struct ethernet_t1s_param {
+	/** Type of T1S parameter */
+	enum ethernet_t1s_param_type type;
+	union {
+		/* PLCA is the Physical Layer (PHY) Collision
+		 * Avoidance technique employed with multidrop
+		 * 10Base-T1S standard.
+		 *
+		 * The PLCA parameters are described in standard [1]
+		 * as registers in memory map 4 (MMS = 4) (point 9.6).
+		 *
+		 * IDVER	(PLCA ID Version)
+		 * CTRL0	(PLCA Control 0)
+		 * CTRL1	(PLCA Control 1)
+		 * STATUS	(PLCA Status)
+		 * TOTMR	(PLCA TO Control)
+		 * BURST	(PLCA Burst Control)
+		 *
+		 * Those registers are implemented by each OA TC6
+		 * compliant vendor (like for e.g. LAN865x - e.g. [2]).
+		 *
+		 * Documents:
+		 * [1] - "OPEN Alliance 10BASE-T1x MAC-PHY Serial
+		 *       Interface" (ver. 1.1)
+		 * [2] - "DS60001734C" - LAN865x data sheet
+		 */
+		struct {
+			/** T1S PLCA enabled */
+			bool enable;
+			/** T1S PLCA node id range: 0 to 254 */
+			uint8_t node_id;
+			/** T1S PLCA node count range: 1 to 255 */
+			uint8_t node_count;
+			/** T1S PLCA burst count range: 0x0 to 0xFF */
+			uint8_t burst_count;
+			/** T1S PLCA burst timer */
+			uint8_t burst_timer;
+			/** T1S PLCA TO value */
+			uint8_t to_timer;
+		} plca;
+	};
+};
 
 struct ethernet_qav_param {
 	/** ID of the priority queue to use */
@@ -353,6 +400,16 @@ enum ethernet_filter_type {
 
 /** @endcond */
 
+/** Types of Ethernet L2 */
+enum ethernet_if_types {
+	/** IEEE 802.3 Ethernet (default) */
+	L2_ETH_IF_TYPE_ETHERNET,
+
+	/** IEEE 802.11 Wi-Fi*/
+	L2_ETH_IF_TYPE_WIFI,
+} __packed;
+
+
 struct ethernet_filter {
 	/** Type of filter */
 	enum ethernet_filter_type type;
@@ -394,6 +451,7 @@ struct ethernet_config {
 
 		struct net_eth_addr mac_address;
 
+		struct ethernet_t1s_param t1s_param;
 		struct ethernet_qav_param qav_param;
 		struct ethernet_qbv_param qbv_param;
 		struct ethernet_qbu_param qbu_param;
@@ -601,6 +659,9 @@ struct ethernet_context {
 
 	/** Is this context already initialized */
 	bool is_init : 1;
+
+	/** Types of Ethernet network interfaces */
+	enum ethernet_if_types eth_if_type;
 };
 
 /**
@@ -695,6 +756,22 @@ static inline bool net_eth_is_addr_lldp_multicast(struct net_eth_addr *addr)
 	    addr->addr[3] == 0x00 &&
 	    addr->addr[4] == 0x00 &&
 	    addr->addr[5] == 0x0e) {
+		return true;
+	}
+#endif
+
+	return false;
+}
+
+static inline bool net_eth_is_addr_ptp_multicast(struct net_eth_addr *addr)
+{
+#if defined(CONFIG_NET_GPTP)
+	if (addr->addr[0] == 0x01 &&
+	    addr->addr[1] == 0x1b &&
+	    addr->addr[2] == 0x19 &&
+	    addr->addr[3] == 0x00 &&
+	    addr->addr[4] == 0x00 &&
+	    addr->addr[5] == 0x00) {
 		return true;
 	}
 #endif
@@ -1008,7 +1085,28 @@ static inline int net_eth_get_ptp_port(struct net_if *iface)
  */
 #if defined(CONFIG_NET_L2_PTP)
 void net_eth_set_ptp_port(struct net_if *iface, int port);
+#else
+static inline void net_eth_set_ptp_port(struct net_if *iface, int port)
+{
+	ARG_UNUSED(iface);
+	ARG_UNUSED(port);
+}
 #endif /* CONFIG_NET_L2_PTP */
+
+/**
+ * @brief Check if the Ethernet L2 network interface can perform Wi-Fi.
+ *
+ * @param iface Pointer to network interface
+ *
+ * @return True if interface supports Wi-Fi, False otherwise.
+ */
+static inline bool net_eth_type_is_wifi(struct net_if *iface)
+{
+	const struct ethernet_context *ctx = (struct ethernet_context *)
+		net_if_l2_data(iface);
+
+	return ctx->eth_if_type == L2_ETH_IF_TYPE_WIFI;
+}
 
 /**
  * @}

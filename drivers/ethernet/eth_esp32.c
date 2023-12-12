@@ -17,6 +17,7 @@
 #include <esp_mac.h>
 #include <hal/emac_hal.h>
 #include <hal/emac_ll.h>
+#include <soc/rtc.h>
 
 #include "eth.h"
 
@@ -46,6 +47,9 @@ struct eth_esp32_dev_data {
 	K_KERNEL_STACK_MEMBER(rx_thread_stack, CONFIG_ETH_ESP32_RX_THREAD_STACK_SIZE);
 	struct k_thread rx_thread;
 };
+
+static const struct device *eth_esp32_phy_dev = DEVICE_DT_GET(
+		DT_INST_PHANDLE(0, phy_handle));
 
 static enum ethernet_hw_caps eth_esp32_caps(const struct device *dev)
 {
@@ -214,12 +218,25 @@ int eth_esp32_initialize(const struct device *dev)
 	/* Configure phy for Media-Independent Interface (MII) or
 	 * Reduced Media-Independent Interface (RMII) mode
 	 */
-	const char *phy_connection_type = DT_INST_PROP(0, phy_connection_type);
+	const char *phy_connection_type = DT_INST_PROP_OR(0,
+						phy_connection_type,
+						"rmii");
 
 	if (strcmp(phy_connection_type, "rmii") == 0) {
 		emac_hal_iomux_init_rmii();
+#if DT_INST_NODE_HAS_PROP(0, ref_clk_output_gpios)
+		BUILD_ASSERT(DT_INST_GPIO_PIN(0, ref_clk_output_gpios) == 16 ||
+			DT_INST_GPIO_PIN(0, ref_clk_output_gpios) == 17,
+			"Only GPIO16/17 are allowed as a GPIO REF_CLK source!");
+		int ref_clk_gpio = DT_INST_GPIO_PIN(0, ref_clk_output_gpios);
+
+		emac_hal_iomux_rmii_clk_output(ref_clk_gpio);
+		emac_ll_clock_enable_rmii_output(dev_data->hal.ext_regs);
+		rtc_clk_apll_enable(true, 0, 0, 6, 2);
+#else
 		emac_hal_iomux_rmii_clk_input();
 		emac_ll_clock_enable_rmii_input(dev_data->hal.ext_regs);
+#endif
 	} else if (strcmp(phy_connection_type, "mii") == 0) {
 		emac_hal_iomux_init_mii();
 		emac_ll_clock_enable_mii(dev_data->hal.ext_regs);
@@ -278,7 +295,6 @@ static void eth_esp32_iface_init(struct net_if *iface)
 {
 	const struct device *dev = net_if_get_device(iface);
 	struct eth_esp32_dev_data *dev_data = dev->data;
-	const struct device *phy_dev = DEVICE_DT_GET(DT_INST_CHILD(0, phy));
 
 	dev_data->iface = iface;
 
@@ -288,8 +304,9 @@ static void eth_esp32_iface_init(struct net_if *iface)
 
 	ethernet_init(iface);
 
-	if (device_is_ready(phy_dev)) {
-		phy_link_callback_set(phy_dev, phy_link_state_changed, (void *)dev);
+	if (device_is_ready(eth_esp32_phy_dev)) {
+		phy_link_callback_set(eth_esp32_phy_dev, phy_link_state_changed,
+				      (void *)dev);
 	} else {
 		LOG_ERR("PHY device not ready");
 	}

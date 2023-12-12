@@ -34,6 +34,10 @@ extern "C" {
 #define CONFIG_BT_MESH_DFU_URI_MAXLEN 0
 #endif
 
+#ifndef CONFIG_BT_MESH_DFU_SLOT_CNT
+#define CONFIG_BT_MESH_DFU_SLOT_CNT 0
+#endif
+
 /** DFU transfer phase. */
 enum bt_mesh_dfu_phase {
 	/** Ready to start a Receive Firmware procedure. */
@@ -66,11 +70,7 @@ enum bt_mesh_dfu_phase {
 	/** Firmware applying failed. */
 	BT_MESH_DFU_PHASE_APPLY_FAIL,
 
-	/** The current phase is unknown.
-	 *
-	 *  This is a metaphase, used by the Firmware Update Client to keep track of
-	 *  the Target state, and is not defined by the specification.
-	 */
+	/** Phase of a node was not yet retrieved. */
 	BT_MESH_DFU_PHASE_UNKNOWN,
 };
 
@@ -144,10 +144,7 @@ struct bt_mesh_dfu_img {
 	/** Length of the firmware ID. */
 	size_t fwid_len;
 
-	/** Update URI, or NULL.
-	 *
-	 *  Must use one of the http: or https: schemes.
-	 */
+	/** Update URI, or NULL. */
 	const char *uri;
 };
 
@@ -159,14 +156,10 @@ struct bt_mesh_dfu_slot {
 	size_t fwid_len;
 	/** Length of the metadata. */
 	size_t metadata_len;
-	/** Length of the image URI. */
-	size_t uri_len;
 	/** Firmware ID. */
 	uint8_t fwid[CONFIG_BT_MESH_DFU_FWID_MAXLEN];
 	/** Metadata. */
 	uint8_t metadata[CONFIG_BT_MESH_DFU_METADATA_MAXLEN];
-	/** Image URI. */
-	char uri[CONFIG_BT_MESH_DFU_URI_MAXLEN];
 };
 
 /** @} */

@@ -7,6 +7,7 @@
 #include <errno.h>
 
 #include <zephyr/bluetooth/mesh.h>
+#include <zephyr/sys/check.h>
 
 #define LOG_LEVEL CONFIG_BT_MESH_CRYPTO_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -43,7 +44,7 @@ static struct {
 	bool is_ready;
 	psa_key_id_t priv_key_id;
 	uint8_t public_key_be[PUB_KEY_SIZE + 1];
-} key;
+} dh_pair;
 
 static ATOMIC_DEFINE(pst_keys, BT_MESH_KEY_ID_RANGE_SIZE);
 
@@ -241,8 +242,8 @@ int bt_mesh_pub_key_gen(void)
 	int err = 0;
 	size_t key_len;
 
-	psa_destroy_key(key.priv_key_id);
-	key.is_ready = false;
+	psa_destroy_key(dh_pair.priv_key_id);
+	dh_pair.is_ready = false;
 
 	/* Crypto settings for ECDH using the SHA256 hashing algorithm,
 	 * the secp256r1 curve
@@ -254,14 +255,14 @@ int bt_mesh_pub_key_gen(void)
 	psa_set_key_bits(&key_attributes, 256);
 
 	/* Generate a key pair */
-	status = psa_generate_key(&key_attributes, &key.priv_key_id);
+	status = psa_generate_key(&key_attributes, &dh_pair.priv_key_id);
 	if (status != PSA_SUCCESS) {
 		err = -EIO;
 		goto end;
 	}
 
-	status = psa_export_public_key(key.priv_key_id, key.public_key_be,
-				sizeof(key.public_key_be), &key_len);
+	status = psa_export_public_key(dh_pair.priv_key_id, dh_pair.public_key_be,
+				sizeof(dh_pair.public_key_be), &key_len);
 	if (status != PSA_SUCCESS) {
 		err = -EIO;
 		goto end;
@@ -272,7 +273,7 @@ int bt_mesh_pub_key_gen(void)
 		goto end;
 	}
 
-	key.is_ready = true;
+	dh_pair.is_ready = true;
 
 end:
 	psa_reset_key_attributes(&key_attributes);
@@ -282,7 +283,7 @@ end:
 
 const uint8_t *bt_mesh_pub_key_get(void)
 {
-	return key.is_ready ? key.public_key_be + 1 : NULL;
+	return dh_pair.is_ready ? dh_pair.public_key_be + 1 : NULL;
 }
 
 BUILD_ASSERT(PSA_RAW_KEY_AGREEMENT_OUTPUT_SIZE(
@@ -318,7 +319,7 @@ int bt_mesh_dhkey_gen(const uint8_t *pub_key, const uint8_t *priv_key, uint8_t *
 
 		psa_reset_key_attributes(&attributes);
 	} else {
-		priv_key_id = key.priv_key_id;
+		priv_key_id = dh_pair.priv_key_id;
 	}
 
 	/* For elliptic curve key pairs for Weierstrass curve families (PSA_ECC_FAMILY_SECP_R1)
@@ -509,4 +510,13 @@ int bt_mesh_key_compare(const uint8_t raw_key[16], const struct bt_mesh_key *key
 	}
 
 	return memcmp(out, raw_key, 16);
+}
+
+__weak int bt_rand(void *buf, size_t len)
+{
+	CHECKIF(buf == NULL || len == 0) {
+		return -EINVAL;
+	}
+
+	return psa_generate_random(buf, len) == PSA_SUCCESS ? 0 : -EIO;
 }

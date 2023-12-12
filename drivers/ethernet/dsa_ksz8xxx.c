@@ -644,7 +644,7 @@ static int dsa_ksz8xxx_gpio_reset(void)
 {
 	struct gpio_dt_spec reset_gpio = GPIO_DT_SPEC_INST_GET(0, reset_gpios);
 
-	if (!device_is_ready(reset_gpio.port)) {
+	if (!gpio_is_ready_dt(&reset_gpio)) {
 		LOG_ERR("Reset GPIO device not ready");
 		return -ENODEV;
 	}
@@ -712,8 +712,9 @@ int dsa_hw_init(struct ksz8xxx_data *pdev)
 
 static void dsa_delayed_work(struct k_work *item)
 {
+	struct k_work_delayable *dwork = k_work_delayable_from_work(item);
 	struct dsa_context *context =
-		CONTAINER_OF(item, struct dsa_context, dsa_work);
+		CONTAINER_OF(dwork, struct dsa_context, dsa_work);
 	struct ksz8xxx_data *pdev = PRV_DATA(context);
 	bool link_state;
 	uint8_t i;
@@ -1090,8 +1091,6 @@ static struct dsa_api dsa_api_f = {
 #if defined(CONFIG_DSA_SPI)
 #define DSA_SPI_BUS_CONFIGURATION(n)					\
 	.spi = SPI_DT_SPEC_INST_GET(n,					\
-			COND_CODE_1(DT_INST_PROP(n, spi_cpol), (SPI_MODE_CPOL), ()) | \
-			COND_CODE_1(DT_INST_PROP(n, spi_cpha), (SPI_MODE_CPHA), ()) | \
 			SPI_WORD_SET(8),				\
 			0U)
 #else

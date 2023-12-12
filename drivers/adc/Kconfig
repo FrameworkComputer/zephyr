@@ -17,7 +17,6 @@ if ADC
 
 config ADC_SHELL
 	bool "ADC Shell"
-	default y
 	depends on SHELL
 	help
 	  Enable ADC Shell for testing.
@@ -107,5 +106,17 @@ source "drivers/adc/Kconfig.gecko"
 source "drivers/adc/Kconfig.ifx_cat1"
 
 source "drivers/adc/Kconfig.smartbond"
+
+source "drivers/adc/Kconfig.tla2021"
+
+source "drivers/adc/Kconfig.nxp_s32"
+
+source "drivers/adc/Kconfig.max1125x"
+
+source "drivers/adc/Kconfig.max11102_17"
+
+source "drivers/adc/Kconfig.ad5592"
+
+source "drivers/adc/Kconfig.ltc2451"
 
 endif # ADC

@@ -19,7 +19,7 @@
 #include <zephyr/drivers/uart.h>
 #include <zephyr/linker/sections.h>
 #include <zephyr/arch/cpu.h>
-#include <aarch32/cortex_m/exc.h>
+#include <cortex_m/exc.h>
 #include <fsl_power.h>
 #include <fsl_clock.h>
 #include <fsl_common.h>
@@ -298,6 +298,7 @@ static ALWAYS_INLINE void clock_init(void)
 #endif
 
 	DT_FOREACH_STATUS_OKAY(nxp_lpc_ctimer, CTIMER_CLOCK_SETUP)
+	DT_FOREACH_STATUS_OKAY(nxp_ctimer_pwm, CTIMER_CLOCK_SETUP)
 
 #if (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(i3c0), nxp_mcux_i3c, okay))
 	CLOCK_AttachClk(kFFRO_to_I3C_CLK);
@@ -318,6 +319,10 @@ static ALWAYS_INLINE void clock_init(void)
 	 * for FlexSPI.
 	 */
 	flexspi_setup_clock(FLEXSPI, 1U, 9U);
+#endif
+
+#if CONFIG_COUNTER_NXP_MRT
+	RESET_PeripheralReset(kMRT0_RST_SHIFT_RSTn);
 #endif
 
 	/* Set SystemCoreClock variable. */
@@ -352,28 +357,12 @@ void imxrt_usdhc_dat3_pull(bool pullup)
 
 static int nxp_rt600_init(void)
 {
-
-	/* old interrupt lock level */
-	unsigned int oldLevel;
-
-	/* disable interrupts */
-	oldLevel = irq_lock();
-
 	/* Initialize clock */
 	clock_init();
-
-	/*
-	 * install default handler that simply resets the CPU if configured in
-	 * the kernel, NOP otherwise
-	 */
-	NMI_INIT();
 
 #ifndef CONFIG_IMXRT6XX_CODE_CACHE
 	CACHE64_DisableCache(CACHE64);
 #endif
-
-	/* restore interrupt state */
-	irq_unlock(oldLevel);
 
 	return 0;
 }

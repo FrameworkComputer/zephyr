@@ -85,6 +85,23 @@ these references:
 - `MIMXRT1050-EVK User Guide`_
 - `MIMXRT1050-EVK Schematics`_
 
+External Memory
+===============
+
+This platform has the following external memories:
+
++--------------------+------------+-------------------------------------+
+| Device             | Controller | Status                              |
++====================+============+=====================================+
+| IS42S16160J        | SEMC       | Enabled via device configuration    |
+|                    |            | data block, which sets up SEMC at   |
+|                    |            | boot time                           |
++--------------------+------------+-------------------------------------+
+| S26KS512SDPBHI020  | FLEXSPI    | Enabled via flash configurationn    |
+|                    |            | block, which sets up FLEXSPI at     |
+|                    |            | boot time.                          |
++--------------------+------------+-------------------------------------+
+
 Supported Features
 ==================
 
@@ -419,9 +436,9 @@ Board Revisions
 ***************
 
 The original MIMXRT1050-EVK (rev A0) board was updated with a newer
-MIMXRT1050-EVKB (rev A1) board, with these major hardware differences::
+MIMXRT1050-EVKB (rev A1) board, with these major hardware differences:
 
-- SoC changed from MIMXRT1052DVL6**A** to MIMXRT1052DVL6**B**
+- SoC changed from MIMXRT1052DVL6\ **A** to MIMXRT1052DVL6\ **B**
 - Hardware bug fixes for: power, interfaces, and memory
 - Arduino headers included
 
@@ -455,3 +472,13 @@ Current Zephyr build supports the new MIMXRT1050-EVKB
 
 .. _Enable QSPI flash support in SEGGER JLink:
    https://wiki.segger.com/i.MXRT1050#QSPI_flash
+
+Experimental ENET Driver
+========================
+
+Current default ethernet driver is eth_mcux, with binding `nxp,kinetis-ethernet`. There is a new
+driver with binding `nxp,enet`, which is experimental and undergoing development, but will have
+enhanced capability, such as not hardcoding code for only one phy in the driver like eth_mcux.
+
+To build for this EVK with the new driver, include the experimental overlay to west build with
+the option `-DEXTRA_DTC_OVERLAY_FILE=nxp,enet-experimental.overlay`.

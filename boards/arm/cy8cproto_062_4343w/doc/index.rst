@@ -101,7 +101,7 @@ To fetch Binary Blobs:
 Build blinking led sample
 *************************
 
-Here is an example for the :ref:`blinky-sample` application.
+Here is an example for the :zephyr:code-sample:`blinky` application.
 
 .. code-block:: console
 
@@ -111,8 +111,15 @@ Here is an example for the :ref:`blinky-sample` application.
 OpenOCD Installation
 ====================
 
-You must download `Infineon OpenOCD`_ from Github to flash and debug.
-Extract the files and note the path.
+To get the OpenOCD package, it is required that you
+
+1. Download the software ModusToolbox 3.1. https://softwaretools.infineon.com/tools/com.ifx.tb.tool.modustoolbox
+2. Once downloaded add the path to access the Scripts folder provided by ModusToolbox
+   export PATH=$PATH:/path/to/ModusToolbox/tools_3.1/openocd/scripts
+3. Add the OpenOCD executable file's path to west flash/debug.
+4. Flash using: west flash --openocd path/to/infineon/openocd/bin/openocd
+5. Debug using: west debug --openocd path/to/infineon/openocd/bin/openocd
+
 
 Programming and Debugging
 *************************
@@ -153,16 +160,16 @@ Errata
 +------------------------------------------------+----------------------------------------+
 
 .. _PSoC 62 MCU SoC Website:
-    http://www.cypress.com/products/32-bit-arm-cortex-m4-psoc-6
+    https://www.cypress.com/products/32-bit-arm-cortex-m4-psoc-6
 
 .. _PSoC 62 MCU Datasheet:
-    http://www.cypress.com/documentation/datasheets/psoc-6-mcu-psoc-62-datasheet-programmable-system-chip-psoc-preliminary
+    https://www.cypress.com/documentation/datasheets/psoc-6-mcu-psoc-62-datasheet-programmable-system-chip-psoc-preliminary
 
 .. _PSoC 62 MCU Architecture Reference Manual:
-    http://www.cypress.com/documentation/technical-reference-manuals/psoc-6-mcu-psoc-62-architecture-technical-reference-manual
+    https://www.cypress.com/documentation/technical-reference-manuals/psoc-6-mcu-psoc-62-architecture-technical-reference-manual
 
 .. _PSoC 62 MCU Register Reference Manual:
-    http://www.cypress.com/documentation/technical-reference-manuals/psoc-6-mcu-psoc-62-register-technical-reference-manual-trm
+    https://www.cypress.com/documentation/technical-reference-manuals/psoc-6-mcu-psoc-62-register-technical-reference-manual-trm
 
 .. _CY8CPROTO-062-4343W PSoC 6 Wi-Fi BT Website:
     https://www.infineon.com/cms/en/product/evaluation-boards/cy8cproto-062-4343w/
