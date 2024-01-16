@@ -9,6 +9,7 @@
 #include <zephyr/sys/check.h>
 #include <zephyr/arch/cpu.h>
 #include <zephyr/pm/pm.h>
+#include <zephyr/pm/device_runtime.h>
 
 #include <soc.h>
 #include <adsp_boot.h>
@@ -24,6 +25,11 @@
 #define CPU_POWERUP_TIMEOUT_USEC 10000
 
 #define ACE_INTC_IRQ DT_IRQN(DT_NODELABEL(ace_intc))
+
+#if CONFIG_ACE_VERSION_1_5
+__aligned(CONFIG_DCACHE_LINE_SIZE) uint32_t g_key_read_holder;
+__aligned(CONFIG_DCACHE_LINE_SIZE) unsigned int alignment_dummy[0];
+#endif /* CONFIG_ACE_VERSION_1_5 */
 
 static void ipc_isr(void *arg)
 {
@@ -79,8 +85,17 @@ void soc_mp_init(void)
 		IDC[i].agents[0].ipc.ctl = BIT(0); /* IPCTBIE */
 	}
 
+	int ret = pm_device_runtime_get(INTEL_ADSP_HST_DOMAIN_DEV);
+
+	ARG_UNUSED(ret);
+	__ASSERT_NO_MSG(ret == 0);
+
 	/* Set the core 0 active */
 	soc_cpus_active[0] = true;
+#if CONFIG_ACE_VERSION_1_5
+	g_key_read_holder = INTEL_ADSP_ACE15_MAGIC_KEY;
+	sys_cache_data_flush_range(&g_key_read_holder, sizeof(g_key_read_holder));
+#endif /* CONFIG_ACE_VERSION_1_5 */
 }
 
 #ifdef CONFIG_ADSP_IMR_CONTEXT_SAVE
@@ -159,11 +174,15 @@ void soc_start_core(int cpu_num)
 void soc_mp_startup(uint32_t cpu)
 {
 	/* Must have this enabled always */
-	z_xtensa_irq_enable(ACE_INTC_IRQ);
+	xtensa_irq_enable(ACE_INTC_IRQ);
 
-	/* Prevent idle from powering us off */
-	DSPCS.bootctl[cpu].bctl |=
-		DSPBR_BCTL_WAITIPCG | DSPBR_BCTL_WAITIPPG;
+#if CONFIG_ADSP_IDLE_CLOCK_GATING
+	/* Disable idle power gating */
+	DSPCS.bootctl[cpu].bctl |= DSPBR_BCTL_WAITIPPG;
+#else
+	/* Disable idle power and clock gating */
+	DSPCS.bootctl[cpu].bctl |= DSPBR_BCTL_WAITIPCG | DSPBR_BCTL_WAITIPPG;
+#endif /* CONFIG_ADSP_IDLE_CLOCK_GATING */
 }
 
 void arch_sched_ipi(void)

@@ -3,7 +3,7 @@
 set(GEN_DIR ${ZEPHYR_BINARY_DIR}/include/generated)
 
 zephyr_syscall_header(
-  ${ZEPHYR_BASE}/include/zephyr/posix/time.h
+  posix_clock.h
 )
 
 zephyr_interface_library_named(posix_subsys)
@@ -54,7 +54,7 @@ zephyr_library_sources_ifdef(CONFIG_PTHREAD_KEY key.c)
 zephyr_library_sources_ifdef(CONFIG_PTHREAD_MUTEX mutex.c)
 zephyr_library_sources_ifdef(CONFIG_PTHREAD pthread.c)
 zephyr_library_sources_ifdef(CONFIG_PTHREAD_IPC rwlock.c)
-zephyr_library_sources_ifdef(CONFIG_PTHREAD_IPC sched.c)
+zephyr_library_sources_ifdef(CONFIG_POSIX_PRIORITY_SCHEDULING sched.c)
 zephyr_library_sources_ifdef(CONFIG_PTHREAD_IPC semaphore.c)
 zephyr_library_sources_ifdef(CONFIG_PTHREAD_SPINLOCK spinlock.c)
 

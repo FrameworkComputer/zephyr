@@ -23,12 +23,6 @@
 		zephyr,code-partition = &code_partition;
 	};
 
-	xtal_clk: xtal-clk {
-		compatible = "fixed-clock";
-		clock-frequency = <12000000>;
-		#clock-cells = <0>;
-	};
-
 	aliases {
 		watchdog0 = &wdt0;
 	};
@@ -92,6 +86,11 @@
 			read-only;
 		};
 	};
+};
+
+&clocks {
+	pinctrl-0 = <&clocks_default>;
+	pinctrl-names = "default";
 };
 
 &uart0 {

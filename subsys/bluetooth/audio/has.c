@@ -1396,6 +1396,8 @@ static uint8_t handle_control_point_op(struct bt_conn *conn, struct net_buf_simp
 	case BT_HAS_OP_WRITE_PRESET_NAME:
 		if (IS_ENABLED(CONFIG_BT_HAS_PRESET_NAME_DYNAMIC)) {
 			return handle_write_preset_name(conn, buf);
+		} else {
+			return BT_HAS_ERR_WRITE_NAME_NOT_ALLOWED;
 		}
 		break;
 	case BT_HAS_OP_SET_ACTIVE_PRESET:
@@ -1499,6 +1501,12 @@ int bt_has_preset_register(const struct bt_has_preset_register_param *param)
 	preset = preset_lookup_index(param->index);
 	if (preset != NULL) {
 		return -EALREADY;
+	}
+
+	CHECKIF(!IS_ENABLED(CONFIG_BT_HAS_PRESET_NAME_DYNAMIC) &&
+		(param->properties & BT_HAS_PROP_WRITABLE) > 0) {
+		LOG_ERR("Writable presets are not supported");
+		return -ENOTSUP;
 	}
 
 	preset = preset_alloc(param->index, param->properties, param->name, param->ops);

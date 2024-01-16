@@ -5,6 +5,7 @@
  */
 #include <zephyr/kernel.h>
 #include <zephyr/pm/pm.h>
+#include <zephyr/pm/device_runtime.h>
 #include <zephyr/device.h>
 #include <zephyr/debug/sparse.h>
 #include <zephyr/cache.h>
@@ -26,8 +27,13 @@
 
 __imr void power_init(void)
 {
+#if CONFIG_ADSP_IDLE_CLOCK_GATING
 	/* Disable idle power gating */
+	DSPCS.bootctl[0].bctl |= DSPBR_BCTL_WAITIPPG;
+#else
+	/* Disable idle power and clock gating */
 	DSPCS.bootctl[0].bctl |= DSPBR_BCTL_WAITIPCG | DSPBR_BCTL_WAITIPPG;
+#endif /* CONFIG_ADSP_IDLE_CLOCK_GATING */
 }
 
 #ifdef CONFIG_PM
@@ -229,6 +235,9 @@ void pm_state_set(enum pm_state state, uint8_t substate_id)
 {
 	ARG_UNUSED(substate_id);
 	uint32_t cpu = arch_proc_id();
+	int ret = 0;
+
+	ARG_UNUSED(ret);
 
 	/* save interrupt state and turn off all interrupts */
 	core_desc[cpu].intenable = XTENSA_RSR("INTENABLE");
@@ -291,6 +300,8 @@ void pm_state_set(enum pm_state state, uint8_t substate_id)
 			hpsram_mask = (1 << ebb_banks) - 1;
 #endif /* CONFIG_ADSP_POWER_DOWN_HPSRAM */
 			/* do power down - this function won't return */
+			ret = pm_device_runtime_put(INTEL_ADSP_HST_DOMAIN_DEV);
+			__ASSERT_NO_MSG(ret == 0);
 			power_down(true, uncache_to_cache(&hpsram_mask),
 				   true);
 		} else {
@@ -306,6 +317,9 @@ void pm_state_set(enum pm_state state, uint8_t substate_id)
 			battr |= (DSPBR_BATTR_LPSCTL_RESTORE_BOOT & LPSCTL_BATTR_MASK);
 			DSPCS.bootctl[cpu].battr = battr;
 		}
+
+		ret = pm_device_runtime_put(INTEL_ADSP_HST_DOMAIN_DEV);
+		__ASSERT_NO_MSG(ret == 0);
 		power_gate_entry(cpu);
 	} else {
 		__ASSERT(false, "invalid argument - unsupported power state");
@@ -317,6 +331,13 @@ void pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id)
 {
 	ARG_UNUSED(substate_id);
 	uint32_t cpu = arch_proc_id();
+
+	if (cpu == 0) {
+		int ret = pm_device_runtime_get(INTEL_ADSP_HST_DOMAIN_DEV);
+
+		ARG_UNUSED(ret);
+		__ASSERT_NO_MSG(ret == 0);
+	}
 
 	if (state == PM_STATE_SOFT_OFF) {
 		/* restore clock gating state */
@@ -358,8 +379,11 @@ void pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id)
 			k_panic();
 		}
 
-		DSPCS.bootctl[cpu].bctl |=
-			DSPBR_BCTL_WAITIPCG | DSPBR_BCTL_WAITIPPG;
+#if CONFIG_ADSP_IDLE_CLOCK_GATING
+		DSPCS.bootctl[cpu].bctl |= DSPBR_BCTL_WAITIPPG;
+#else
+		DSPCS.bootctl[cpu].bctl |= DSPBR_BCTL_WAITIPCG | DSPBR_BCTL_WAITIPPG;
+#endif /* CONFIG_ADSP_IDLE_CLOCK_GATING */
 		if (cpu == 0) {
 			DSPCS.bootctl[cpu].battr &= (~LPSCTL_BATTR_MASK);
 		}
@@ -373,4 +397,4 @@ void pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id)
 	z_xt_ints_on(core_desc[cpu].intenable);
 }
 
-#endif
+#endif /* CONFIG_PM */

@@ -281,8 +281,12 @@ void __weak rt5xx_clock_init(void)
 	/* Switch SYSTICK_CLK to MAIN_CLK_DIV */
 	CLOCK_AttachClk(kMAIN_CLK_DIV_to_SYSTICK_CLK);
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(flexcomm0), nxp_lpc_usart, okay)
-	/* Switch FLEXCOMM0 to FRG */
-	CLOCK_AttachClk(kFRG_to_FLEXCOMM0);
+	#ifdef CONFIG_FLEXCOMM0_CLK_SRC_FRG
+		/* Switch FLEXCOMM0 to FRG */
+		CLOCK_AttachClk(kFRG_to_FLEXCOMM0);
+	#elif defined(CONFIG_FLEXCOMM0_CLK_SRC_FRO)
+		CLOCK_AttachClk(kFRO_DIV4_to_FLEXCOMM0);
+	#endif
 #endif
 #if CONFIG_USB_DC_NXP_LPCIP3511
 	usb_device_clock_init();
@@ -458,12 +462,21 @@ void __weak imxrt_pre_init_display_interface(void)
 	 * We set the divider of the PFD3 output of the SYSPLL, which has a
 	 * fixed multiplied of 18, and use this output frequency for the DPHY.
 	 */
+
+#ifdef CONFIG_MIPI_DPHY_CLK_SRC_AUX1_PLL
+	/* Note: AUX1 PLL clock is system pll clock * 18 / pfd.
+	 * system pll clock is configured at 528MHz by default.
+	 */
 	CLOCK_AttachClk(kAUX1_PLL_to_MIPI_DPHY_CLK);
 	CLOCK_InitSysPfd(kCLOCK_Pfd3,
 		((CLOCK_GetSysPllFreq() * 18ull) /
 		((unsigned long long)(DT_PROP(DT_NODELABEL(mipi_dsi), phy_clock)))));
 	CLOCK_SetClkDiv(kCLOCK_DivDphyClk, 1);
-
+#elif defined(CONFIG_MIPI_DPHY_CLK_SRC_FRO)
+	CLOCK_AttachClk(kFRO_DIV1_to_MIPI_DPHY_CLK);
+	CLOCK_SetClkDiv(kCLOCK_DivDphyClk,
+		(CLK_FRO_CLK / DT_PROP(DT_NODELABEL(mipi_dsi), phy_clock)));
+#endif
 	/* Clear DSI control reset (Note that DPHY reset is cleared later)*/
 	RESET_ClearPeripheralReset(kMIPI_DSI_CTRL_RST_SHIFT_RSTn);
 }

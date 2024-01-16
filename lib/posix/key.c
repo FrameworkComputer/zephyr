@@ -9,7 +9,6 @@
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/posix/pthread.h>
-#include <zephyr/posix/pthread_key.h>
 #include <zephyr/sys/bitarray.h>
 #include <zephyr/sys/__assert.h>
 
@@ -175,12 +174,17 @@ int pthread_key_delete(pthread_key_t key)
 int pthread_setspecific(pthread_key_t key, const void *value)
 {
 	pthread_key_obj *key_obj;
-	struct posix_thread *thread = to_posix_thread(pthread_self());
+	struct posix_thread *thread;
 	struct pthread_key_data *key_data;
 	pthread_thread_data *thread_spec_data;
 	k_spinlock_key_t key_key;
 	sys_snode_t *node_l;
 	int retval = 0;
+
+	thread = to_posix_thread(pthread_self());
+	if (thread == NULL) {
+		return EINVAL;
+	}
 
 	/* Traverse the list of keys set by the thread, looking for key.
 	 * If the key is already in the list, re-assign its value.
@@ -249,11 +253,16 @@ out:
 void *pthread_getspecific(pthread_key_t key)
 {
 	pthread_key_obj *key_obj;
-	struct posix_thread *thread = to_posix_thread(pthread_self());
+	struct posix_thread *thread;
 	pthread_thread_data *thread_spec_data;
 	void *value = NULL;
 	sys_snode_t *node_l;
 	k_spinlock_key_t key_key;
+
+	thread = to_posix_thread(pthread_self());
+	if (thread == NULL) {
+		return NULL;
+	}
 
 	key_key = k_spin_lock(&pthread_key_lock);
 
@@ -262,8 +271,6 @@ void *pthread_getspecific(pthread_key_t key)
 		k_spin_unlock(&pthread_key_lock, key_key);
 		return NULL;
 	}
-
-	node_l = sys_slist_peek_head(&(thread->key_list));
 
 	/* Traverse the list of keys set by the thread, looking for key */
 

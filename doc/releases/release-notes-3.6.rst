@@ -37,6 +37,8 @@ Architectures
 
 * Xtensa
 
+  * Removed the unused Kconfig option ``CONFIG_XTENSA_NO_IPC``.
+
 * x86
 
 * POSIX
@@ -126,6 +128,24 @@ Build system and infrastructure
 
 * Fixed an issue whereby board revision ``0`` did not include overlay files for that revision.
 
+* Added ``PRE_IMAGE_CMAKE`` and ``POST_IMAGE_CMAKE`` hooks to sysbuild modules, which allows for
+  modules to run code after and before each image's cmake invocation.
+
+* Added :kconfig:option:`CONFIG_ROM_END_OFFSET` option which allows reducing the size of an image,
+  this is intended for use with firmware signing scripts which add additional data to the end of
+  images outside of the build itself.
+
+* Added MCUboot image size reduction to sysbuild images which include MCUboot which prevents
+  issues with building firmware images that are too large for MCUboot to swap.
+
+* Deprecated :kconfig:option:`CONFIG_BOOTLOADER_SRAM_SIZE`, users of this should transition to
+  having RAM set up properly in their board devicetree files.
+
+* Fixed an issue whereby shields were processed in order of the root they resided in rather than
+  the order they were supplied to cmake in.
+
+* Fixed an issue whereby using some shields with sysbuild would cause a cmake Kconfig error.
+
 Drivers and Sensors
 *******************
 
@@ -170,6 +190,8 @@ Drivers and Sensors
 
 * IEEE 802.15.4
 
+  * Removed :kconfig:option:`CONFIG_IEEE802154_SELECTIVE_TXPOWER` Kconfig option.
+
 * Interrupt Controller
 
 * Input
@@ -189,6 +211,10 @@ Drivers and Sensors
 * Reset
 
 * Retained memory
+
+  * Retained memory driver backend for registers has been added.
+
+  * Retained memory API status changed from experimental to unstable.
 
 * RTC
 
@@ -212,6 +238,11 @@ Networking
 * CoAP:
 
   * Emit observer/service network events using the Network Event subsystem.
+
+  * Added new API functions:
+
+    * :c:func:`coap_get_transmission_parameters`
+    * :c:func:`coap_set_transmission_parameters`
 
 * Connection Manager:
 
@@ -303,6 +334,9 @@ Libraries / Subsystems
 * Random
 
 * Retention
+
+  * Fixed issue whereby :kconfig:option:`CONFIG_RETENTION_BUFFER_SIZE` values over 256 would cause
+    an infinite loop due to use of 8-bit variables.
 
 * Binary descriptors
 

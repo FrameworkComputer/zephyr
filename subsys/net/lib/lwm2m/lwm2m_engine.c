@@ -197,6 +197,11 @@ int lwm2m_socket_suspend(struct lwm2m_ctx *client_ctx)
 		lwm2m_close_socket(client_ctx);
 		/* store back the socket handle */
 		client_ctx->sock_fd = socket_temp_id;
+
+		if (client_ctx->set_socket_state) {
+			client_ctx->set_socket_state(client_ctx->sock_fd,
+						     LWM2M_SOCKET_STATE_NO_DATA);
+		}
 	}
 
 	return ret;
@@ -625,6 +630,50 @@ cleanup:
 	return next;
 }
 
+/**
+ * @brief Check TX queue states as well as number or pending CoAP transmissions.
+ *
+ * If all queues are empty and there is no packet we are currently transmitting and no
+ * CoAP responses (pendings) we are waiting, inform the application by a callback
+ * that socket is in state LWM2M_SOCKET_STATE_NO_DATA.
+ * Otherwise, before sending a packet, depending on the state of the queues, inform with
+ * one of the ONGOING, ONE_RESPONSE or LAST indicators.
+ *
+ * @param ctx Client context.
+ * @param ongoing_tx Current packet to be transmitted or NULL.
+ */
+static void hint_socket_state(struct lwm2m_ctx *ctx, struct lwm2m_message *ongoing_tx)
+{
+	if (!ctx->set_socket_state) {
+		return;
+	}
+
+#if defined(CONFIG_LWM2M_QUEUE_MODE_ENABLED)
+	bool empty = sys_slist_is_empty(&ctx->pending_sends) &&
+		     sys_slist_is_empty(&ctx->queued_messages);
+#else
+	bool empty = sys_slist_is_empty(&ctx->pending_sends);
+#endif
+	size_t pendings = coap_pendings_count(ctx->pendings, ARRAY_SIZE(ctx->pendings));
+
+	if (ongoing_tx) {
+		/* Check if more than current TX is in pendings list*/
+		if (pendings > 1) {
+			empty = false;
+		}
+
+		if (!empty) {
+			ctx->set_socket_state(ctx->sock_fd, LWM2M_SOCKET_STATE_ONGOING);
+		} else if (ongoing_tx->type == COAP_TYPE_CON) {
+			ctx->set_socket_state(ctx->sock_fd, LWM2M_SOCKET_STATE_ONE_RESPONSE);
+		} else {
+			ctx->set_socket_state(ctx->sock_fd, LWM2M_SOCKET_STATE_LAST);
+		}
+	} else if (empty && pendings == 0) {
+		ctx->set_socket_state(ctx->sock_fd, LWM2M_SOCKET_STATE_NO_DATA);
+	}
+}
+
 static int socket_recv_message(struct lwm2m_ctx *client_ctx)
 {
 	static uint8_t in_buf[NET_IPV6_MTU];
@@ -659,10 +708,10 @@ static int socket_recv_message(struct lwm2m_ctx *client_ctx)
 	return 0;
 }
 
-static int socket_send_message(struct lwm2m_ctx *client_ctx)
+static int socket_send_message(struct lwm2m_ctx *ctx)
 {
 	int rc;
-	sys_snode_t *msg_node = sys_slist_get(&client_ctx->pending_sends);
+	sys_snode_t *msg_node = sys_slist_get(&ctx->pending_sends);
 	struct lwm2m_message *msg;
 
 	if (!msg_node) {
@@ -679,11 +728,15 @@ static int socket_send_message(struct lwm2m_ctx *client_ctx)
 		coap_pending_cycle(msg->pending);
 	}
 
+	hint_socket_state(ctx, msg);
+
 	rc = zsock_send(msg->ctx->sock_fd, msg->cpkt.data, msg->cpkt.offset, 0);
 
 	if (rc < 0) {
 		LOG_ERR("Failed to send packet, err %d", errno);
 		rc = -errno;
+	} else {
+		engine_update_tx_time();
 	}
 
 	if (msg->type != COAP_TYPE_CON) {
@@ -814,6 +867,8 @@ static void socket_loop(void *p1, void *p2, void *p3)
 						break;
 					}
 				}
+
+				hint_socket_state(sock_ctx[i], NULL);
 			}
 
 			if (sock_fds[i].revents & ZSOCK_POLLOUT) {
@@ -1204,6 +1259,12 @@ int lwm2m_engine_pause(void)
 	suspend_engine_thread = true;
 	lwm2m_engine_wake_up();
 
+	/* Check if pause requested within a engine thread, a callback for example. */
+	if (engine_thread_id == k_current_get()) {
+		LOG_DBG("Pause requested");
+		return 0;
+	}
+
 	while (active_engine_thread) {
 		k_msleep(10);
 	}
@@ -1220,10 +1281,7 @@ int lwm2m_engine_resume(void)
 
 	k_thread_resume(engine_thread_id);
 	lwm2m_engine_wake_up();
-	while (!active_engine_thread) {
-		k_msleep(10);
-	}
-	LOG_INF("LWM2M engine thread resume");
+
 	return 0;
 }
 

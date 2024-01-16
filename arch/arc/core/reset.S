@@ -40,7 +40,7 @@ GTEXT(__start)
  *
  * Locking interrupts prevents anything from interrupting the CPU.
  *
- * When these steps are completed, jump to _PrepC(), which will finish setting
+ * When these steps are completed, jump to z_prep_c(), which will finish setting
  * up the system for running C code.
  */
 
@@ -174,7 +174,7 @@ _slave_core_wait:
 	jl z_arc_firq_stack_set
 	pop r0
 #endif
-	j z_arc_slave_start
+	j arch_secondary_cpu_init
 
 _master_core_startup:
 #endif
@@ -202,4 +202,4 @@ _master_core_startup:
 	jl z_arc_firq_stack_set
 #endif
 
-	j _PrepC
+	j z_prep_c

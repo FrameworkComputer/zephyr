@@ -7,8 +7,6 @@
 #ifndef ZEPHYR_INCLUDE_POSIX_PTHREAD_H_
 #define ZEPHYR_INCLUDE_POSIX_PTHREAD_H_
 
-#include "pthread_key.h"
-
 #include <stdlib.h>
 #include <string.h>
 
@@ -21,9 +19,14 @@
 extern "C" {
 #endif
 
-/* Pthread detach/joinable */
-#define PTHREAD_CREATE_DETACHED 0
-#define PTHREAD_CREATE_JOINABLE 1
+/*
+ * Pthread detach/joinable
+ * Undefine possibly predefined values by external toolchain headers
+ */
+#undef PTHREAD_CREATE_DETACHED
+#define PTHREAD_CREATE_DETACHED 1
+#undef PTHREAD_CREATE_JOINABLE
+#define PTHREAD_CREATE_JOINABLE 0
 
 /* Pthread resource visibility */
 #define PTHREAD_PROCESS_PRIVATE 0
@@ -37,10 +40,7 @@ extern "C" {
 #define PTHREAD_CANCEL_ASYNCHRONOUS 1
 
 /* Passed to pthread_once */
-#define PTHREAD_ONCE_INIT                                                                          \
-	{                                                                                          \
-		1, 0                                                                               \
-	}
+#define PTHREAD_ONCE_INIT {0}
 
 /* The minimum allowable stack size */
 #define PTHREAD_STACK_MIN Z_KERNEL_STACK_SIZE_ADJUST(0)
@@ -51,18 +51,6 @@ extern "C" {
  * Initialize a condition variable with the default condition variable attributes.
  */
 #define PTHREAD_COND_INITIALIZER (-1)
-
-/**
- * @brief Declare a pthread condition variable
- *
- * Declaration API for a pthread condition variable.  This is not a
- * POSIX API, it's provided to better conform with Zephyr's allocation
- * strategies for kernel objects.
- *
- * @param name Symbol name of the condition variable
- * @deprecated Use @c PTHREAD_COND_INITIALIZER instead.
- */
-#define PTHREAD_COND_DEFINE(name) pthread_cond_t name = PTHREAD_COND_INITIALIZER
 
 /**
  * @brief POSIX threading compatibility API
@@ -147,18 +135,6 @@ int pthread_condattr_setclock(pthread_condattr_t *att, clockid_t clock_id);
  * Initialize a mutex with the default mutex attributes.
  */
 #define PTHREAD_MUTEX_INITIALIZER (-1)
-
-/**
- * @brief Declare a pthread mutex
- *
- * Declaration API for a pthread mutex.  This is not a POSIX API, it's
- * provided to better conform with Zephyr's allocation strategies for
- * kernel objects.
- *
- * @param name Symbol name of the mutex
- * @deprecated Use @c PTHREAD_MUTEX_INITIALIZER instead.
- */
-#define PTHREAD_MUTEX_DEFINE(name) pthread_mutex_t name = PTHREAD_MUTEX_INITIALIZER
 
 /*
  *  Mutex attributes - type
@@ -428,7 +404,9 @@ static inline int pthread_rwlockattr_init(pthread_rwlockattr_t *attr)
 	return 0;
 }
 
+int pthread_attr_getguardsize(const pthread_attr_t *ZRESTRICT attr, size_t *ZRESTRICT guardsize);
 int pthread_attr_getstacksize(const pthread_attr_t *attr, size_t *stacksize);
+int pthread_attr_setguardsize(pthread_attr_t *attr, size_t guardsize);
 int pthread_attr_setstacksize(pthread_attr_t *attr, size_t stacksize);
 int pthread_attr_setschedpolicy(pthread_attr_t *attr, int policy);
 int pthread_attr_getschedpolicy(const pthread_attr_t *attr, int *policy);

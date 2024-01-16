@@ -291,6 +291,13 @@ static void input_kbd_matrix_polling_thread(void *arg1, void *unused2, void *unu
 		input_kbd_matrix_drive_column(dev, INPUT_KBD_MATRIX_COLUMN_DRIVE_ALL);
 		api->set_detect_mode(dev, true);
 
+		/* Check the rows again after enabling the interrupt to catch
+		 * any potential press since the last read.
+		 */
+		if (api->read_row(dev) != 0) {
+			input_kbd_matrix_poll_start(dev);
+		}
+
 		k_sem_take(&data->poll_lock, K_FOREVER);
 		LOG_DBG("scan start");
 
@@ -308,11 +315,32 @@ int input_kbd_matrix_common_init(const struct device *dev)
 	k_sem_init(&data->poll_lock, 0, 1);
 
 	k_thread_create(&data->thread, data->thread_stack,
-			CONFIG_INPUT_KBD_MATRIX_THREAD_STACK_SIZE,
+			K_KERNEL_STACK_SIZEOF(data->thread_stack),
 			input_kbd_matrix_polling_thread, (void *)dev, NULL, NULL,
-			K_PRIO_COOP(4), 0, K_NO_WAIT);
+			CONFIG_INPUT_KBD_MATRIX_THREAD_PRIORITY, 0, K_NO_WAIT);
 
 	k_thread_name_set(&data->thread, dev->name);
 
 	return 0;
 }
+
+#if CONFIG_INPUT_KBD_ACTUAL_KEY_MASK_DYNAMIC
+int input_kbd_matrix_actual_key_mask_set(const struct device *dev,
+					  uint8_t row, uint8_t col, bool enabled)
+{
+	const struct input_kbd_matrix_common_config *cfg = dev->config;
+
+	if (row >= cfg->row_size || col >= cfg->col_size) {
+		return -EINVAL;
+	}
+
+	if (cfg->actual_key_mask == NULL) {
+		LOG_WRN("actual-key-mask not defined for %s", dev->name);
+		return -EINVAL;
+	}
+
+	WRITE_BIT(cfg->actual_key_mask[col], row, enabled);
+
+	return 0;
+}
+#endif

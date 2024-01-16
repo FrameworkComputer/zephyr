@@ -513,7 +513,7 @@ check Kconfig guidelines.
             self.failure("""\
 Found pointless 'menuconfig' symbols without children. Use regular 'config'
 symbols instead. See
-https://docs.zephyrproject.org/latest/guides/kconfig/tips.html#menuconfig-symbols.
+https://docs.zephyrproject.org/latest/build/kconfig/tips.html#menuconfig-symbols.
 
 """ + "\n".join(f"{node.item.name:35} {node.filename}:{node.linenr}"
                 for node in bad_mconfs))
@@ -664,6 +664,7 @@ flagged.
         "FOO_LOG_LEVEL",
         "FOO_SETTING_1",
         "FOO_SETTING_2",
+        "HEAP_MEM_POOL_ADD_SIZE_", # Used as an option matching prefix
         "LSM6DSO_INT_PIN",
         "LIBGCC_RTLIB",
         "LLVM_USE_LD",   # Both LLVM_USE_* are in cmake/toolchain/llvm/Kconfig

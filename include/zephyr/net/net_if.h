@@ -1400,13 +1400,12 @@ struct net_if_mcast_addr *net_if_ipv6_maddr_lookup(const struct in6_addr *addr,
 /**
  * @typedef net_if_mcast_callback_t
 
- * @brief Define callback that is called whenever IPv6 multicast address group
- * is joined or left.
-
+ * @brief Define a callback that is called whenever a IPv6 or IPv4 multicast
+ *        address group is joined or left.
  * @param iface A pointer to a struct net_if to which the multicast address is
  *        attached.
  * @param addr IP multicast address.
- * @param is_joined True if the address is joined, false if left.
+ * @param is_joined True if the multicast group is joined, false if group is left.
  */
 typedef void (*net_if_mcast_callback_t)(struct net_if *iface,
 					const struct net_addr *addr,
@@ -1455,7 +1454,7 @@ void net_if_mcast_mon_unregister(struct net_if_mcast_monitor *mon);
  *
  * @param iface Network interface
  * @param addr Multicast address
- * @param is_joined Is this multicast address joined (true) or not (false)
+ * @param is_joined Is this multicast address group joined (true) or not (false)
  */
 void net_if_mcast_monitor(struct net_if *iface, const struct net_addr *addr,
 			  bool is_joined);
@@ -2800,22 +2799,21 @@ struct net_if_api {
 	void (*init)(struct net_if *iface);
 };
 
-#if defined(CONFIG_NET_IP)
-#define NET_IF_IP_INIT .ip = {},
-#else
-#define NET_IF_IP_INIT
-#endif
+#define NET_IF_DHCPV4_INIT						\
+	IF_ENABLED(UTIL_AND(IS_ENABLED(CONFIG_NET_DHCPV4),		\
+			    IS_ENABLED(CONFIG_NET_NATIVE_IPV4)),	\
+		   (.dhcpv4.state = NET_DHCPV4_DISABLED,))
 
-#if defined(CONFIG_NET_DHCPV4) && defined(CONFIG_NET_NATIVE_IPV4)
-#define NET_IF_DHCPV4_INIT .dhcpv4.state = NET_DHCPV4_DISABLED,
-#else
-#define NET_IF_DHCPV4_INIT
-#endif
+#define NET_IF_DHCPV6_INIT						\
+	IF_ENABLED(UTIL_AND(IS_ENABLED(CONFIG_NET_DHCPV6),		\
+			    IS_ENABLED(CONFIG_NET_NATIVE_IPV6)),	\
+		   (.dhcpv6.state = NET_DHCPV6_DISABLED,))
 
 #define NET_IF_CONFIG_INIT				\
 	.config = {					\
-		NET_IF_IP_INIT				\
+		IF_ENABLED(CONFIG_NET_IP, (.ip = {},))  \
 		NET_IF_DHCPV4_INIT			\
+		NET_IF_DHCPV6_INIT			\
 	}
 
 #define NET_IF_GET_NAME(dev_id, sfx) __net_if_##dev_id##_##sfx

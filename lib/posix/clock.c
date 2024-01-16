@@ -3,10 +3,14 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+#include "posix_clock.h"
+
 #include <zephyr/kernel.h>
 #include <errno.h>
 #include <zephyr/posix/time.h>
 #include <zephyr/posix/sys/time.h>
+#include <zephyr/posix/unistd.h>
 #include <zephyr/internal/syscall_handler.h>
 #include <zephyr/spinlock.h>
 
@@ -25,10 +29,40 @@ static struct k_spinlock rt_clock_base_lock;
  *
  * See IEEE 1003.1
  */
-int z_impl_clock_gettime(clockid_t clock_id, struct timespec *ts)
+int z_impl___posix_clock_get_base(clockid_t clock_id, struct timespec *base)
+{
+	switch (clock_id) {
+	case CLOCK_MONOTONIC:
+		base->tv_sec = 0;
+		base->tv_nsec = 0;
+		break;
+
+	case CLOCK_REALTIME:
+		K_SPINLOCK(&rt_clock_base_lock) {
+			*base = rt_clock_base;
+		}
+		break;
+
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+
+	return 0;
+}
+
+#ifdef CONFIG_USERSPACE
+int z_vrfy___posix_clock_get_base(clockid_t clock_id, struct timespec *ts)
+{
+	K_OOPS(K_SYSCALL_MEMORY_WRITE(ts, sizeof(*ts)));
+	return z_impl___posix_clock_get_base(clock_id, ts);
+}
+#include <syscalls/__posix_clock_get_base_mrsh.c>
+#endif
+
+int clock_gettime(clockid_t clock_id, struct timespec *ts)
 {
 	struct timespec base;
-	k_spinlock_key_t key;
 
 	switch (clock_id) {
 	case CLOCK_MONOTONIC:
@@ -37,9 +71,7 @@ int z_impl_clock_gettime(clockid_t clock_id, struct timespec *ts)
 		break;
 
 	case CLOCK_REALTIME:
-		key = k_spin_lock(&rt_clock_base_lock);
-		base = rt_clock_base;
-		k_spin_unlock(&rt_clock_base_lock, key);
+		(void)__posix_clock_get_base(clock_id, &base);
 		break;
 
 	default:
@@ -65,15 +97,6 @@ int z_impl_clock_gettime(clockid_t clock_id, struct timespec *ts)
 	return 0;
 }
 
-#ifdef CONFIG_USERSPACE
-int z_vrfy_clock_gettime(clockid_t clock_id, struct timespec *ts)
-{
-	K_OOPS(K_SYSCALL_MEMORY_WRITE(ts, sizeof(*ts)));
-	return z_impl_clock_gettime(clock_id, ts);
-}
-#include <syscalls/clock_gettime_mrsh.c>
-#endif
-
 /**
  * @brief Set the time of the specified clock.
  *
@@ -88,6 +111,11 @@ int clock_settime(clockid_t clock_id, const struct timespec *tp)
 	k_spinlock_key_t key;
 
 	if (clock_id != CLOCK_REALTIME) {
+		errno = EINVAL;
+		return -1;
+	}
+
+	if (tp->tv_nsec < 0 || tp->tv_nsec >= NSEC_PER_SEC) {
 		errno = EINVAL;
 		return -1;
 	}
@@ -194,4 +222,16 @@ int gettimeofday(struct timeval *tv, void *tz)
 	tv->tv_usec = ts.tv_nsec / NSEC_PER_USEC;
 
 	return res;
+}
+
+int clock_getcpuclockid(pid_t pid, clockid_t *clock_id)
+{
+	/* We don't allow any process ID but our own.  */
+	if (pid != 0 && pid != getpid()) {
+		return EPERM;
+	}
+
+	*clock_id = CLOCK_PROCESS_CPUTIME_ID;
+
+	return 0;
 }

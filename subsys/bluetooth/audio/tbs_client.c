@@ -41,7 +41,7 @@ LOG_MODULE_REGISTER(bt_tbs_client, CONFIG_BT_TBS_CLIENT_LOG_LEVEL);
 	 IS_ENABLED(CONFIG_BT_TBS_CLIENT_CALL_FRIENDLY_NAME) +                                     \
 	 IS_ENABLED(CONFIG_BT_TBS_CLIENT_INCOMING_CALL))
 
-BUILD_ASSERT(CONFIG_BT_L2CAP_TX_BUF_COUNT >= TBS_CLIENT_BUF_COUNT, "Too few L2CAP buffers");
+BUILD_ASSERT(CONFIG_BT_ATT_TX_COUNT >= TBS_CLIENT_BUF_COUNT, "Too few ATT buffers");
 
 #include "common/bt_str.h"
 
@@ -1785,7 +1785,7 @@ int bt_tbs_client_originate_call(struct bt_conn *conn, uint8_t inst_index,
 
 	if (conn == NULL) {
 		return -ENOTCONN;
-	} else if (!bt_tbs_valid_uri(uri)) {
+	} else if (!bt_tbs_valid_uri(uri, strlen(uri))) {
 		LOG_DBG("Invalid URI: %s", uri);
 		return -EINVAL;
 	}

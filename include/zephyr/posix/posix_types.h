@@ -21,6 +21,8 @@
 extern "C" {
 #endif
 
+typedef int pid_t;
+
 #ifndef __useconds_t_defined
 typedef unsigned long useconds_t;
 #endif
@@ -37,15 +39,10 @@ typedef unsigned long timer_t;
 
 /* Thread attributes */
 struct pthread_attr {
-	int priority;
 	void *stack;
-	uint32_t stacksize;
-	uint32_t flags;
-	uint32_t delayedstart;
-	uint32_t schedpolicy;
-	int32_t detachstate;
-	uint32_t initialized;
+	uint32_t details[2];
 };
+
 #if defined(CONFIG_MINIMAL_LIBC) || defined(CONFIG_PICOLIBC) || defined(CONFIG_ARMCLANG_STD_LIBC) \
 	|| defined(CONFIG_ARCMWDT_LIBC)
 typedef struct pthread_attr pthread_attr_t;
@@ -100,6 +97,19 @@ typedef struct pthread_rwlock_obj {
 	int32_t status;
 	k_tid_t wr_owner;
 } pthread_rwlock_t;
+
+struct pthread_once {
+	bool flag;
+};
+
+#if defined(CONFIG_MINIMAL_LIBC) || defined(CONFIG_PICOLIBC) || defined(CONFIG_ARMCLANG_STD_LIBC) \
+	|| defined(CONFIG_ARCMWDT_LIBC)
+typedef uint32_t pthread_key_t;
+typedef struct pthread_once pthread_once_t;
+#endif
+
+/* Newlib typedefs pthread_once_t as a struct with two ints */
+BUILD_ASSERT(sizeof(pthread_once_t) >= sizeof(struct pthread_once));
 
 #ifdef __cplusplus
 }

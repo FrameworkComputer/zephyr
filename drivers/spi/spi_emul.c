@@ -82,6 +82,18 @@ static int spi_emul_io(const struct device *dev, const struct spi_config *config
 }
 
 /**
+ * @brief This is a no-op stub of the SPI API's `release` method to protect drivers under test
+ *        from hitting a segmentation fault when using SPI_LOCK_ON plus spi_release()
+ */
+static int spi_emul_release(const struct device *dev, const struct spi_config *config)
+{
+	ARG_UNUSED(dev);
+	ARG_UNUSED(config);
+
+	return 0;
+}
+
+/**
  * Set up a new emulator and add it to the list
  *
  * @param dev SPI emulation controller device
@@ -109,8 +121,9 @@ int spi_emul_register(const struct device *dev, struct spi_emul *emul)
 
 /* Device instantiation */
 
-static struct spi_driver_api spi_emul_api = {
+static const struct spi_driver_api spi_emul_api = {
 	.transceive = spi_emul_io,
+	.release = spi_emul_release,
 };
 
 #define EMUL_LINK_AND_COMMA(node_id)                                                               \

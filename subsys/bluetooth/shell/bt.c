@@ -2001,7 +2001,7 @@ static int cmd_adv_data(const struct shell *sh, size_t argc, char *argv[])
 	size_t hex_data_len;
 	size_t ad_len = 0;
 	size_t sd_len = 0;
-	size_t len = 0;
+	ssize_t len = 0;
 	bool discoverable = false;
 	size_t *data_len;
 	int err;
@@ -3244,7 +3244,7 @@ static int cmd_conn_phy_update(const struct shell *sh, size_t argc,
 }
 #endif
 
-#if defined(CONFIG_BT_CENTRAL)
+#if defined(CONFIG_BT_CENTRAL) || defined(CONFIG_BT_BROADCASTER)
 static int cmd_chan_map(const struct shell *sh, size_t argc, char *argv[])
 {
 	uint8_t chan_map[5] = {};

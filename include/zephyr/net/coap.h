@@ -310,6 +310,18 @@ typedef int (*coap_reply_t)(const struct coap_packet *response,
 			    const struct sockaddr *from);
 
 /**
+ * @brief CoAP transmission parameters.
+ */
+struct coap_transmission_parameters {
+	/**  Initial ACK timeout. Value is used as a base value to retry pending CoAP packets. */
+	uint32_t ack_timeout;
+	/** Set CoAP retry backoff factor. A value of 200 means a factor of 2.0. */
+	uint16_t coap_backoff_percent;
+	/** Maximum number of retransmissions. */
+	uint8_t max_retransmission;
+};
+
+/**
  * @brief Represents a request awaiting for an acknowledgment (ACK).
  */
 struct coap_pending {
@@ -320,6 +332,7 @@ struct coap_pending {
 	uint8_t *data;        /**< User allocated buffer */
 	uint16_t len;         /**< Length of the CoAP packet */
 	uint8_t retries;      /**< Number of times the request has been sent */
+	struct coap_transmission_parameters params; /**< Transmission parameters */
 };
 
 /**
@@ -989,14 +1002,15 @@ void coap_reply_init(struct coap_reply *reply,
  * confirmation message, initialized with data from @a request
  * @param request Message waiting for confirmation
  * @param addr Address to send the retransmission
- * @param retries Maximum number of retransmissions of the message.
+ * @param params Pointer to the CoAP transmission parameters struct,
+ * or NULL to use default values
  *
  * @return 0 in case of success or negative in case of error.
  */
 int coap_pending_init(struct coap_pending *pending,
 		      const struct coap_packet *request,
 		      const struct sockaddr *addr,
-		      uint8_t retries);
+		      const struct coap_transmission_parameters *params);
 
 /**
  * @brief Returns the next available pending struct, that can be used
@@ -1099,6 +1113,15 @@ void coap_pending_clear(struct coap_pending *pending);
 void coap_pendings_clear(struct coap_pending *pendings, size_t len);
 
 /**
+ * @brief Count number of pending requests.
+ *
+ * @param len Number of elements in array.
+ * @param pendings Array of pending requests.
+ * @return count of elements where timeout is not zero.
+ */
+size_t coap_pendings_count(struct coap_pending *pendings, size_t len);
+
+/**
  * @brief Cancels awaiting for this reply, so it becomes available
  * again. User responsibility to free the memory associated with data.
  *
@@ -1133,6 +1156,20 @@ int coap_resource_notify(struct coap_resource *resource);
  * otherwise
  */
 bool coap_request_is_observe(const struct coap_packet *request);
+
+/**
+ * @brief Get currently active CoAP transmission parameters.
+ *
+ * @return CoAP transmission parameters structure.
+ */
+struct coap_transmission_parameters coap_get_transmission_parameters(void);
+
+/**
+ * @brief Set CoAP transmission parameters.
+ *
+ * @param params Pointer to the transmission parameters structure.
+ */
+void coap_set_transmission_parameters(const struct coap_transmission_parameters *params);
 
 #ifdef __cplusplus
 }

@@ -12,7 +12,7 @@
 #include <zephyr/bluetooth/audio/bap_lc3_preset.h>
 #include <zephyr/bluetooth/audio/pacs.h>
 #include "common.h"
-#include "bap_unicast_common.h"
+#include "bap_common.h"
 
 #define BAP_STREAM_RETRY_WAIT K_MSEC(100)
 
@@ -24,12 +24,12 @@ NET_BUF_POOL_FIXED_DEFINE(tx_pool, TOTAL_BUF_NEEDED, BT_ISO_SDU_BUF_SIZE(CONFIG_
 extern enum bst_result_t bst_result;
 
 static volatile size_t sent_count;
-static struct bap_test_stream g_streams[CONFIG_BT_BAP_UNICAST_CLIENT_ASE_SNK_COUNT];
+static struct audio_test_stream test_streams[CONFIG_BT_BAP_UNICAST_CLIENT_ASE_SNK_COUNT];
 static struct bt_bap_ep *g_sinks[CONFIG_BT_BAP_UNICAST_CLIENT_ASE_SNK_COUNT];
 static struct bt_bap_ep *g_sources[CONFIG_BT_BAP_UNICAST_CLIENT_ASE_SRC_COUNT];
 
-static struct bt_bap_unicast_group_stream_pair_param pair_params[ARRAY_SIZE(g_streams)];
-static struct bt_bap_unicast_group_stream_param stream_params[ARRAY_SIZE(g_streams)];
+static struct bt_bap_unicast_group_stream_pair_param pair_params[ARRAY_SIZE(test_streams)];
+static struct bt_bap_unicast_group_stream_param stream_params[ARRAY_SIZE(test_streams)];
 
 /* Mandatory support preset by both client and server */
 static struct bt_bap_lc3_preset preset_16_2_1 = BT_BAP_LC3_UNICAST_PRESET_16_2_1(
@@ -63,7 +63,7 @@ static void stream_configured(struct bt_bap_stream *stream,
 
 static void stream_qos_set(struct bt_bap_stream *stream)
 {
-	struct bap_test_stream *test_stream = CONTAINER_OF(stream, struct bap_test_stream, stream);
+	struct audio_test_stream *test_stream = audio_test_stream_from_bap_stream(stream);
 
 	printk("QoS set stream %p\n", stream);
 
@@ -95,7 +95,7 @@ static void stream_metadata_updated(struct bt_bap_stream *stream)
 
 static void stream_disabled(struct bt_bap_stream *stream)
 {
-	struct bap_test_stream *test_stream = CONTAINER_OF(stream, struct bap_test_stream, stream);
+	struct audio_test_stream *test_stream = audio_test_stream_from_bap_stream(stream);
 
 	test_stream->tx_active = false;
 
@@ -119,9 +119,12 @@ static void stream_released(struct bt_bap_stream *stream)
 static void stream_recv_cb(struct bt_bap_stream *stream, const struct bt_iso_recv_info *info,
 			   struct net_buf *buf)
 {
-	struct bap_test_stream *test_stream = CONTAINER_OF(stream, struct bap_test_stream, stream);
+	struct audio_test_stream *test_stream = audio_test_stream_from_bap_stream(stream);
 
-	printk("Incoming audio on stream %p len %u and ts %u\n", stream, buf->len, info->ts);
+	if ((test_stream->rx_cnt % 100U) == 0U) {
+		printk("[%zu]: Incoming audio on stream %p len %u and ts %u\n", test_stream->rx_cnt,
+		       stream, buf->len, info->ts);
+	}
 
 	if (test_stream->rx_cnt > 0U && info->ts == test_stream->last_info.ts) {
 		FAIL("Duplicated timestamp received: %u\n", test_stream->last_info.ts);
@@ -146,13 +149,13 @@ static void stream_recv_cb(struct bt_bap_stream *stream, const struct bt_iso_rec
 	if (memcmp(buf->data, mock_iso_data, buf->len) == 0) {
 		test_stream->rx_cnt++;
 	} else {
-		FAIL("Unexpected data received");
+		FAIL("Unexpected data received\n");
 	}
 }
 
 static void stream_sent_cb(struct bt_bap_stream *stream)
 {
-	struct bap_test_stream *test_stream = CONTAINER_OF(stream, struct bap_test_stream, stream);
+	struct audio_test_stream *test_stream = audio_test_stream_from_bap_stream(stream);
 	struct net_buf *buf;
 	int ret;
 
@@ -489,8 +492,11 @@ static void init(void)
 		return;
 	}
 
-	for (size_t i = 0; i < ARRAY_SIZE(g_streams); i++) {
-		g_streams[i].stream.ops = &stream_ops;
+	for (size_t i = 0; i < ARRAY_SIZE(test_streams); i++) {
+		struct bt_bap_stream *bap_stream =
+			bap_stream_from_audio_test_stream(&test_streams[i]);
+
+		bap_stream->ops = &stream_ops;
 	}
 
 	bt_le_scan_cb_register(&bap_scan_cb);
@@ -674,7 +680,7 @@ static int enable_stream(struct bt_bap_stream *stream)
 static void enable_streams(size_t stream_cnt)
 {
 	for (size_t i = 0U; i < stream_cnt; i++) {
-		struct bt_bap_stream *stream = &g_streams[i].stream;
+		struct bt_bap_stream *stream = bap_stream_from_audio_test_stream(&test_streams[i]);
 		int err;
 
 		err = enable_stream(stream);
@@ -713,7 +719,7 @@ static int metadata_update_stream(struct bt_bap_stream *stream)
 static void metadata_update_streams(size_t stream_cnt)
 {
 	for (size_t i = 0U; i < stream_cnt; i++) {
-		struct bt_bap_stream *stream = &g_streams[i].stream;
+		struct bt_bap_stream *stream = bap_stream_from_audio_test_stream(&test_streams[i]);
 		int err;
 
 		err = metadata_update_stream(stream);
@@ -788,8 +794,8 @@ static void transceive_streams(void)
 	sink_stream = pair_params[0].tx_param == NULL ? NULL : pair_params[0].tx_param->stream;
 
 	if (sink_stream != NULL) {
-		struct bap_test_stream *test_stream =
-			CONTAINER_OF(sink_stream, struct bap_test_stream, stream);
+		struct audio_test_stream *test_stream =
+			audio_test_stream_from_bap_stream(sink_stream);
 
 		test_stream->tx_active = true;
 		for (unsigned int i = 0U; i < ENQUEUE_COUNT; i++) {
@@ -803,8 +809,8 @@ static void transceive_streams(void)
 	}
 
 	if (source_stream != NULL) {
-		const struct bap_test_stream *test_stream =
-			CONTAINER_OF(source_stream, struct bap_test_stream, stream);
+		const struct audio_test_stream *test_stream =
+			audio_test_stream_from_bap_stream(source_stream);
 
 		/* Keep receiving until we reach the minimum expected */
 		while (test_stream->rx_cnt < MIN_SEND_COUNT) {
@@ -822,7 +828,8 @@ static void disable_streams(size_t stream_cnt)
 		UNSET_FLAG(flag_stream_disabled);
 
 		do {
-			err = bt_bap_stream_disable(&g_streams[i].stream);
+			err = bt_bap_stream_disable(
+				bap_stream_from_audio_test_stream(&test_streams[i]));
 			if (err == -EBUSY) {
 				k_sleep(BAP_STREAM_RETRY_WAIT);
 			} else if (err != 0) {
@@ -845,7 +852,8 @@ static void release_streams(size_t stream_cnt)
 		UNSET_FLAG(flag_stream_released);
 
 		do {
-			err = bt_bap_stream_release(&g_streams[i].stream);
+			err = bt_bap_stream_release(
+				bap_stream_from_audio_test_stream(&test_streams[i]));
 			if (err == -EBUSY) {
 				k_sleep(BAP_STREAM_RETRY_WAIT);
 			} else if (err != 0) {
@@ -869,12 +877,13 @@ static size_t create_unicast_group(struct bt_bap_unicast_group **unicast_group)
 	memset(stream_params, 0, sizeof(stream_params));
 	memset(pair_params, 0, sizeof(pair_params));
 
-	for (size_t i = 0U; i < MIN(ARRAY_SIZE(g_sinks), ARRAY_SIZE(g_streams)); i++) {
+	for (size_t i = 0U; i < MIN(ARRAY_SIZE(g_sinks), ARRAY_SIZE(test_streams)); i++) {
 		if (g_sinks[i] == NULL) {
 			break;
 		}
 
-		stream_params[stream_cnt].stream = &g_streams[stream_cnt].stream;
+		stream_params[stream_cnt].stream =
+			bap_stream_from_audio_test_stream(&test_streams[stream_cnt]);
 		stream_params[stream_cnt].qos = &preset_16_2_1.qos;
 		pair_params[i].tx_param = &stream_params[stream_cnt];
 
@@ -883,12 +892,13 @@ static size_t create_unicast_group(struct bt_bap_unicast_group **unicast_group)
 		break;
 	}
 
-	for (size_t i = 0U; i < MIN(ARRAY_SIZE(g_sources), ARRAY_SIZE(g_streams)); i++) {
+	for (size_t i = 0U; i < MIN(ARRAY_SIZE(g_sources), ARRAY_SIZE(test_streams)); i++) {
 		if (g_sources[i] == NULL) {
 			break;
 		}
 
-		stream_params[stream_cnt].stream = &g_streams[stream_cnt].stream;
+		stream_params[stream_cnt].stream =
+			bap_stream_from_audio_test_stream(&test_streams[stream_cnt]);
 		stream_params[stream_cnt].qos = &preset_16_2_1.qos;
 		pair_params[i].rx_param = &stream_params[stream_cnt];
 

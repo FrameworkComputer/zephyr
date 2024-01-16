@@ -99,7 +99,7 @@ Pin Mapping
 STM32H747I Discovery kit has 9 GPIO controllers. These controllers are responsible for pin muxing,
 input/output, pull-up, etc.
 
-For mode details please refer to `STM32H747I-DISCO website`_.
+For more details please refer to `STM32H747I-DISCO website`_.
 
 Default Zephyr Peripheral Mapping:
 ----------------------------------
@@ -171,6 +171,10 @@ command, for example:
    :board: stm32h747i_disco_m7
    :shield: st_b_lcd40_dsi1_mb1166
    :goals: build flash
+
+.. note::
+   Currently only the older version MB1166-A03 is supported by Zephyr.
+   The newer version MB1166-A09 does not get initialized correctly (see :github:`60888`).
 
 Resources sharing
 =================

@@ -219,7 +219,8 @@ class TestInstance:
 
         target_ready = bool(self.testsuite.type == "unit" or \
                         self.platform.type == "native" or \
-                        self.platform.simulation in SUPPORTED_SIMS or \
+                        (self.platform.simulation in SUPPORTED_SIMS and \
+                         self.platform.simulation not in self.testsuite.simulation_exclude) or \
                         filter == 'runnable')
 
         # check if test is runnable in pytest
@@ -287,7 +288,7 @@ class TestInstance:
         if content:
             os.makedirs(subdir, exist_ok=True)
             file = os.path.join(subdir, "testsuite_extra.conf")
-            with open(file, "w") as f:
+            with open(file, "w", encoding='utf-8') as f:
                 f.write(content)
 
         return content
