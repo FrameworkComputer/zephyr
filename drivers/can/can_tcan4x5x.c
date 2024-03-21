@@ -722,14 +722,13 @@ static const struct can_driver_api tcan4x5x_driver_api = {
 	.send = can_mcan_send,
 	.add_rx_filter = can_mcan_add_rx_filter,
 	.remove_rx_filter = can_mcan_remove_rx_filter,
-#ifndef CONFIG_CAN_AUTO_BUS_OFF_RECOVERY
+#ifdef CONFIG_CAN_MANUAL_RECOVERY_MODE
 	.recover = can_mcan_recover,
-#endif /* CONFIG_CAN_AUTO_BUS_OFF_RECOVERY */
+#endif /* CONFIG_CAN_MANUAL_RECOVERY_MODE */
 	.get_state = can_mcan_get_state,
 	.set_state_change_callback = can_mcan_set_state_change_callback,
 	.get_core_clock = tcan4x5x_get_core_clock,
 	.get_max_filters = can_mcan_get_max_filters,
-	.get_max_bitrate = can_mcan_get_max_bitrate,
 	.timing_min = CAN_MCAN_TIMING_MIN_INITIALIZER,
 	.timing_max = CAN_MCAN_TIMING_MAX_INITIALIZER,
 #ifdef CONFIG_CAN_FD_MODE

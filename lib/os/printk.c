@@ -107,7 +107,7 @@ static int buf_char_out(int c, void *ctx_p)
 
 static int char_out(int c, void *ctx_p)
 {
-	(void) ctx_p;
+	ARG_UNUSED(ctx_p);
 	return _char_out(c);
 }
 
@@ -154,6 +154,7 @@ void vprintk(const char *fmt, va_list ap)
 #endif
 	}
 }
+EXPORT_SYMBOL(vprintk);
 
 void z_impl_k_str_out(char *c, size_t n)
 {

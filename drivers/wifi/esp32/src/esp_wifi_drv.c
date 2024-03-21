@@ -6,8 +6,6 @@
 
 #define DT_DRV_COMPAT espressif_esp32_wifi
 
-#define _POSIX_C_SOURCE 200809
-
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(esp32_wifi, CONFIG_WIFI_LOG_LEVEL);
 
@@ -15,6 +13,7 @@ LOG_MODULE_REGISTER(esp32_wifi, CONFIG_WIFI_LOG_LEVEL);
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/wifi_mgmt.h>
+#include <zephyr/net/conn_mgr/connectivity_wifi_mgmt.h>
 #include <zephyr/device.h>
 #include <soc.h>
 #include "esp_networking_priv.h"
@@ -674,3 +673,5 @@ NET_DEVICE_DT_INST_DEFINE(0,
 		&esp32_data, NULL, CONFIG_WIFI_INIT_PRIORITY,
 		&esp32_api, ETHERNET_L2,
 		NET_L2_GET_CTX_TYPE(ETHERNET_L2), NET_ETH_MTU);
+
+CONNECTIVITY_WIFI_MGMT_BIND(Z_DEVICE_DT_DEV_ID(DT_DRV_INST(0)));

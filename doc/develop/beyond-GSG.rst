@@ -163,8 +163,8 @@ supported by a CMake file with content like this:
 
    # Variable foo_BOARD_ALIAS=bar replaces BOARD=foo with BOARD=bar and
    # sets BOARD_ALIAS=foo in the CMake cache.
-   set(pca10028_BOARD_ALIAS nrf51dk_nrf51422)
-   set(pca10056_BOARD_ALIAS nrf52840dk_nrf52840)
+   set(pca10028_BOARD_ALIAS nrf51dk/nrf51822)
+   set(pca10056_BOARD_ALIAS nrf52840dk/nrf52840)
    set(k64f_BOARD_ALIAS frdm_k64f)
    set(sltb004a_BOARD_ALIAS efr32mg_sltb004a)
 
@@ -215,7 +215,7 @@ depending on your board.
 The other sample applications in the :zephyr_file:`samples` folder are
 documented in :ref:`samples-and-demos`.
 
-.. note:: If you want to re-use an
+.. note:: If you want to reuse an
    existing build directory for another board or application, you need to
    add the parameter ``-p=auto`` to ``west build`` to clean out settings
    and artifacts from the previous build.
@@ -279,6 +279,13 @@ system using `QEMU <https://www.qemu.org/>`_ when targeting either
 the x86 or ARM Cortex-M3 architectures. (QEMU is included with the Zephyr
 SDK installation.)
 
+On Windows, you need to install QEMU manually from
+`Download QEMU <https://www.qemu.org/download/#windows>`_. After installation,
+add path to QEMU installation folder to PATH environment variable.
+To enable QEMU in Test Runner (Twister) on Windows,
+:ref:`set the environment variable <env_vars>`
+``QEMU_BIN_PATH`` to the path of QEMU installation folder.
+
 For example, you can build and run the :ref:`hello_world` sample using
 the x86 emulation board configuration (``qemu_x86``), with:
 
@@ -299,7 +306,7 @@ Run a Sample Application natively (Linux)
 
 You can compile some samples to run as host programs
 on Linux. See :ref:`native_sim` for more information. On 64-bit host operating systems, you
-need to install a 32-bit C library, or build targeting :ref:`native_sim_64 <native_sim32_64>`.
+need to install a 32-bit C library, or build targeting :ref:`native_sim/native/64<native_sim32_64>`.
 
 First, build Hello World for ``native_sim``.
 
@@ -330,7 +337,7 @@ valgrind.
 .. [#pip]
 
    pip is Python's package installer. Its ``install`` command first tries to
-   re-use packages and package dependencies already installed on your computer.
+   reuse packages and package dependencies already installed on your computer.
    If that is not possible, ``pip install`` downloads them from the Python
    Package Index (PyPI) on the Internet.
 

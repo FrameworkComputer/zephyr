@@ -179,6 +179,9 @@ enum ethernet_hw_caps {
 
 	/** TXTIME supported */
 	ETHERNET_TXTIME			= BIT(19),
+
+	/** TX-Injection supported */
+	ETHERNET_TXINJECTION_MODE	= BIT(20),
 };
 
 /** @cond INTERNAL_HIDDEN */
@@ -197,6 +200,7 @@ enum ethernet_config_type {
 	ETHERNET_CONFIG_TYPE_FILTER,
 	ETHERNET_CONFIG_TYPE_PORTS_NUM,
 	ETHERNET_CONFIG_TYPE_T1S_PARAM,
+	ETHERNET_CONFIG_TYPE_TXINJECTION_MODE,
 };
 
 enum ethernet_qav_param_type {
@@ -442,6 +446,7 @@ struct ethernet_config {
 		bool auto_negotiation;
 		bool full_duplex;
 		bool promisc_mode;
+		bool txinjection_mode;
 
 		struct {
 			bool link_10bt;
@@ -1029,6 +1034,29 @@ void net_eth_carrier_off(struct net_if *iface);
  */
 int net_eth_promisc_mode(struct net_if *iface, bool enable);
 
+/**
+ * @brief Set TX-Injection mode either ON or OFF.
+ *
+ * @param iface Network interface
+ *
+ * @param enable on (true) or off (false)
+ *
+ * @return 0 if mode set or unset was successful, <0 otherwise.
+ */
+int net_eth_txinjection_mode(struct net_if *iface, bool enable);
+
+/**
+ * @brief Set or unset HW filtering for MAC address @p mac.
+ *
+ * @param iface Network interface
+ * @param mac Pointer to an ethernet MAC address
+ * @param type Filter type, either source or destination
+ * @param enable Set (true) or unset (false)
+ *
+ * @return 0 if filter set or unset was successful, <0 otherwise.
+ */
+int net_eth_mac_filter(struct net_if *iface, struct net_eth_addr *mac,
+		       enum ethernet_filter_type type, bool enable);
 /**
  * @brief Return PTP clock that is tied to this ethernet network interface.
  *

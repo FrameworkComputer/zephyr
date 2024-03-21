@@ -640,13 +640,6 @@ def test_binaryhandler_handle(
     handler._update_instance_info.assert_called_once()
     handler._final_handle_actions.assert_called_once()
 
-    if coverage:
-        call_mock.assert_any_call(
-            ['GCOV_PREFIX=build_dir', 'gcov', 'source_dir',
-             '-b', '-s', 'build_dir'],
-            shell=True
-        )
-
     if isatty:
         call_mock.assert_any_call(['stty', 'sane'], stdin=mock.ANY)
 
@@ -747,7 +740,7 @@ def test_devicehandler_monitor_serial(
     type(harness).state=mock.PropertyMock(side_effect=state_iter)
 
     handler = DeviceHandler(mocked_instance, 'build')
-    handler.options = mock.Mock(coverage=not end_by_state)
+    handler.options = mock.Mock(enable_coverage=not end_by_state)
 
     with mock.patch('builtins.open', mock.mock_open(read_data='')):
         handler.monitor_serial(ser, halt_event, harness)
@@ -1132,13 +1125,13 @@ TESTDATA_14 = [
     ids=['success', 'failed', 'error', 'flash error', 'no status']
 )
 def test_devicehandler_update_instance_info(
-    mocked_instance,
-    harness_state,
-    flash_error,
-    expected_status,
-    expected_reason,
-    do_add_missing
-):
+        mocked_instance,
+        harness_state,
+        flash_error,
+        expected_status,
+        expected_reason,
+        do_add_missing
+        ):
     handler = DeviceHandler(mocked_instance, 'build')
     handler_time = 59
     missing_mock = mock.Mock()
@@ -1152,7 +1145,7 @@ def test_devicehandler_update_instance_info(
     assert handler.instance.reason == expected_reason
 
     if do_add_missing:
-        missing_mock.assert_called_once_with('blocked', expected_reason)
+        missing_mock.assert_called_with('blocked', expected_reason)
 
 
 TESTDATA_15 = [

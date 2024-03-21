@@ -113,7 +113,7 @@ config NET_TCP_RETRY_COUNT
 	  values are in the 0-31 range.  It's highly recommended to not go
 	  below 9, though.
 	  Should a retransmission timeout occur, the receive callback is
-	  called with -ECONNRESET error code and the context is dereferenced.
+	  called with -ETIMEDOUT error code and the context is dereferenced.
 
 config NET_TCP_MAX_SEND_WINDOW_SIZE
 	int "Maximum sending window size to use"
@@ -243,5 +243,14 @@ config NET_TCP_REJECT_CONN_WITH_RST
 	help
 	  If enabled, TCP stack will reject connection attempts on unbound ports
 	  with TCP RST packet.
+
+config NET_TCP_IPV6_ND_REACHABILITY_HINT
+	bool "Provide a reachability hint for IPv6 Neighbor Discovery"
+	depends on NET_TCP
+	depends on NET_IPV6_ND
+	help
+	  If enabled, TCP stack will inform the IPv6 Neighbor Discovery process
+	  about the active link to a specific neighbor by signaling recent
+	  "forward progress" event as described in RFC 4861.
 
 endif # NET_TCP

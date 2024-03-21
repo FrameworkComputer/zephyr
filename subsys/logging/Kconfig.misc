@@ -66,7 +66,7 @@ config LOG_FMT_SECTION
 
 config LOG_FMT_SECTION_STRIP
 	bool "Strip log strings from binary"
-	depends on !LOG_OUTPUT
+	depends on LOG_DICTIONARY_SUPPORT
 	depends on LOG_FMT_SECTION
 	depends on LINKER_DEVNULL_SUPPORT
 	imply LINKER_DEVNULL_MEMORY
@@ -98,6 +98,15 @@ config LOG_MEM_UTILIZATION
 
 config LOG_DICTIONARY_DB
 	bool
+
+config LOG_DICTIONARY_DB_TARGET
+	bool "Only generated log dictionary database from target"
+	depends on LOG_DICTIONARY_DB
+	help
+	  Enable this option to make generating the log dictionary database
+	  only done by its own build target.
+	  This removes the target from the ALL make target and the target
+	  'log_dict_db_gen' has to be called in addition.
 
 config LOG_MSG_APPEND_RO_STRING_LOC
 	bool

@@ -7,6 +7,7 @@
 #include <zephyr/ztest.h>
 #include <zephyr/devicetree.h>
 #include <zephyr/device.h>
+#include <zephyr/drivers/adc.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/mbox.h>
 
@@ -20,13 +21,16 @@
 #define TEST_INST	DT_INST(0, vnd_gpio_device)
 #define TEST_ARRAYS	DT_NODELABEL(test_arrays)
 #define TEST_PH	DT_NODELABEL(test_phandles)
+#define TEST_INTC	DT_NODELABEL(test_intc)
 #define TEST_IRQ	DT_NODELABEL(test_irq)
+#define TEST_IRQ_EXT	DT_NODELABEL(test_irq_extended)
 #define TEST_TEMP	DT_NODELABEL(test_temp_sensor)
 #define TEST_REG	DT_NODELABEL(test_reg)
 #define TEST_VENDOR	DT_NODELABEL(test_vendor)
 #define TEST_MODEL	DT_NODELABEL(test_vendor)
 #define TEST_ENUM_0	DT_NODELABEL(test_enum_0)
 #define TEST_64BIT	DT_NODELABEL(test_reg_64)
+#define TEST_INTC	DT_NODELABEL(test_intc)
 
 #define TEST_I2C DT_NODELABEL(test_i2c)
 #define TEST_I2C_DEV DT_PATH(test, i2c_11112222, test_i2c_dev_10)
@@ -44,6 +48,7 @@
 
 #define TEST_GPIO_1 DT_NODELABEL(test_gpio_1)
 #define TEST_GPIO_2 DT_NODELABEL(test_gpio_2)
+#define TEST_GPIO_4 DT_NODELABEL(test_gpio_4)
 
 #define TEST_GPIO_HOG_1 DT_PATH(test, gpio_deadbeef, test_gpio_hog_1)
 #define TEST_GPIO_HOG_2 DT_PATH(test, gpio_deadbeef, test_gpio_hog_2)
@@ -65,6 +70,8 @@
 
 #define TEST_CAN_CTRL_0 DT_NODELABEL(test_can0)
 #define TEST_CAN_CTRL_1 DT_NODELABEL(test_can1)
+#define TEST_CAN_CTRL_2 DT_NODELABEL(test_can2)
+#define TEST_CAN_CTRL_3 DT_NODELABEL(test_can3)
 
 #define TEST_DMA_CTLR_1 DT_NODELABEL(test_dma1)
 #define TEST_DMA_CTLR_2 DT_NODELABEL(test_dma2)
@@ -654,13 +661,15 @@ ZTEST(devicetree_api, test_irq)
 	zassert_equal(DT_IRQ(TEST_I2C_BUS, priority), 2, "");
 
 	/* DT_IRQN */
+#ifndef CONFIG_MULTI_LEVEL_INTERRUPTS
 	zassert_equal(DT_IRQN(TEST_I2C_BUS), 6, "");
-	#ifndef CONFIG_MULTI_LEVEL_INTERRUPTS
-		zassert_equal(DT_IRQN(DT_INST(0, DT_DRV_COMPAT)), 30, "");
-	#else
-		zassert_equal(DT_IRQN(DT_INST(0, DT_DRV_COMPAT)),
-			      ((30 + 1) << CONFIG_1ST_LEVEL_INTERRUPT_BITS) | 11, "");
-	#endif
+	zassert_equal(DT_IRQN(DT_INST(0, DT_DRV_COMPAT)), 30, "");
+#else
+	zassert_equal(DT_IRQN(TEST_I2C_BUS),
+			((6 + 1) << CONFIG_1ST_LEVEL_INTERRUPT_BITS) | 11, "");
+	zassert_equal(DT_IRQN(DT_INST(0, DT_DRV_COMPAT)),
+			((30 + 1) << CONFIG_1ST_LEVEL_INTERRUPT_BITS) | 11, "");
+#endif
 
 	/* DT_IRQN_BY_IDX */
 #ifndef CONFIG_MULTI_LEVEL_INTERRUPTS
@@ -744,6 +753,41 @@ ZTEST(devicetree_api, test_irq)
 	zassert_true(DT_INST_IRQ_HAS_NAME(0, stat), "");
 	zassert_true(DT_INST_IRQ_HAS_NAME(0, done), "");
 	zassert_false(DT_INST_IRQ_HAS_NAME(0, alpha), "");
+
+#ifdef CONFIG_MULTI_LEVEL_INTERRUPTS
+	/* the following asserts check if interrupt IDs are encoded
+	 * properly when dealing with a node that consumes interrupts
+	 * from L2 aggregators extending different L1 interrupts.
+	 */
+	zassert_equal(DT_IRQN_BY_IDX(TEST_IRQ_EXT, 0),
+		      ((70 + 1) << CONFIG_1ST_LEVEL_INTERRUPT_BITS) | 11, "");
+	zassert_equal(DT_IRQN_BY_IDX(TEST_IRQ_EXT, 2),
+		      ((42 + 1) << CONFIG_1ST_LEVEL_INTERRUPT_BITS) | 12, "");
+#else
+	zassert_equal(DT_IRQN_BY_IDX(TEST_IRQ_EXT, 0), 70, "");
+	zassert_equal(DT_IRQN_BY_IDX(TEST_IRQ_EXT, 2), 42, "");
+#endif /* CONFIG_MULTI_LEVEL_INTERRUPTS */
+}
+
+ZTEST(devicetree_api, test_irq_level)
+{
+	/* DT_IRQ_LEVEL */
+	zassert_equal(DT_IRQ_LEVEL(TEST_TEMP), 0, "");
+	zassert_equal(DT_IRQ_LEVEL(TEST_INTC), 1, "");
+	zassert_equal(DT_IRQ_LEVEL(TEST_SPI), 2, "");
+
+	/* DT_IRQ_LEVEL */
+	#undef DT_DRV_COMPAT
+	#define DT_DRV_COMPAT vnd_adc_temp_sensor
+	zassert_equal(DT_INST_IRQ_LEVEL(0), 0, "");
+
+	#undef DT_DRV_COMPAT
+	#define DT_DRV_COMPAT vnd_intc
+	zassert_equal(DT_INST_IRQ_LEVEL(1), 1, "");
+
+	#undef DT_DRV_COMPAT
+	#define DT_DRV_COMPAT vnd_spi
+	zassert_equal(DT_INST_IRQ_LEVEL(0), 2, "");
 }
 
 struct gpios_struct {
@@ -1082,6 +1126,27 @@ ZTEST(devicetree_api, test_io_channels)
 
 #undef DT_DRV_COMPAT
 #define DT_DRV_COMPAT vnd_adc_temp_sensor
+ZTEST(devicetree_api, test_io_channel_names)
+{
+	struct adc_dt_spec adc_spec;
+
+	/* ADC_DT_SPEC_GET_BY_NAME */
+	adc_spec = (struct adc_dt_spec)ADC_DT_SPEC_GET_BY_NAME(TEST_TEMP, ch1);
+	zassert_equal(adc_spec.channel_id, 10, "");
+
+	adc_spec = (struct adc_dt_spec)ADC_DT_SPEC_GET_BY_NAME(TEST_TEMP, ch2);
+	zassert_equal(adc_spec.channel_id, 20, "");
+
+	/* ADC_DT_SPEC_INST_GET_BY_NAME */
+	adc_spec = (struct adc_dt_spec)ADC_DT_SPEC_INST_GET_BY_NAME(0, ch1);
+	zassert_equal(adc_spec.channel_id, 10, "");
+
+	adc_spec = (struct adc_dt_spec)ADC_DT_SPEC_INST_GET_BY_NAME(0, ch2);
+	zassert_equal(adc_spec.channel_id, 20, "");
+}
+
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT vnd_adc_temp_sensor
 ZTEST(devicetree_api, test_dma)
 {
 	/* DT_DMAS_CTLR_BY_IDX */
@@ -1263,21 +1328,61 @@ ZTEST(devicetree_api, test_pwms)
 #define DT_DRV_COMPAT vnd_can_controller
 ZTEST(devicetree_api, test_can)
 {
+	/* DT_CAN_TRANSCEIVER_MIN_BITRATE */
+	zassert_equal(DT_CAN_TRANSCEIVER_MIN_BITRATE(TEST_CAN_CTRL_0, 0), 10000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MIN_BITRATE(TEST_CAN_CTRL_0, 10000), 10000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MIN_BITRATE(TEST_CAN_CTRL_0, 20000), 20000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MIN_BITRATE(TEST_CAN_CTRL_1, 0), 50000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MIN_BITRATE(TEST_CAN_CTRL_1, 50000), 50000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MIN_BITRATE(TEST_CAN_CTRL_1, 100000), 100000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MIN_BITRATE(TEST_CAN_CTRL_2, 0), 0, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MIN_BITRATE(TEST_CAN_CTRL_2, 10000), 10000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MIN_BITRATE(TEST_CAN_CTRL_2, 20000), 20000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MIN_BITRATE(TEST_CAN_CTRL_3, 0), 0, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MIN_BITRATE(TEST_CAN_CTRL_3, 30000), 30000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MIN_BITRATE(TEST_CAN_CTRL_3, 40000), 40000, "");
+
+	/* DT_INST_CAN_TRANSCEIVER_MIN_BITRATE */
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MIN_BITRATE(0, 0), 10000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MIN_BITRATE(0, 10000), 10000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MIN_BITRATE(0, 20000), 20000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MIN_BITRATE(1, 0), 50000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MIN_BITRATE(1, 50000), 50000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MIN_BITRATE(1, 100000), 100000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MIN_BITRATE(2, 0), 0, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MIN_BITRATE(2, 10000), 10000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MIN_BITRATE(2, 20000), 20000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MIN_BITRATE(3, 0), 0, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MIN_BITRATE(3, 30000), 30000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MIN_BITRATE(3, 40000), 40000, "");
+
 	/* DT_CAN_TRANSCEIVER_MAX_BITRATE */
 	zassert_equal(DT_CAN_TRANSCEIVER_MAX_BITRATE(TEST_CAN_CTRL_0, 1000000), 1000000, "");
 	zassert_equal(DT_CAN_TRANSCEIVER_MAX_BITRATE(TEST_CAN_CTRL_0, 5000000), 5000000, "");
 	zassert_equal(DT_CAN_TRANSCEIVER_MAX_BITRATE(TEST_CAN_CTRL_0, 8000000), 5000000, "");
-	zassert_equal(DT_CAN_TRANSCEIVER_MAX_BITRATE(TEST_CAN_CTRL_1, 1250000), 1250000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MAX_BITRATE(TEST_CAN_CTRL_1, 125000), 125000, "");
 	zassert_equal(DT_CAN_TRANSCEIVER_MAX_BITRATE(TEST_CAN_CTRL_1, 2000000), 2000000, "");
 	zassert_equal(DT_CAN_TRANSCEIVER_MAX_BITRATE(TEST_CAN_CTRL_1, 5000000), 2000000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MAX_BITRATE(TEST_CAN_CTRL_2, 125000), 125000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MAX_BITRATE(TEST_CAN_CTRL_2, 1000000), 1000000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MAX_BITRATE(TEST_CAN_CTRL_2, 5000000), 1000000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MAX_BITRATE(TEST_CAN_CTRL_3, 125000), 125000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MAX_BITRATE(TEST_CAN_CTRL_3, 1000000), 1000000, "");
+	zassert_equal(DT_CAN_TRANSCEIVER_MAX_BITRATE(TEST_CAN_CTRL_3, 5000000), 1000000, "");
 
 	/* DT_INST_CAN_TRANSCEIVER_MAX_BITRATE */
 	zassert_equal(DT_INST_CAN_TRANSCEIVER_MAX_BITRATE(0, 1000000), 1000000, "");
 	zassert_equal(DT_INST_CAN_TRANSCEIVER_MAX_BITRATE(0, 5000000), 5000000, "");
 	zassert_equal(DT_INST_CAN_TRANSCEIVER_MAX_BITRATE(0, 8000000), 5000000, "");
-	zassert_equal(DT_INST_CAN_TRANSCEIVER_MAX_BITRATE(1, 1250000), 1250000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MAX_BITRATE(1, 125000), 125000, "");
 	zassert_equal(DT_INST_CAN_TRANSCEIVER_MAX_BITRATE(1, 2000000), 2000000, "");
 	zassert_equal(DT_INST_CAN_TRANSCEIVER_MAX_BITRATE(1, 5000000), 2000000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MAX_BITRATE(2, 125000), 125000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MAX_BITRATE(2, 1000000), 1000000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MAX_BITRATE(2, 5000000), 1000000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MAX_BITRATE(3, 125000), 125000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MAX_BITRATE(3, 1000000), 1000000, "");
+	zassert_equal(DT_INST_CAN_TRANSCEIVER_MAX_BITRATE(3, 5000000), 1000000, "");
 }
 
 ZTEST(devicetree_api, test_macro_names)
@@ -2619,11 +2724,11 @@ ZTEST(devicetree_api, test_mbox)
 #undef DT_DRV_COMPAT
 #define DT_DRV_COMPAT vnd_adc_temp_sensor
 
-	const struct mbox_channel channel_tx = MBOX_DT_CHANNEL_GET(TEST_TEMP, tx);
-	const struct mbox_channel channel_rx = MBOX_DT_CHANNEL_GET(TEST_TEMP, rx);
+	const struct mbox_dt_spec channel_tx = MBOX_DT_SPEC_GET(TEST_TEMP, tx);
+	const struct mbox_dt_spec channel_rx = MBOX_DT_SPEC_GET(TEST_TEMP, rx);
 
-	zassert_equal(channel_tx.id, 1, "");
-	zassert_equal(channel_rx.id, 2, "");
+	zassert_equal(channel_tx.channel_id, 1, "");
+	zassert_equal(channel_rx.channel_id, 2, "");
 
 	zassert_equal(DT_MBOX_CHANNEL_BY_NAME(TEST_TEMP, tx), 1, "");
 	zassert_equal(DT_MBOX_CHANNEL_BY_NAME(TEST_TEMP, rx), 2, "");
@@ -2636,9 +2741,9 @@ ZTEST(devicetree_api, test_mbox)
 	zassert_equal(DT_MBOX_CHANNEL_BY_NAME(TEST_TEMP, tx), 1, "");
 	zassert_equal(DT_MBOX_CHANNEL_BY_NAME(TEST_TEMP, rx), 2, "");
 
-	const struct mbox_channel channel_zero = MBOX_DT_CHANNEL_GET(TEST_TEMP, zero);
+	const struct mbox_dt_spec channel_zero = MBOX_DT_SPEC_GET(TEST_TEMP, zero);
 
-	zassert_equal(channel_zero.id, 0, "");
+	zassert_equal(channel_zero.channel_id, 0, "");
 
 	zassert_equal(DT_MBOX_CHANNEL_BY_NAME(TEST_TEMP, zero), 0, "");
 
@@ -3147,6 +3252,33 @@ ZTEST(devicetree_api, test_reset)
 
 	/* DT_INST_RESET_ID */
 	zassert_equal(DT_INST_RESET_ID(0), 10, "");
+}
+
+#undef DT_DRV_COMPAT
+#define DT_DRV_COMPAT vnd_interrupt_holder_extended
+ZTEST(devicetree_api, test_interrupt_controller)
+{
+	/* DT_IRQ_INTC_BY_IDX */
+	zassert_true(DT_SAME_NODE(DT_IRQ_INTC_BY_IDX(TEST_IRQ_EXT, 0), TEST_INTC), "");
+	zassert_true(DT_SAME_NODE(DT_IRQ_INTC_BY_IDX(TEST_IRQ_EXT, 1), TEST_GPIO_4), "");
+
+	/* DT_IRQ_INTC_BY_NAME */
+	zassert_true(DT_SAME_NODE(DT_IRQ_INTC_BY_NAME(TEST_IRQ_EXT, int1), TEST_INTC), "");
+	zassert_true(DT_SAME_NODE(DT_IRQ_INTC_BY_NAME(TEST_IRQ_EXT, int2), TEST_GPIO_4), "");
+
+	/* DT_IRQ_INTC */
+	zassert_true(DT_SAME_NODE(DT_IRQ_INTC(TEST_IRQ_EXT), TEST_INTC), "");
+
+	/* DT_INST_IRQ_INTC_BY_IDX */
+	zassert_true(DT_SAME_NODE(DT_INST_IRQ_INTC_BY_IDX(0, 0), TEST_INTC), "");
+	zassert_true(DT_SAME_NODE(DT_INST_IRQ_INTC_BY_IDX(0, 1), TEST_GPIO_4), "");
+
+	/* DT_INST_IRQ_INTC_BY_NAME */
+	zassert_true(DT_SAME_NODE(DT_INST_IRQ_INTC_BY_NAME(0, int1), TEST_INTC), "");
+	zassert_true(DT_SAME_NODE(DT_INST_IRQ_INTC_BY_NAME(0, int2), TEST_GPIO_4), "");
+
+	/* DT_INST_IRQ_INTC */
+	zassert_true(DT_SAME_NODE(DT_INST_IRQ_INTC(0), TEST_INTC), "");
 }
 
 ZTEST_SUITE(devicetree_api, NULL, NULL, NULL, NULL, NULL);

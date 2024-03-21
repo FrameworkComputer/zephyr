@@ -105,8 +105,11 @@ static int console_out(int c)
 	}
 	uart_poll_out(uart_console_dev, c);
 
-	/* As errors cannot be returned, ignore the return value */
-	(void)pm_device_runtime_put(uart_console_dev);
+	/* Use async put to avoid useless device suspension/resumption
+	 * when tranmiting chain of chars.
+	 * As errors cannot be returned, ignore the return value
+	 */
+	(void)pm_device_runtime_put_async(uart_console_dev, K_MSEC(1));
 
 	return c;
 }

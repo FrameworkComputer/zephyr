@@ -1132,7 +1132,7 @@ static void sm_registration_done(void)
 	if (sm_is_registered() &&
 	    (client.trigger_update ||
 	     now >= next_update())) {
-		set_sm_state(ENGINE_UPDATE_REGISTRATION);
+		set_sm_state_delayed(ENGINE_UPDATE_REGISTRATION, DELAY_FOR_ACK);
 	} else if (IS_ENABLED(CONFIG_LWM2M_QUEUE_MODE_ENABLED) &&
 	    (client.engine_state != ENGINE_REGISTRATION_DONE_RX_OFF) &&
 	    (now >= next_rx_off())) {
@@ -1726,7 +1726,12 @@ int lwm2m_rd_client_connection_resume(struct lwm2m_ctx *client_ctx)
 		     IS_ENABLED(CONFIG_LWM2M_RD_CLIENT_LISTEN_AT_IDLE)) ||
 		    !IS_ENABLED(CONFIG_LWM2M_DTLS_SUPPORT)) {
 			client.engine_state = ENGINE_REGISTRATION_DONE;
-			client.trigger_update = true;
+			if (IS_ENABLED(CONFIG_LWM2M_QUEUE_MODE_NO_MSG_BUFFERING)) {
+				/* Force online for a short period */
+				engine_update_tx_time();
+			} else {
+				client.trigger_update = true;
+			}
 		} else {
 			client.engine_state = ENGINE_DO_REGISTRATION;
 		}
@@ -1786,6 +1791,4 @@ static int sys_lwm2m_rd_client_init(void)
 	return lwm2m_rd_client_init();
 }
 
-
-SYS_INIT(sys_lwm2m_rd_client_init, APPLICATION,
-	 CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+LWM2M_ENGINE_INIT(sys_lwm2m_rd_client_init);

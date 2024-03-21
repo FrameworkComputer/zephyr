@@ -36,6 +36,11 @@ enum bt_cap_common_proc_type {
 	BT_CAP_COMMON_PROC_TYPE_START,
 	BT_CAP_COMMON_PROC_TYPE_UPDATE,
 	BT_CAP_COMMON_PROC_TYPE_STOP,
+	BT_CAP_COMMON_PROC_TYPE_VOLUME_CHANGE,
+	BT_CAP_COMMON_PROC_TYPE_VOLUME_OFFSET_CHANGE,
+	BT_CAP_COMMON_PROC_TYPE_VOLUME_MUTE_CHANGE,
+	BT_CAP_COMMON_PROC_TYPE_MICROPHONE_GAIN_CHANGE,
+	BT_CAP_COMMON_PROC_TYPE_MICROPHONE_MUTE_CHANGE,
 };
 
 enum bt_cap_common_subproc_type {
@@ -54,7 +59,7 @@ struct bt_cap_initiator_proc_param {
 		struct {
 			struct bt_conn *conn;
 			struct bt_bap_ep *ep;
-			struct bt_audio_codec_cfg codec_cfg;
+			struct bt_audio_codec_cfg *codec_cfg;
 		} start;
 		struct {
 			/** Codec Specific Capabilities Metadata count */
@@ -65,13 +70,43 @@ struct bt_cap_initiator_proc_param {
 	};
 };
 
+struct bt_cap_commander_proc_param {
+	struct bt_conn *conn;
+	union {
+#if defined(CONFIG_BT_VCP_VOL_CTLR)
+		struct {
+			uint8_t volume;
+		} change_volume;
+		struct {
+			bool mute;
+		} change_mute;
+#endif /* CONFIG_BT_VCP_VOL_CTLR */
+#if defined(CONFIG_BT_VCP_VOL_CTLR_VOCS)
+		struct {
+			int16_t offset;
+			struct bt_vocs *vocs;
+		} change_offset;
+#endif /* CONFIG_BT_VCP_VOL_CTLR_VOCS */
+#if defined(CONFIG_BT_MICP_MIC_CTLR)
+#if defined(CONFIG_BT_MICP_MIC_CTLR_AICS)
+		struct {
+			int8_t gain;
+			struct bt_aics *aics;
+		} change_gain;
+#endif /* CONFIG_BT_MICP_MIC_CTLR_AICS */
+#endif /* CONFIG_BT_MICP_MIC_CTLR */
+	};
+};
+
 struct bt_cap_common_proc_param {
 	union {
 #if defined(CONFIG_BT_CAP_INITIATOR_UNICAST)
 		struct bt_cap_initiator_proc_param
 			initiator[CONFIG_BT_BAP_UNICAST_CLIENT_GROUP_STREAM_COUNT];
-#endif          /* CONFIG_BT_CAP_INITIATOR_UNICAST */
-		/* TODO: Add commander_proc_param struct */
+#endif /* CONFIG_BT_CAP_INITIATOR_UNICAST */
+#if defined(CONFIG_BT_CAP_COMMANDER)
+		struct bt_cap_commander_proc_param commander[CONFIG_BT_MAX_CONN];
+#endif /* CONFIG_BT_CAP_COMMANDER */
 	};
 };
 
@@ -88,7 +123,6 @@ struct bt_cap_common_proc {
 	struct bt_conn *failed_conn;
 	struct bt_cap_common_proc_param proc_param;
 #if defined(CONFIG_BT_CAP_INITIATOR_UNICAST)
-	struct bt_bap_unicast_group *unicast_group;
 	enum bt_cap_common_subproc_type subproc_type;
 #endif /* CONFIG_BT_CAP_INITIATOR_UNICAST */
 };
@@ -106,9 +140,11 @@ void bt_cap_common_clear_active_proc(void);
 void bt_cap_common_start_proc(enum bt_cap_common_proc_type proc_type, size_t proc_cnt);
 void bt_cap_common_set_subproc(enum bt_cap_common_subproc_type subproc_type);
 bool bt_cap_common_subproc_is_type(enum bt_cap_common_subproc_type subproc_type);
+struct bt_conn *bt_cap_common_get_member_conn(enum bt_cap_set_type type,
+					      const union bt_cap_set_member *member);
 bool bt_cap_common_proc_is_active(void);
 bool bt_cap_common_proc_is_aborted(void);
-bool bt_cap_common_proc_all_streams_handled(void);
+bool bt_cap_common_proc_all_handled(void);
 bool bt_cap_common_proc_is_done(void);
 void bt_cap_common_abort_proc(struct bt_conn *conn, int err);
 bool bt_cap_common_conn_in_active_proc(const struct bt_conn *conn);
@@ -117,6 +153,8 @@ void bt_cap_common_disconnected(struct bt_conn *conn, uint8_t reason);
 struct bt_cap_common_client *bt_cap_common_get_client_by_acl(const struct bt_conn *acl);
 struct bt_cap_common_client *
 bt_cap_common_get_client_by_csis(const struct bt_csip_set_coordinator_csis_inst *csis_inst);
+struct bt_cap_common_client *bt_cap_common_get_client(enum bt_cap_set_type type,
+						      const union bt_cap_set_member *member);
 
 typedef void (*bt_cap_common_discover_func_t)(
 	struct bt_conn *conn, int err, const struct bt_csip_set_coordinator_csis_inst *csis_inst);

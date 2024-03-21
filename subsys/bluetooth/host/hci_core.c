@@ -51,8 +51,8 @@
 #include "crypto.h"
 #include "settings.h"
 
-#if defined(CONFIG_BT_BREDR)
-#include "br.h"
+#if defined(CONFIG_BT_CLASSIC)
+#include "classic/br.h"
 #endif
 
 #if defined(CONFIG_BT_DF)
@@ -130,7 +130,7 @@ void bt_hci_cmd_state_set_init(struct net_buf *buf,
  */
 #define CMD_BUF_SIZE MAX(BT_BUF_EVT_RX_SIZE, BT_BUF_CMD_TX_SIZE)
 NET_BUF_POOL_FIXED_DEFINE(hci_cmd_pool, CONFIG_BT_BUF_CMD_TX_COUNT,
-			  CMD_BUF_SIZE, 8, NULL);
+			  CMD_BUF_SIZE, sizeof(struct bt_buf_data), NULL);
 
 struct event_handler {
 	uint8_t event;
@@ -340,6 +340,8 @@ int bt_hci_cmd_send_sync(uint16_t opcode, struct net_buf *buf,
 			return -ECONNREFUSED;
 		case BT_HCI_ERR_INSUFFICIENT_RESOURCES:
 			return -ENOMEM;
+		case BT_HCI_ERR_INVALID_PARAM:
+			return -EINVAL;
 		default:
 			return -EIO;
 		}
@@ -419,6 +421,22 @@ uint8_t bt_get_phy(uint8_t hci_phy)
 		return BT_GAP_LE_PHY_CODED;
 	default:
 		return 0;
+	}
+}
+
+int bt_get_df_cte_type(uint8_t hci_cte_type)
+{
+	switch (hci_cte_type) {
+	case BT_HCI_LE_AOA_CTE:
+		return BT_DF_CTE_TYPE_AOA;
+	case BT_HCI_LE_AOD_CTE_1US:
+		return BT_DF_CTE_TYPE_AOD_1US;
+	case BT_HCI_LE_AOD_CTE_2US:
+		return BT_DF_CTE_TYPE_AOD_2US;
+	case BT_HCI_LE_NO_CTE:
+		return BT_DF_CTE_TYPE_NONE;
+	default:
+		return BT_DF_CTE_TYPE_NONE;
 	}
 }
 
@@ -836,6 +854,8 @@ static void hci_disconn_complete_prio(struct net_buf *buf)
 		return;
 	}
 
+	conn->err = evt->reason;
+
 	bt_conn_set_state(conn, BT_CONN_DISCONNECT_COMPLETE);
 	bt_conn_unref(conn);
 }
@@ -858,12 +878,10 @@ static void hci_disconn_complete(struct net_buf *buf)
 		return;
 	}
 
-	conn->err = evt->reason;
-
 	bt_conn_set_state(conn, BT_CONN_DISCONNECTED);
 
 	if (conn->type != BT_CONN_TYPE_LE) {
-#if defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_CLASSIC)
 		if (conn->type == BT_CONN_TYPE_SCO) {
 			bt_sco_cleanup(conn);
 			return;
@@ -1917,7 +1935,7 @@ static void unpair(uint8_t id, const bt_addr_le_t *addr)
 		bt_conn_unref(conn);
 	}
 
-	if (IS_ENABLED(CONFIG_BT_BREDR)) {
+	if (IS_ENABLED(CONFIG_BT_CLASSIC)) {
 		/* LE Public may indicate BR/EDR as well */
 		if (addr->type == BT_ADDR_LE_PUBLIC) {
 			bt_keys_link_key_clear_addr(&addr->a);
@@ -1936,7 +1954,7 @@ static void unpair(uint8_t id, const bt_addr_le_t *addr)
 
 	bt_gatt_clear(id, addr);
 
-#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_CLASSIC)
 	struct bt_conn_auth_info_cb *listener, *next;
 
 	SYS_SLIST_FOR_EACH_CONTAINER_SAFE(&bt_auth_info_cbs, listener,
@@ -1945,7 +1963,7 @@ static void unpair(uint8_t id, const bt_addr_le_t *addr)
 			listener->bond_deleted(id, addr);
 		}
 	}
-#endif /* defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR) */
+#endif /* defined(CONFIG_BT_SMP) || defined(CONFIG_BT_CLASSIC) */
 }
 
 static void unpair_remote(const struct bt_bond_info *info, void *data)
@@ -1981,7 +1999,7 @@ int bt_unpair(uint8_t id, const bt_addr_le_t *addr)
 
 #endif /* CONFIG_BT_CONN */
 
-#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_CLASSIC)
 enum bt_security_err bt_security_err_get(uint8_t hci_err)
 {
 	switch (hci_err) {
@@ -2001,7 +2019,7 @@ enum bt_security_err bt_security_err_get(uint8_t hci_err)
 		return BT_SECURITY_ERR_UNSPECIFIED;
 	}
 }
-#endif /* defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR) */
+#endif /* defined(CONFIG_BT_SMP) || defined(CONFIG_BT_CLASSIC) */
 
 #if defined(CONFIG_BT_SMP)
 static bool update_sec_level(struct bt_conn *conn)
@@ -2021,7 +2039,7 @@ static bool update_sec_level(struct bt_conn *conn)
 }
 #endif /* CONFIG_BT_SMP */
 
-#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_CLASSIC)
 static void hci_encrypt_change(struct net_buf *buf)
 {
 	struct bt_hci_evt_encrypt_change *evt = (void *)buf->data;
@@ -2065,7 +2083,7 @@ static void hci_encrypt_change(struct net_buf *buf)
 		}
 	}
 #endif /* CONFIG_BT_SMP */
-#if defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_CLASSIC)
 	if (conn->type == BT_CONN_TYPE_BR) {
 		if (!bt_br_update_sec_level(conn)) {
 			bt_conn_unref(conn);
@@ -2083,7 +2101,7 @@ static void hci_encrypt_change(struct net_buf *buf)
 			}
 		}
 	}
-#endif /* CONFIG_BT_BREDR */
+#endif /* CONFIG_BT_CLASSIC */
 
 	bt_conn_security_changed(conn, status, bt_security_err_get(status));
 
@@ -2134,14 +2152,14 @@ static void hci_encrypt_key_refresh_complete(struct net_buf *buf)
 		}
 	}
 #endif /* CONFIG_BT_SMP */
-#if defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_CLASSIC)
 	if (conn->type == BT_CONN_TYPE_BR) {
 		if (!bt_br_update_sec_level(conn)) {
 			bt_conn_unref(conn);
 			return;
 		}
 	}
-#endif /* CONFIG_BT_BREDR */
+#endif /* CONFIG_BT_CLASSIC */
 
 	bt_conn_security_changed(conn, status, bt_security_err_get(status));
 	if (status) {
@@ -2151,7 +2169,7 @@ static void hci_encrypt_key_refresh_complete(struct net_buf *buf)
 
 	bt_conn_unref(conn);
 }
-#endif /* CONFIG_BT_SMP || CONFIG_BT_BREDR */
+#endif /* CONFIG_BT_SMP || CONFIG_BT_CLASSIC */
 
 #if defined(CONFIG_BT_REMOTE_VERSION)
 static void bt_hci_evt_read_remote_version_complete(struct net_buf *buf)
@@ -2274,33 +2292,52 @@ static void hci_reset_complete(struct net_buf *buf)
 		bt_scan_reset();
 	}
 
-#if defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_CLASSIC)
 	bt_br_discovery_reset();
-#endif /* CONFIG_BT_BREDR */
+#endif /* CONFIG_BT_CLASSIC */
 
 	flags = (atomic_get(bt_dev.flags) & BT_DEV_PERSISTENT_FLAGS);
 	atomic_set(bt_dev.flags, flags);
 }
 
-static void hci_cmd_done(uint16_t opcode, uint8_t status, struct net_buf *buf)
+static void hci_cmd_done(uint16_t opcode, uint8_t status, struct net_buf *evt_buf)
 {
-	LOG_DBG("opcode 0x%04x status 0x%02x buf %p", opcode, status, buf);
+	/* Original command buffer. */
+	struct net_buf *buf = NULL;
 
-	if (net_buf_pool_get(buf->pool_id) != &hci_cmd_pool) {
-		LOG_WRN("opcode 0x%04x pool id %u pool %p != &hci_cmd_pool %p", opcode,
-			buf->pool_id, net_buf_pool_get(buf->pool_id), &hci_cmd_pool);
-		return;
+	LOG_DBG("opcode 0x%04x status 0x%02x buf %p", opcode, status, evt_buf);
+
+	/* Unsolicited cmd complete. This does not complete a command.
+	 * The controller can send these for effect of the `ncmd` field.
+	 */
+	if (opcode == 0) {
+		goto exit;
+	}
+
+	/* Take the original command buffer reference. */
+	buf = atomic_ptr_clear((atomic_ptr_t *)&bt_dev.sent_cmd);
+
+	if (!buf) {
+		LOG_ERR("No command sent for cmd complete 0x%04x", opcode);
+		goto exit;
 	}
 
 	if (cmd(buf)->opcode != opcode) {
-		LOG_WRN("OpCode 0x%04x completed instead of expected 0x%04x", opcode,
+		LOG_ERR("OpCode 0x%04x completed instead of expected 0x%04x", opcode,
 			cmd(buf)->opcode);
-		return;
+		buf = atomic_ptr_set((atomic_ptr_t *)&bt_dev.sent_cmd, buf);
+		__ASSERT_NO_MSG(!buf);
+		goto exit;
 	}
 
-	if (bt_dev.sent_cmd) {
-		net_buf_unref(bt_dev.sent_cmd);
-		bt_dev.sent_cmd = NULL;
+	/* Response data is to be delivered in the original command
+	 * buffer.
+	 */
+	if (evt_buf != buf) {
+		net_buf_reset(buf);
+		bt_buf_set_type(buf, BT_BUF_EVT);
+		net_buf_reserve(buf, BT_BUF_RESERVE);
+		net_buf_add_mem(buf, evt_buf->data, evt_buf->len);
 	}
 
 	if (cmd(buf)->state && !status) {
@@ -2313,6 +2350,11 @@ static void hci_cmd_done(uint16_t opcode, uint8_t status, struct net_buf *buf)
 	if (cmd(buf)->sync) {
 		cmd(buf)->status = status;
 		k_sem_give(cmd(buf)->sync);
+	}
+
+exit:
+	if (buf) {
+		net_buf_unref(buf);
 	}
 }
 
@@ -2616,7 +2658,7 @@ static const struct event_handler normal_events[] = {
 		      sizeof(struct bt_hci_evt_vs)),
 	EVENT_HANDLER(BT_HCI_EVT_LE_META_EVENT, hci_le_meta_event,
 		      sizeof(struct bt_hci_evt_le_meta_event)),
-#if defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_CLASSIC)
 	EVENT_HANDLER(BT_HCI_EVT_CONN_REQUEST, bt_hci_conn_req,
 		      sizeof(struct bt_hci_evt_conn_request)),
 	EVENT_HANDLER(BT_HCI_EVT_CONN_COMPLETE, bt_hci_conn_complete,
@@ -2663,18 +2705,18 @@ static const struct event_handler normal_events[] = {
 		      sizeof(struct bt_hci_evt_role_change)),
 	EVENT_HANDLER(BT_HCI_EVT_SYNC_CONN_COMPLETE, bt_hci_synchronous_conn_complete,
 		      sizeof(struct bt_hci_evt_sync_conn_complete)),
-#endif /* CONFIG_BT_BREDR */
+#endif /* CONFIG_BT_CLASSIC */
 #if defined(CONFIG_BT_CONN)
 	EVENT_HANDLER(BT_HCI_EVT_DISCONN_COMPLETE, hci_disconn_complete,
 		      sizeof(struct bt_hci_evt_disconn_complete)),
 #endif /* CONFIG_BT_CONN */
-#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_CLASSIC)
 	EVENT_HANDLER(BT_HCI_EVT_ENCRYPT_CHANGE, hci_encrypt_change,
 		      sizeof(struct bt_hci_evt_encrypt_change)),
 	EVENT_HANDLER(BT_HCI_EVT_ENCRYPT_KEY_REFRESH_COMPLETE,
 		      hci_encrypt_key_refresh_complete,
 		      sizeof(struct bt_hci_evt_encrypt_key_refresh_complete)),
-#endif /* CONFIG_BT_SMP || CONFIG_BT_BREDR */
+#endif /* CONFIG_BT_SMP || CONFIG_BT_CLASSIC */
 #if defined(CONFIG_BT_REMOTE_VERSION)
 	EVENT_HANDLER(BT_HCI_EVT_REMOTE_VERSION_INFO,
 		      bt_hci_evt_read_remote_version_complete,
@@ -2856,7 +2898,7 @@ static void read_le_features_complete(struct net_buf *buf)
 }
 
 #if defined(CONFIG_BT_CONN)
-#if !defined(CONFIG_BT_BREDR)
+#if !defined(CONFIG_BT_CLASSIC)
 static void read_buffer_size_complete(struct net_buf *buf)
 {
 	struct bt_hci_rp_read_buffer_size *rp = (void *)buf->data;
@@ -2876,7 +2918,7 @@ static void read_buffer_size_complete(struct net_buf *buf)
 
 	k_sem_init(&bt_dev.le.acl_pkts, pkts, pkts);
 }
-#endif /* !defined(CONFIG_BT_BREDR) */
+#endif /* !defined(CONFIG_BT_CLASSIC) */
 #endif /* CONFIG_BT_CONN */
 
 static void le_read_buffer_size_complete(struct net_buf *buf)
@@ -3223,11 +3265,15 @@ static int le_init_iso(void)
 		read_buffer_size_v2_complete(rsp);
 
 		net_buf_unref(rsp);
-	} else if (IS_ENABLED(CONFIG_BT_CONN)) {
-		LOG_WRN("Read Buffer Size V2 command is not supported."
-			"No ISO buffers will be available");
+	} else if (IS_ENABLED(CONFIG_BT_CONN_TX)) {
+		if (IS_ENABLED(CONFIG_BT_ISO_TX)) {
+			LOG_WRN("Read Buffer Size V2 command is not supported. "
+				"No ISO TX buffers will be available");
+		}
 
-		/* Read LE Buffer Size */
+		/* Read LE Buffer Size in the case that we support ACL without TX ISO (e.g. if we
+		 * only support ISO sync receiver).
+		 */
 		err = bt_hci_cmd_send_sync(BT_HCI_OP_LE_READ_BUFFER_SIZE,
 					   NULL, &rsp);
 		if (err) {
@@ -3387,7 +3433,7 @@ static int le_init(void)
 	return  le_set_event_mask();
 }
 
-#if !defined(CONFIG_BT_BREDR)
+#if !defined(CONFIG_BT_CLASSIC)
 static int bt_br_init(void)
 {
 #if defined(CONFIG_BT_CONN)
@@ -3410,7 +3456,7 @@ static int bt_br_init(void)
 
 	return 0;
 }
-#endif /* !defined(CONFIG_BT_BREDR) */
+#endif /* !defined(CONFIG_BT_CLASSIC) */
 
 static int set_event_mask(void)
 {
@@ -3425,7 +3471,7 @@ static int set_event_mask(void)
 
 	ev = net_buf_add(buf, sizeof(*ev));
 
-	if (IS_ENABLED(CONFIG_BT_BREDR)) {
+	if (IS_ENABLED(CONFIG_BT_CLASSIC)) {
 		/* Since we require LE support, we can count on a
 		 * Bluetooth 4.0 feature set
 		 */
@@ -3542,7 +3588,7 @@ static const char *vs_hw_platform(uint16_t platform)
 static const char *vs_hw_variant(uint16_t platform, uint16_t variant)
 {
 	static const char * const nordic_str[] = {
-		"reserved", "nRF51x", "nRF52x", "nRF53x"
+		"reserved", "nRF51x", "nRF52x", "nRF53x", "nRF54Hx", "nRF54Lx"
 	};
 
 	if (platform != BT_HCI_VS_HW_PLAT_NORDIC) {
@@ -3702,7 +3748,7 @@ static int hci_init(void)
 		if (err) {
 			return err;
 		}
-	} else if (IS_ENABLED(CONFIG_BT_BREDR)) {
+	} else if (IS_ENABLED(CONFIG_BT_CLASSIC)) {
 		LOG_ERR("Non-BR/EDR controller detected");
 		return -EIO;
 	}
@@ -3855,6 +3901,7 @@ int bt_recv(struct net_buf *buf)
 	}
 }
 
+#if defined(CONFIG_BT_RECV_BLOCKING)
 int bt_recv_prio(struct net_buf *buf)
 {
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
@@ -3865,6 +3912,7 @@ int bt_recv_prio(struct net_buf *buf)
 
 	return 0;
 }
+#endif /* CONFIG_BT_RECV_BLOCKING */
 
 int bt_hci_driver_register(const struct bt_hci_driver *drv)
 {

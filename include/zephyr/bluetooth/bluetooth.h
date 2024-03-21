@@ -34,6 +34,8 @@ extern "C" {
 /**
  * @brief Generic Access Profile (GAP)
  * @defgroup bt_gap Generic Access Profile (GAP)
+ * @since 1.0
+ * @version 1.0.0
  * @ingroup bluetooth
  * @{
  */
@@ -155,6 +157,10 @@ struct bt_le_ext_adv_cb {
 	 * This callback notifies the application that the RPA validity of
 	 * the advertising set has expired. The user can use this callback
 	 * to synchronize the advertising payload update with the RPA rotation.
+	 *
+	 * If rpa sharing is enabled and rpa expired cb of any adv-sets belonging
+	 * to same adv id returns false, then adv-sets will continue with old rpa
+	 * through out the rpa rotations.
 	 *
 	 * @param adv  The advertising set object.
 	 *
@@ -628,6 +634,8 @@ enum {
 	 *
 	 * @note Enabling this option requires extended advertising support in
 	 *       the peer devices scanning for advertisement packets.
+	 *
+	 * @note This cannot be used with bt_le_adv_start().
 	 */
 	BT_LE_ADV_OPT_EXT_ADV = BIT(10),
 
@@ -1054,6 +1062,9 @@ struct bt_le_per_adv_param {
  * will be directed to the peer. In this case advertisement data and scan
  * response data parameters are ignored. If the mode is high duty cycle
  * the timeout will be @ref BT_GAP_ADV_HIGH_DUTY_CYCLE_MAX_TIMEOUT.
+ *
+ * This function cannot be used with @ref BT_LE_ADV_OPT_EXT_ADV in the @p param.options.
+ * For extended advertising, the bt_le_ext_adv_* functions must be used.
  *
  * @param param Advertising parameters.
  * @param ad Data to be used in advertisement packets.
@@ -2121,6 +2132,18 @@ struct bt_le_scan_cb {
 					   BT_GAP_SCAN_FAST_WINDOW)
 
 /**
+ * @brief Helper macro to enable active scanning to discover new devices with window == interval.
+ *
+ * Continuous scanning should be used to maximize the chances of receiving advertising packets.
+ */
+#define BT_LE_SCAN_ACTIVE_CONTINUOUS BT_LE_SCAN_PARAM(BT_LE_SCAN_TYPE_ACTIVE, \
+						      BT_LE_SCAN_OPT_FILTER_DUPLICATE, \
+						      BT_GAP_SCAN_FAST_INTERVAL_MIN, \
+						      BT_GAP_SCAN_FAST_WINDOW)
+BUILD_ASSERT(BT_GAP_SCAN_FAST_WINDOW == BT_GAP_SCAN_FAST_INTERVAL_MIN,
+	     "Continuous scanning is requested by setting window and interval equal.");
+
+/**
  * @brief Helper macro to enable passive scanning to discover new devices.
  *
  * This macro should be used if information required for device identification
@@ -2130,6 +2153,19 @@ struct bt_le_scan_cb {
 					    BT_LE_SCAN_OPT_FILTER_DUPLICATE, \
 					    BT_GAP_SCAN_FAST_INTERVAL, \
 					    BT_GAP_SCAN_FAST_WINDOW)
+
+/**
+ * @brief Helper macro to enable passive scanning to discover new devices with window==interval.
+ *
+ * This macro should be used if information required for device identification
+ * (e.g., UUID) are known to be placed in Advertising Data.
+ */
+#define BT_LE_SCAN_PASSIVE_CONTINUOUS BT_LE_SCAN_PARAM(BT_LE_SCAN_TYPE_PASSIVE, \
+						       BT_LE_SCAN_OPT_FILTER_DUPLICATE, \
+						       BT_GAP_SCAN_FAST_INTERVAL_MIN, \
+						       BT_GAP_SCAN_FAST_WINDOW)
+BUILD_ASSERT(BT_GAP_SCAN_FAST_WINDOW == BT_GAP_SCAN_FAST_INTERVAL_MIN,
+	     "Continuous scanning is requested by setting window and interval equal.");
 
 /**
  * @brief Helper macro to enable active scanning to discover new devices.

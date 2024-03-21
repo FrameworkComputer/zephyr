@@ -15,10 +15,14 @@
 /**
  * @brief SMBus Interface
  * @defgroup smbus_interface SMBus Interface
+ * @since 3.4
+ * @version 0.1.0
  * @ingroup io_interfaces
  * @{
  */
 
+#include <errno.h>
+#include <zephyr/sys/slist.h>
 #include <zephyr/types.h>
 #include <zephyr/device.h>
 

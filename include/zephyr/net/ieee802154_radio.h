@@ -29,6 +29,8 @@ extern "C" {
 
 /**
  * @defgroup ieee802154_driver IEEE 802.15.4 Drivers
+ * @since 1.0
+ * @version 0.8.0
  * @ingroup ieee802154
  *
  * @brief IEEE 802.15.4 driver API
@@ -592,11 +594,16 @@ struct ieee802154_filter {
  * IEEE802154_CONFIG_MAC_KEYS.
  */
 struct ieee802154_key {
+	/** Key material */
 	uint8_t *key_value;
+	/** Initial value of frame counter associated with the key, see section 9.4.3 */
 	uint32_t key_frame_counter;
+	/** Indicates if per-key frame counter should be used, see section 9.4.3 */
 	bool frame_counter_per_key;
+	/** Key Identifier Mode, see section 9.4.2.3, Table 9-7 */
 	uint8_t key_id_mode;
-	uint8_t key_index;
+	/** Key Identifier, see section 9.4.4 */
+	uint8_t *key_id;
 };
 
 /** IEEE 802.15.4 Transmission mode. */
@@ -1236,6 +1243,15 @@ struct ieee802154_config {
 			 * in CPU byte order
 			 */
 			uint16_t short_addr;
+
+			/**
+			 * Flag for purging enh ACK header IEs.
+			 * When flag is set to true, driver should remove all existing
+			 * header IEs, and all other entries in config should be ignored.
+			 * This means that purging current header IEs and
+			 * configuring a new one in the same call is not allowed.
+			 */
+			bool purge_ie;
 		} ack_ie;
 	};
 };

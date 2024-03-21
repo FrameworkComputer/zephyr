@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2022-2023 Nordic Semiconductor ASA
+ * Copyright (c) 2024 Demant A/S
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -12,12 +13,23 @@
 #include <zephyr/bluetooth/audio/bap.h>
 #include <zephyr/bluetooth/audio/pacs.h>
 #include <zephyr/sys/byteorder.h>
+#if defined(CONFIG_LIBLC3)
+#include "lc3.h"
+#endif /* defined(CONFIG_LIBLC3) */
+#if defined(CONFIG_USB_DEVICE_AUDIO)
+#include <zephyr/usb/usb_device.h>
+#include <zephyr/usb/class/usb_audio.h>
+#include <zephyr/sys/ring_buffer.h>
+#endif /* defined(CONFIG_USB_DEVICE_AUDIO) */
+
 
 BUILD_ASSERT(IS_ENABLED(CONFIG_SCAN_SELF) || IS_ENABLED(CONFIG_SCAN_OFFLOAD),
 	     "Either SCAN_SELF or SCAN_OFFLOAD must be enabled");
 
-#define SEM_TIMEOUT K_SECONDS(10)
+#define SEM_TIMEOUT                 K_SECONDS(60)
 #define BROADCAST_ASSISTANT_TIMEOUT K_SECONDS(120) /* 2 minutes */
+
+#define LOG_INTERVAL 1000U
 
 #if defined(CONFIG_SCAN_SELF)
 #define ADV_TIMEOUT K_SECONDS(CONFIG_SCAN_DELAY)
@@ -25,10 +37,32 @@ BUILD_ASSERT(IS_ENABLED(CONFIG_SCAN_SELF) || IS_ENABLED(CONFIG_SCAN_OFFLOAD),
 #define ADV_TIMEOUT K_FOREVER
 #endif /* CONFIG_SCAN_SELF */
 
-#define INVALID_BROADCAST_ID      (BT_AUDIO_BROADCAST_ID_MAX + 1)
-#define SYNC_RETRY_COUNT          6 /* similar to retries for connections */
-#define PA_SYNC_SKIP              5
-#define NAME_LEN                  sizeof(CONFIG_TARGET_BROADCAST_NAME) + 1
+#define INVALID_BROADCAST_ID        (BT_AUDIO_BROADCAST_ID_MAX + 1)
+#define SYNC_RETRY_COUNT            6 /* similar to retries for connections */
+#define PA_SYNC_SKIP                5
+#define NAME_LEN                    sizeof(CONFIG_TARGET_BROADCAST_NAME) + 1
+#define BROADCAST_DATA_ELEMENT_SIZE sizeof(int16_t)
+
+#if defined(CONFIG_LIBLC3)
+#define LC3_MAX_SAMPLE_RATE        48000U
+#define LC3_MAX_FRAME_DURATION_US  10000U
+#define LC3_MAX_NUM_SAMPLES_MONO   ((LC3_MAX_FRAME_DURATION_US * LC3_MAX_SAMPLE_RATE)              \
+				    / USEC_PER_SEC)
+#define LC3_MAX_NUM_SAMPLES_STEREO (LC3_MAX_NUM_SAMPLES_MONO * 2)
+
+#define LC3_ENCODER_STACK_SIZE  4096
+#define LC3_ENCODER_PRIORITY    5
+#endif /* defined(CONFIG_LIBLC3) */
+
+#if defined(CONFIG_USB_DEVICE_AUDIO)
+#define USB_ENQUEUE_COUNT            10U
+#define USB_SAMPLE_RATE	             48000U
+#define USB_FRAME_DURATION_US        1000U
+#define USB_MONO_SAMPLE_SIZE                                                                       \
+	((USB_FRAME_DURATION_US * USB_SAMPLE_RATE * BROADCAST_DATA_ELEMENT_SIZE) / USEC_PER_SEC)
+#define USB_STEREO_SAMPLE_SIZE       (USB_MONO_SAMPLE_SIZE * 2)
+#define USB_RING_BUF_SIZE            (5 * LC3_MAX_NUM_SAMPLES_STEREO) /* 5 SDUs*/
+#endif /* defined(CONFIG_USB_DEVICE_AUDIO) */
 
 static K_SEM_DEFINE(sem_connected, 0U, 1U);
 static K_SEM_DEFINE(sem_disconnected, 0U, 1U);
@@ -59,17 +93,27 @@ static struct broadcast_sink_stream {
 #if defined(CONFIG_LIBLC3)
 	struct net_buf *in_buf;
 	struct k_work_delayable lc3_decode_work;
-/* Internal lock for protecting net_buf from multiple access */
+
+	/* LC3 config values */
+	enum bt_audio_location chan_allocation;
+	uint16_t lc3_octets_per_frame;
+	uint8_t lc3_frames_blocks_per_sdu;
+
+	/* Internal lock for protecting net_buf from multiple access */
 	struct k_mutex lc3_decoder_mutex;
+	lc3_decoder_t lc3_decoder;
+	lc3_decoder_mem_48k_t lc3_decoder_mem;
 #endif /* defined(CONFIG_LIBLC3) */
 } streams[CONFIG_BT_BAP_BROADCAST_SNK_STREAM_COUNT];
+
 static struct bt_bap_stream *streams_p[ARRAY_SIZE(streams)];
 static struct bt_conn *broadcast_assistant_conn;
 static struct bt_le_ext_adv *ext_adv;
 
 static const struct bt_audio_codec_cap codec_cap = BT_AUDIO_CODEC_CAP_LC3(
-	BT_AUDIO_CODEC_LC3_FREQ_16KHZ | BT_AUDIO_CODEC_LC3_FREQ_24KHZ,
-	BT_AUDIO_CODEC_LC3_DURATION_10, BT_AUDIO_CODEC_LC3_CHAN_COUNT_SUPPORT(1), 40u, 60u, 1u,
+	BT_AUDIO_CODEC_CAP_FREQ_16KHZ | BT_AUDIO_CODEC_CAP_FREQ_24KHZ,
+	BT_AUDIO_CODEC_CAP_DURATION_10, BT_AUDIO_CODEC_CAP_CHAN_COUNT_SUPPORT(1), 40u, 60u,
+	CONFIG_MAX_CODEC_FRAMES_PER_SDU,
 	(BT_AUDIO_CONTEXT_TYPE_CONVERSATIONAL | BT_AUDIO_CONTEXT_TYPE_MEDIA));
 
 /* Create a mask for the maximum BIS we can sync to using the number of streams
@@ -83,28 +127,218 @@ static uint8_t sink_broadcast_code[BT_AUDIO_BROADCAST_CODE_SIZE];
 
 uint64_t total_rx_iso_packet_count; /* This value is exposed to test code */
 
+static int stop_adv(void);
+
+#if defined(CONFIG_USB_DEVICE_AUDIO)
+RING_BUF_DECLARE(usb_ring_buf, USB_RING_BUF_SIZE);
+NET_BUF_POOL_DEFINE(usb_tx_buf_pool, USB_ENQUEUE_COUNT, USB_STEREO_SAMPLE_SIZE, 0, net_buf_destroy);
+
+static void add_to_usb_ring_buf(const int16_t audio_buf[LC3_MAX_NUM_SAMPLES_STEREO]);
+#endif /* defined(CONFIG_USB_DEVICE_AUDIO) */
+
 #if defined(CONFIG_LIBLC3)
+static K_SEM_DEFINE(lc3_decoder_sem, 0, 1);
 
-#include "lc3.h"
+static void do_lc3_decode(lc3_decoder_t decoder, const void *in_data, uint8_t octets_per_frame,
+			  int16_t out_data[LC3_MAX_NUM_SAMPLES_MONO]);
+static void lc3_decoder_thread(void *arg1, void *arg2, void *arg3);
+K_THREAD_DEFINE(decoder_tid, LC3_ENCODER_STACK_SIZE, lc3_decoder_thread,
+		NULL, NULL, NULL, LC3_ENCODER_PRIORITY, 0, -1);
 
-#define MAX_SAMPLE_RATE       16000
-#define MAX_FRAME_DURATION_US 10000
-#define MAX_NUM_SAMPLES       ((MAX_FRAME_DURATION_US * MAX_SAMPLE_RATE) / USEC_PER_SEC)
-
-static int16_t audio_buf[MAX_NUM_SAMPLES];
-static lc3_decoder_t lc3_decoder;
-static lc3_decoder_mem_16k_t lc3_decoder_mem;
-static int frames_per_sdu;
-
-static int lc3_enable(const struct bt_audio_codec_cfg *codec_cfg)
+static size_t get_chan_cnt(enum bt_audio_location chan_allocation)
 {
-	int ret;
-	int freq_hz;
+	size_t cnt = 0U;
+
+	if (chan_allocation == BT_AUDIO_LOCATION_MONO_AUDIO) {
+		return 1;
+	}
+
+	while (chan_allocation != 0) {
+		cnt += chan_allocation & 1U;
+		chan_allocation >>= 1;
+	}
+
+	return cnt;
+}
+
+/* Consumer thread of the decoded stream data */
+static void lc3_decoder_thread(void *arg1, void *arg2, void *arg3)
+{
+	while (true) {
+#if defined(CONFIG_USB_DEVICE_AUDIO)
+		static int16_t right_frames[CONFIG_MAX_CODEC_FRAMES_PER_SDU]
+					   [LC3_MAX_NUM_SAMPLES_MONO];
+		static int16_t left_frames[CONFIG_MAX_CODEC_FRAMES_PER_SDU]
+					  [LC3_MAX_NUM_SAMPLES_MONO];
+		size_t right_frames_cnt = 0;
+		size_t left_frames_cnt = 0;
+
+		memset(right_frames, 0, sizeof(right_frames));
+		memset(left_frames, 0, sizeof(left_frames));
+#else
+		static int16_t lc3_audio_buf[LC3_MAX_NUM_SAMPLES_MONO];
+#endif /* CONFIG_USB_DEVICE_AUDIO */
+
+		k_sem_take(&lc3_decoder_sem, K_FOREVER);
+
+		for (size_t i = 0; i < ARRAY_SIZE(streams); i++) {
+			struct broadcast_sink_stream *stream = &streams[i];
+			const uint8_t frames_blocks_per_sdu = stream->lc3_frames_blocks_per_sdu;
+			const uint16_t octets_per_frame = stream->lc3_octets_per_frame;
+			uint16_t frames_per_block;
+			struct net_buf *buf;
+
+			k_mutex_lock(&stream->lc3_decoder_mutex, K_FOREVER);
+
+			if (stream->in_buf == NULL) {
+				k_mutex_unlock(&stream->lc3_decoder_mutex);
+
+				continue;
+			}
+
+			buf = net_buf_ref(stream->in_buf);
+			net_buf_unref(stream->in_buf);
+			stream->in_buf = NULL;
+			k_mutex_unlock(&stream->lc3_decoder_mutex);
+
+			frames_per_block = get_chan_cnt(stream->chan_allocation);
+			if (buf->len !=
+			    (frames_per_block * octets_per_frame * frames_blocks_per_sdu)) {
+				printk("Expected %u frame blocks with %u frames of size %u, but "
+				       "length is %u\n",
+				       frames_blocks_per_sdu, frames_per_block, octets_per_frame,
+				       buf->len);
+
+				net_buf_unref(buf);
+
+				continue;
+			}
+
+#if defined(CONFIG_USB_DEVICE_AUDIO)
+			const bool has_left =
+				(stream->chan_allocation & BT_AUDIO_LOCATION_FRONT_LEFT) != 0;
+			const bool has_right =
+				(stream->chan_allocation & BT_AUDIO_LOCATION_FRONT_RIGHT) != 0;
+			const bool is_mono =
+				stream->chan_allocation == BT_AUDIO_LOCATION_MONO_AUDIO;
+
+			/* Split the SDU into frames*/
+			for (uint8_t i = 0U; i < frames_blocks_per_sdu; i++) {
+				for (uint16_t j = 0U; j < frames_per_block; j++) {
+					const bool is_left = j == 0 && has_left;
+					const bool is_right =
+						has_right && (j == 0 || (j == 1 && has_left));
+					const void *data = net_buf_pull_mem(buf, octets_per_frame);
+					int16_t *out_frame;
+
+					if (is_left) {
+						out_frame = left_frames[left_frames_cnt++];
+					} else if (is_right) {
+						out_frame = right_frames[right_frames_cnt++];
+					} else if (is_mono) {
+						/* Use left as mono*/
+						out_frame = left_frames[left_frames_cnt++];
+					} else {
+						/* unused channel */
+						break;
+					}
+
+					do_lc3_decode(stream->lc3_decoder, data, octets_per_frame,
+						      out_frame);
+				}
+			}
+#else
+			/* Dummy behavior: Decode and discard data */
+			for (uint8_t i = 0U; i < frames_blocks_per_sdu; i++) {
+				for (uint16_t j = 0U; j < frames_per_block; j++) {
+					const void *data = net_buf_pull_mem(buf, octets_per_frame);
+
+					do_lc3_decode(stream->lc3_decoder, data, octets_per_frame,
+						      lc3_audio_buf);
+				}
+			}
+#endif /* CONFIG_USB_DEVICE_AUDIO */
+
+			net_buf_unref(buf);
+		}
+
+#if defined(CONFIG_USB_DEVICE_AUDIO)
+		const bool is_left_only = right_frames_cnt == 0U;
+		const bool is_right_only = left_frames_cnt == 0U;
+
+		if (!is_left_only && !is_right_only && left_frames_cnt != right_frames_cnt) {
+			printk("Mismatch between number of left (%zu) and right (%zu) frames, "
+			       "discard SDU",
+			       left_frames_cnt, right_frames_cnt);
+			continue;
+		}
+
+		/* Send frames to USB - If we only have a single channel we mix it to stereo */
+		for (size_t i = 0U; i < MAX(left_frames_cnt, right_frames_cnt); i++) {
+			const bool is_single_channel = is_left_only || is_right_only;
+			static int16_t stereo_frame[LC3_MAX_NUM_SAMPLES_STEREO];
+			int16_t *right_frame = right_frames[i];
+			int16_t *left_frame = left_frames[i];
+
+			/* Not enough space to store data */
+			if (ring_buf_space_get(&usb_ring_buf) < sizeof(stereo_frame)) {
+				break;
+			}
+
+			memset(stereo_frame, 0, sizeof(stereo_frame));
+
+			/* Generate the stereo frame
+			 *
+			 * If we only have single channel then that is always stored in the
+			 * left_frame, and we mix that to stereo
+			 */
+			for (int j = 0; j < LC3_MAX_NUM_SAMPLES_MONO; j++) {
+				if (is_single_channel) {
+					/* Mix to stereo */
+					if (is_left_only) {
+						stereo_frame[j * 2] = left_frame[j];
+						stereo_frame[j * 2 + 1] = left_frame[j];
+					} else if (is_right_only) {
+						stereo_frame[j * 2] = right_frame[j];
+						stereo_frame[j * 2 + 1] = right_frame[j];
+					}
+				} else {
+					stereo_frame[j * 2] = left_frame[j];
+					stereo_frame[j * 2 + 1] = right_frame[j];
+				}
+			}
+
+			add_to_usb_ring_buf(stereo_frame);
+		}
+#endif /* CONFIG_USB_DEVICE_AUDIO */
+	}
+}
+
+/** Decode LC3 data on a stream and returns true if successful */
+static void do_lc3_decode(lc3_decoder_t decoder, const void *in_data, uint8_t octets_per_frame,
+			  int16_t out_data[LC3_MAX_NUM_SAMPLES_MONO])
+{
+	int err;
+
+	err = lc3_decode(decoder, in_data, octets_per_frame, LC3_PCM_FORMAT_S16, out_data, 1);
+	if (err == 1) {
+		printk("  decoder performed PLC\n");
+	} else if (err < 0) {
+		printk("  decoder failed - wrong parameters? (err = %d)\n", err);
+	}
+}
+
+static int lc3_enable(struct broadcast_sink_stream *sink_stream)
+{
+	size_t chan_alloc_bit_cnt;
+	size_t sdu_size_required;
 	int frame_duration_us;
+	int freq_hz;
+	int ret;
 
-	printk("Enable: stream with codec %p\n", codec_cfg);
+	printk("Enable: stream with codec %p\n", sink_stream->stream.codec_cfg);
 
-	ret = bt_audio_codec_cfg_get_freq(codec_cfg);
+	ret = bt_audio_codec_cfg_get_freq(sink_stream->stream.codec_cfg);
 	if (ret > 0) {
 		freq_hz = bt_audio_codec_cfg_freq_to_freq_hz(ret);
 	} else {
@@ -112,7 +346,7 @@ static int lc3_enable(const struct bt_audio_codec_cfg *codec_cfg)
 		return -1;
 	}
 
-	ret = bt_audio_codec_cfg_get_frame_dur(codec_cfg);
+	ret = bt_audio_codec_cfg_get_frame_dur(sink_stream->stream.codec_cfg);
 	if (ret > 0) {
 		frame_duration_us = bt_audio_codec_cfg_frame_dur_to_frame_dur_us(ret);
 	} else {
@@ -120,62 +354,131 @@ static int lc3_enable(const struct bt_audio_codec_cfg *codec_cfg)
 		return ret;
 	}
 
-	frames_per_sdu = bt_audio_codec_cfg_get_frame_blocks_per_sdu(codec_cfg, true);
+	ret = bt_audio_codec_cfg_get_chan_allocation(sink_stream->stream.codec_cfg,
+						     &sink_stream->chan_allocation);
+	if (ret != 0) {
+		printk("Error: Channel allocation not set, invalid configuration for LC3");
+		return ret;
+	}
 
-	lc3_decoder = lc3_setup_decoder(frame_duration_us, freq_hz, 0, /* No resampling */
-					&lc3_decoder_mem);
+	ret = bt_audio_codec_cfg_get_octets_per_frame(sink_stream->stream.codec_cfg);
+	if (ret > 0) {
+		sink_stream->lc3_octets_per_frame = (uint16_t)ret;
+	} else {
+		printk("Error: Octets per frame not set, invalid configuration for LC3");
+		return ret;
+	}
 
-	if (lc3_decoder == NULL) {
+	ret = bt_audio_codec_cfg_get_frame_blocks_per_sdu(sink_stream->stream.codec_cfg, true);
+	if (ret > 0) {
+		sink_stream->lc3_frames_blocks_per_sdu = (uint8_t)ret;
+	} else {
+		printk("Error: Frame blocks per SDU not set, invalid configuration for LC3");
+		return ret;
+	}
+
+	/* An SDU can consist of X frame blocks, each with Y frames (one per channel) of size Z in
+	 * them. The minimum SDU size required for this is X * Y * Z.
+	 */
+	chan_alloc_bit_cnt = get_chan_cnt(sink_stream->chan_allocation);
+	sdu_size_required = chan_alloc_bit_cnt * sink_stream->lc3_octets_per_frame *
+			    sink_stream->lc3_frames_blocks_per_sdu;
+	if (sdu_size_required < sink_stream->stream.qos->sdu) {
+		printk("With %zu channels and %u octets per frame and %u frames per block, SDUs "
+		       "shall be at minimum %zu, but the stream has been configured for %u",
+		       chan_alloc_bit_cnt, sink_stream->lc3_octets_per_frame,
+		       sink_stream->lc3_frames_blocks_per_sdu, sdu_size_required,
+		       sink_stream->stream.qos->sdu);
+
+		return -EINVAL;
+	}
+
+	printk("Enabling LC3 decoder with frame duration %uus, frequency %uHz and with channel "
+	       "allocation 0x%08X, %u octets per frame and %u frame blocks per SDU\n",
+	       frame_duration_us, freq_hz, sink_stream->chan_allocation,
+	       sink_stream->lc3_octets_per_frame, sink_stream->lc3_frames_blocks_per_sdu);
+
+#if defined(CONFIG_USB_DEVICE_AUDIO)
+	sink_stream->lc3_decoder = lc3_setup_decoder(frame_duration_us, freq_hz, USB_SAMPLE_RATE,
+						     &sink_stream->lc3_decoder_mem);
+#else
+	sink_stream->lc3_decoder = lc3_setup_decoder(frame_duration_us, freq_hz, 0,
+						     &sink_stream->lc3_decoder_mem);
+#endif /* defined(CONFIG_USB_DEVICE_AUDIO) */
+
+	if (sink_stream->lc3_decoder == NULL) {
 		printk("ERROR: Failed to setup LC3 decoder - wrong parameters?\n");
 		return -1;
 	}
 
+	k_thread_start(decoder_tid);
+
 	return 0;
 }
+#endif /* defined(CONFIG_LIBLC3) */
 
-static void lc3_decode_handler(struct k_work *work)
+#if defined(CONFIG_USB_DEVICE_AUDIO)
+/* Move the LC3 data to the USB ring buffer */
+static void add_to_usb_ring_buf(const int16_t audio_buf[LC3_MAX_NUM_SAMPLES_STEREO])
 {
-	int err = 0;
-	int offset = 0;
-	uint8_t *buf_data;
-	struct net_buf *ptr_net_buf;
-	int octets_per_frame;
-	struct broadcast_sink_stream *sink_stream = CONTAINER_OF(
-		k_work_delayable_from_work(work), struct broadcast_sink_stream, lc3_decode_work);
+	uint32_t size;
 
-	k_mutex_lock(&sink_stream->lc3_decoder_mutex, K_FOREVER);
+	size = ring_buf_put(&usb_ring_buf, (uint8_t *)audio_buf,
+			    LC3_MAX_NUM_SAMPLES_STEREO * sizeof(int16_t));
+	if (size != LC3_MAX_NUM_SAMPLES_STEREO) {
+		static int rb_put_failures;
 
-	if (sink_stream->in_buf == NULL) {
-		printk("buf data is NULL, nothing to be docoded\n");
-		k_mutex_unlock(&sink_stream->lc3_decoder_mutex);
+		rb_put_failures++;
+		if (rb_put_failures == LOG_INTERVAL) {
+			printk("%s: Failure to add to usb_ring_buf %d, %u\n", __func__,
+			       rb_put_failures, size);
+		}
+	}
+}
+
+/* USB consumer callback, called every 1ms, consumes data from ring-buffer */
+static void usb_data_request_cb(const struct device *dev)
+{
+	uint8_t usb_audio_data[USB_STEREO_SAMPLE_SIZE] = {0};
+	static struct net_buf *pcm_buf;
+	static size_t cnt;
+	uint32_t size;
+	int err;
+
+	size = ring_buf_get(&usb_ring_buf, (uint8_t *)usb_audio_data, sizeof(usb_audio_data));
+	if (size == 0) {
+		/* size is 0, noop */
+		return;
+	}
+	/* Size lower than USB_STEREO_SAMPLE_SIZE is OK as usb_audio_data is 0-initialized */
+
+	pcm_buf = net_buf_alloc(&usb_tx_buf_pool, K_NO_WAIT);
+	if (pcm_buf == NULL) {
+		printk("Could not allocate pcm_buf\n");
 		return;
 	}
 
-	ptr_net_buf = net_buf_ref(sink_stream->in_buf);
-	net_buf_unref(sink_stream->in_buf);
-	sink_stream->in_buf = NULL;
-	k_mutex_unlock(&sink_stream->lc3_decoder_mutex);
+	net_buf_add_mem(pcm_buf, usb_audio_data, sizeof(usb_audio_data));
 
-	buf_data = ptr_net_buf->data;
-	octets_per_frame = ptr_net_buf->len / frames_per_sdu;
-
-	for (int i = 0; i < frames_per_sdu; i++) {
-		err = lc3_decode(lc3_decoder, buf_data + offset, octets_per_frame,
-						 LC3_PCM_FORMAT_S16, audio_buf, 1);
-
-		if (err == 1) {
-			printk("  decoder performed PLC\n");
-		} else if (err < 0) {
-			printk("  decoder failed - wrong parameters?\n");
-		}
-
-		offset += octets_per_frame;
+	if (cnt % LOG_INTERVAL == 0) {
+		printk("Sending USB audio (count = %zu)\n", cnt);
 	}
 
-	net_buf_unref(ptr_net_buf);
+	err = usb_audio_send(dev, pcm_buf, USB_STEREO_SAMPLE_SIZE);
+	if (err) {
+		printk("Failed to send USB audio: %d\n", err);
+		net_buf_unref(pcm_buf);
+	}
+
+	cnt++;
 }
 
-#endif /* defined(CONFIG_LIBLC3) */
+static void usb_data_written_cb(const struct device *dev, struct net_buf *buf, size_t size)
+{
+	/* Unreference the buffer now that the USB is done with it */
+	net_buf_unref(buf);
+}
+#endif /* defined(CONFIG_USB_DEVICE_AUDIO) */
 
 static void stream_started_cb(struct bt_bap_stream *stream)
 {
@@ -191,8 +494,21 @@ static void stream_started_cb(struct bt_bap_stream *stream)
 	sink_stream->error_cnt = 0U;
 
 #if defined(CONFIG_LIBLC3)
-	k_work_init_delayable(&sink_stream->lc3_decode_work, lc3_decode_handler);
-#endif /* defined(CONFIG_LIBLC3) */
+	int err;
+
+	if (stream->codec_cfg != 0 && stream->codec_cfg->id != BT_HCI_CODING_FORMAT_LC3) {
+		/* No subgroups with LC3 was found */
+		printk("Did not parse an LC3 codec\n");
+		return;
+	}
+
+	err = lc3_enable(sink_stream);
+	if (err < 0) {
+		printk("Error: cannot enable LC3 codec: %d", err);
+		return;
+	}
+#endif /* CONFIG_LIBLC3 */
+
 	k_sem_give(&sem_bis_synced);
 }
 
@@ -233,13 +549,13 @@ static void stream_recv_cb(struct bt_bap_stream *stream, const struct bt_iso_rec
 
 		sink_stream->in_buf = net_buf_ref(buf);
 		k_mutex_unlock(&sink_stream->lc3_decoder_mutex);
-		k_work_schedule(&sink_stream->lc3_decode_work, K_NO_WAIT);
+		k_sem_give(&lc3_decoder_sem);
 #endif /* defined(CONFIG_LIBLC3) */
 	}
 
 	total_rx_iso_packet_count++;
 	sink_stream->recv_cnt++;
-	if ((sink_stream->recv_cnt % 1000U) == 0U) {
+	if ((sink_stream->recv_cnt % LOG_INTERVAL) == 0U) {
 		printk("Stream %p: received %u total ISO packets: Valid %u | Error %u | Loss %u\n",
 		       &sink_stream->stream, sink_stream->recv_cnt, sink_stream->valid_cnt,
 		       sink_stream->error_cnt, sink_stream->loss_cnt);
@@ -252,33 +568,225 @@ static struct bt_bap_stream_ops stream_ops = {
 	.recv = stream_recv_cb,
 };
 
-#if defined(CONFIG_LIBLC3)
-static bool base_subgroup_cb(const struct bt_bap_base_subgroup *subgroup, void *user_data)
+#if defined(CONFIG_TARGET_BROADCAST_CHANNEL)
+struct find_valid_bis_data {
+	struct {
+		uint8_t index;
+		enum bt_audio_location chan_allocation;
+	} bis[BT_ISO_BIS_INDEX_MAX];
+
+	uint8_t cnt;
+};
+
+/**
+ * This is called for each BIS in a subgroup
+ *
+ * It returns `false` if the current BIS contains all of the channels we are looking for,
+ * or if it does not contain any and we are looking for BT_AUDIO_LOCATION_MONO_AUDIO. This stops
+ * the iteration of the remaining BIS in the subgroup.
+ *
+ * It returns `true` if the BIS either contains none or some of the channels we are looking for.
+ * If it contains some, then that is being stored in the user_data, so that the calling function
+ * can check if a combination of the BIS satisfy the channel allocations we want.
+ */
+static bool find_valid_bis_cb(const struct bt_bap_base_subgroup_bis *bis,
+					       void *user_data)
 {
-	struct bt_audio_codec_cfg *codec_cfg = user_data;
-	struct bt_bap_base_codec_id codec_id;
-	int ret;
+	struct find_valid_bis_data *data = user_data;
+	struct bt_audio_codec_cfg codec_cfg = {0};
+	enum bt_audio_location chan_allocation;
+	int err;
 
-	ret = bt_bap_base_get_subgroup_codec_id(subgroup, &codec_id);
-	if (ret < 0) {
-		printk("Could not get codec id for subgroup %p: %d", subgroup, ret);
+	err = bt_bap_base_subgroup_bis_codec_to_codec_cfg(bis, &codec_cfg);
+	if (err != 0) {
+		printk("Could not get codec configuration for BIS: %d\n", err);
 		return true;
 	}
 
-	if (codec_id.id != BT_HCI_CODING_FORMAT_LC3) {
-		printk("Unsupported codec for subgroup %p: 0x%02x", subgroup, codec_id.id);
-		return true; /* parse next subgroup */
+	err = bt_audio_codec_cfg_get_chan_allocation(&codec_cfg, &chan_allocation);
+	if (err != 0) {
+		printk("Could not find channel allocation for BIS: %d\n", err);
+
+		/* Absence of channel allocation is implicitly mono as per the BAP spec */
+		if (CONFIG_TARGET_BROADCAST_CHANNEL == BT_AUDIO_LOCATION_MONO_AUDIO) {
+			data->bis[0].index = bis->index;
+			data->bis[0].chan_allocation = chan_allocation;
+			data->cnt = 1;
+
+			return false;
+		} else if (err == -ENODATA && strlen(CONFIG_TARGET_BROADCAST_NAME) > 0U) {
+			/* Accept no channel allocation data available
+			 * if TARGET_BROADCAST_NAME defined. Use current index.
+			 */
+			data->bis[0].index = bis->index;
+			data->bis[0].chan_allocation = chan_allocation;
+			data->cnt = 1;
+
+			return false;
+		}
+	} else {
+		if ((chan_allocation & CONFIG_TARGET_BROADCAST_CHANNEL) ==
+		    CONFIG_TARGET_BROADCAST_CHANNEL) {
+			/* Found single BIS with all channels we want - keep as only and stop
+			 * parsing
+			 */
+			data->bis[0].index = bis->index;
+			data->bis[0].chan_allocation = chan_allocation;
+			data->cnt = 1;
+
+			return false;
+		} else if ((chan_allocation & CONFIG_TARGET_BROADCAST_CHANNEL) != 0) {
+			/* BIS contains part of what we are looking for - Store and see if there are
+			 * other BIS that may fill the gaps
+			 */
+			data->bis[data->cnt].index = bis->index;
+			data->bis[data->cnt].chan_allocation = chan_allocation;
+			data->cnt++;
+		}
 	}
 
-	ret = bt_bap_base_subgroup_codec_to_codec_cfg(subgroup, codec_cfg);
-	if (ret < 0) {
-		printk("Could convert subgroup %p to codec_cfg: %d", subgroup, ret);
-		return true;
-	}
-
-	return false; /* We only care about the first subgroup with LC3 */
+	return true;
 }
-#endif /* CONFIG_LIBLC3 */
+
+/**
+ * This function searches all the BIS in a subgroup for a set of BIS indexes that satisfy
+ * CONFIG_TARGET_BROADCAST_CHANNEL
+ *
+ * Returns `true` if the right channels were found, otherwise `false`.
+ */
+static bool find_valid_bis_in_subgroup_bis(const struct bt_bap_base_subgroup *subgroup,
+					   uint32_t *bis_indexes)
+{
+	struct find_valid_bis_data data = {0};
+	int err;
+
+	err = bt_bap_base_subgroup_foreach_bis(subgroup, find_valid_bis_cb, &data);
+	if (err == -ECANCELED) {
+		/* We found what we are looking for in a single BIS */
+
+		*bis_indexes = BIT(data.bis[0].index);
+
+		return true;
+	} else if (err == 0) {
+		/* We are finished parsing all BIS - Try to find a combination that satisfy our
+		 * channel allocation. For simplicity this is using a greedy approach, rather than
+		 * an optimal one.
+		 */
+		enum bt_audio_location chan_allocation = BT_AUDIO_LOCATION_MONO_AUDIO;
+		*bis_indexes = 0;
+
+		for (uint8_t i = 0U; i < data.cnt; i++) {
+			chan_allocation |= data.bis[i].chan_allocation;
+			*bis_indexes |= BIT(data.bis[i].index);
+
+			if ((chan_allocation & CONFIG_TARGET_BROADCAST_CHANNEL) ==
+			    CONFIG_TARGET_BROADCAST_CHANNEL) {
+				return true;
+			}
+		}
+	}
+
+	/* Some error occurred or we did not find expected channel allocation */
+	return false;
+}
+
+/**
+ * Called for each subgroup in the BASE. Will populate the 32-bit bitfield of BIS indexes if the
+ * subgroup contains it.
+ *
+ * The channel allocation may
+ *  - Not exist at all, implicitly meaning BT_AUDIO_LOCATION_MONO_AUDIO
+ *  - Exist only in the subgroup codec configuration
+ *  - Exist only in the BIS codec configuration
+ *  - Exist in both the subgroup and BIS codec configuration, in which case, the BIS codec
+ *    configuration overwrites the subgroup values
+ *
+ * This function returns `true` if the subgroup does not support the channels in
+ * CONFIG_TARGET_BROADCAST_CHANNEL which makes it iterate over the next subgroup, and returns
+ * `false` if this subgroup satisfies our CONFIG_TARGET_BROADCAST_CHANNEL.
+ */
+static bool find_valid_bis_in_subgroup_cb(const struct bt_bap_base_subgroup *subgroup,
+					  void *user_data)
+{
+	enum bt_audio_location chan_allocation;
+	struct bt_audio_codec_cfg codec_cfg;
+	uint32_t *bis_indexes = user_data;
+	int err;
+
+	/* We only want indexes from a single subgroup, so reset between each of them*/
+	*bis_indexes = 0U;
+
+	err = bt_bap_base_subgroup_codec_to_codec_cfg(subgroup, &codec_cfg);
+	if (err != 0) {
+		printk("Could not get codec configuration: %d\n", err);
+
+		return true;
+	}
+
+	err = bt_audio_codec_cfg_get_chan_allocation(&codec_cfg, &chan_allocation);
+	if (err != 0) {
+		printk("Could not find subgroup channel allocation: %d - Looking in the BISes\n",
+		       err);
+
+		/* Find chan alloc in BIS */
+		if (find_valid_bis_in_subgroup_bis(subgroup, bis_indexes)) {
+			/* Found BISes with correct channel allocation */
+			return false;
+		}
+	} else {
+		/* If the subgroup contains a single channel, then we just grab the first BIS index
+		 */
+		if (get_chan_cnt(chan_allocation) == 1 &&
+		    chan_allocation == CONFIG_TARGET_BROADCAST_CHANNEL) {
+			uint32_t subgroup_bis_indexes;
+
+			/* Set bis_indexes to the first bit set */
+			err = bt_bap_base_subgroup_get_bis_indexes(subgroup, &subgroup_bis_indexes);
+			if (err != 0) {
+				/* Should never happen as that would indicate an invalid
+				 * subgroup If it does, we just parse the next subgroup
+				 */
+				return true;
+			}
+
+			/* We found the BIS index we want, stop parsing*/
+			*bis_indexes = BIT(find_lsb_set(subgroup_bis_indexes) - 1);
+
+			return false;
+		} else if ((chan_allocation & CONFIG_TARGET_BROADCAST_CHANNEL) ==
+			   CONFIG_TARGET_BROADCAST_CHANNEL) {
+			/* The subgroup contains all channels we are looking for/
+			 * We continue searching each BIS to get the minimal amount of BIS that
+			 * satisfy CONFIG_TARGET_BROADCAST_CHANNEL.
+			 */
+
+			if (find_valid_bis_in_subgroup_bis(subgroup, bis_indexes)) {
+				/* Found BISes with correct channel allocation */
+				return false;
+			}
+		}
+	}
+
+	return true;
+}
+
+/**
+ * This function gets a 32-bit bitfield of BIS indexes that cover the channel allocation values in
+ * CONFIG_TARGET_BROADCAST_CHANNEL.
+ */
+static int base_get_valid_bis_indexes(const struct bt_bap_base *base, uint32_t *bis_indexes)
+{
+	int err;
+
+	err = bt_bap_base_foreach_subgroup(base, find_valid_bis_in_subgroup_cb, bis_indexes);
+	if (err != -ECANCELED) {
+		printk("Failed to parse subgroups: %d\n", err);
+		return err != 0 ? err : -ENOENT;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_TARGET_BROADCAST_CHANNEL */
 
 static void base_recv_cb(struct bt_bap_broadcast_sink *sink, const struct bt_bap_base *base,
 			 size_t base_size)
@@ -293,31 +801,19 @@ static void base_recv_cb(struct bt_bap_broadcast_sink *sink, const struct bt_bap
 	printk("Received BASE with %d subgroups from broadcast sink %p\n",
 	       bt_bap_base_get_subgroup_count(base), sink);
 
-#if defined(CONFIG_LIBLC3)
-	struct bt_audio_codec_cfg codec_cfg = {0};
-
-	err = bt_bap_base_foreach_subgroup(base, base_subgroup_cb, &codec_cfg);
-	if (err != 0 && err != -ECANCELED) {
-		printk("Failed to parse subgroups: %d\n", err);
-		return;
-	} else if (codec_cfg.id != BT_HCI_CODING_FORMAT_LC3) {
-		/* No subgroups with LC3 was found */
-		printk("Did not parse an LC3 codec\n");
+#if defined(CONFIG_TARGET_BROADCAST_CHANNEL)
+	err = base_get_valid_bis_indexes(base, &base_bis_index_bitfield);
+	if (err != 0) {
+		printk("Failed to find a valid BIS\n");
 		return;
 	}
-
-	err = lc3_enable(&codec_cfg);
-	if (err < 0) {
-		printk("Error: cannot enable LC3 codec: %d", err);
-		return;
-	}
-#endif /* CONFIG_LIBLC3 */
-
+#else
 	err = bt_bap_base_get_bis_indexes(base, &base_bis_index_bitfield);
 	if (err != 0) {
 		printk("Failed to BIS indexes: %d\n", err);
 		return;
 	}
+#endif /* CONFIG_TARGET_BROADCAST_CHANNEL */
 
 	bis_index_bitfield = base_bis_index_bitfield & bis_index_mask;
 
@@ -330,11 +826,11 @@ static void base_recv_cb(struct bt_bap_broadcast_sink *sink, const struct bt_bap
 	k_sem_give(&sem_base_received);
 }
 
-static void syncable_cb(struct bt_bap_broadcast_sink *sink, bool encrypted)
+static void syncable_cb(struct bt_bap_broadcast_sink *sink, const struct bt_iso_biginfo *biginfo)
 {
 	k_sem_give(&sem_syncable);
 
-	if (!encrypted) {
+	if (!biginfo->encryption) {
 		/* Use the semaphore as a boolean */
 		k_sem_reset(&sem_broadcast_code_received);
 		k_sem_give(&sem_broadcast_code_received);
@@ -401,7 +897,7 @@ static int pa_sync_past(struct bt_conn *conn, uint16_t pa_interval)
 	if (err != 0) {
 		printk("Could not do PAST subscribe: %d\n", err);
 	} else {
-		printk("Syncing with PAST: %d\n", err);
+		printk("Syncing with PAST\n");
 		(void)k_work_reschedule(&pa_timer, K_MSEC(param.timeout * 10));
 	}
 
@@ -412,7 +908,9 @@ static int pa_sync_req_cb(struct bt_conn *conn,
 			  const struct bt_bap_scan_delegator_recv_state *recv_state,
 			  bool past_avail, uint16_t pa_interval)
 {
-	int err;
+
+	printk("Received request to sync to PA (PAST %savailble): %u\n", past_avail ? "" : "not ",
+	       recv_state->pa_sync_state);
 
 	req_recv_state = recv_state;
 
@@ -424,16 +922,29 @@ static int pa_sync_req_cb(struct bt_conn *conn,
 	}
 
 	if (IS_ENABLED(CONFIG_BT_PER_ADV_SYNC_TRANSFER_RECEIVER) && past_avail) {
+		int err;
+
 		err = pa_sync_past(conn, pa_interval);
+		if (err != 0) {
+			printk("Failed to subscribe to PAST: %d\n", err);
+
+			return err;
+		}
+
 		k_sem_give(&sem_past_request);
-	} else {
-		/* start scan */
-		err = 0;
+
+		err = bt_bap_scan_delegator_set_pa_state(recv_state->src_id,
+							 BT_BAP_PA_STATE_INFO_REQ);
+		if (err != 0) {
+			printk("Failed to set PA state to BT_BAP_PA_STATE_INFO_REQ: %d\n", err);
+
+			return err;
+		}
 	}
 
 	k_sem_give(&sem_pa_request);
 
-	return err;
+	return 0;
 }
 
 static int pa_sync_term_req_cb(struct bt_conn *conn,
@@ -470,7 +981,7 @@ static void broadcast_code_cb(struct bt_conn *conn,
 
 static int bis_sync_req_cb(struct bt_conn *conn,
 			   const struct bt_bap_scan_delegator_recv_state *recv_state,
-			   const uint32_t bis_sync_req[BT_BAP_SCAN_DELEGATOR_MAX_SUBGROUPS])
+			   const uint32_t bis_sync_req[CONFIG_BT_BAP_BASS_MAX_SUBGROUPS])
 {
 	const bool bis_synced = k_sem_count_get(&sem_bis_synced) > 0U;
 
@@ -649,7 +1160,12 @@ static void broadcast_scan_recv(const struct bt_le_scan_recv_info *info, struct 
 {
 	if (info->interval != 0U) {
 		/* call to bt_data_parse consumes netbufs so shallow clone for verbose output */
-		if (strlen(CONFIG_TARGET_BROADCAST_NAME) > 0U) {
+
+		/* If req_recv_state is NULL then we have been requested by a broadcast assistant to
+		 * sync to a specific broadcast source. In that case we do not apply our own
+		 * broadcast name filter.
+		 */
+		if (req_recv_state != NULL && strlen(CONFIG_TARGET_BROADCAST_NAME) > 0U) {
 			struct net_buf_simple buf_copy;
 			char name[NAME_LEN] = {0};
 
@@ -670,10 +1186,17 @@ static struct bt_le_scan_cb bap_scan_cb = {
 static void bap_pa_sync_synced_cb(struct bt_le_per_adv_sync *sync,
 				  struct bt_le_per_adv_sync_synced_info *info)
 {
-	if (sync == pa_sync) {
+	if (sync == pa_sync ||
+	    (req_recv_state != NULL && bt_addr_le_eq(info->addr, &req_recv_state->addr) &&
+	     info->sid == req_recv_state->adv_sid)) {
 		printk("PA sync %p synced for broadcast sink with broadcast ID 0x%06X\n", sync,
 		       broadcaster_broadcast_id);
 
+		if (pa_sync == NULL) {
+			pa_sync = sync;
+		}
+
+		k_work_cancel_delayable(&pa_timer);
 		k_sem_give(&sem_pa_synced);
 	}
 }
@@ -720,6 +1243,27 @@ static int init(void)
 	for (size_t i = 0U; i < ARRAY_SIZE(streams); i++) {
 		streams[i].stream.ops = &stream_ops;
 	}
+
+	/* Initialize ring buffers and USB */
+#if defined(CONFIG_USB_DEVICE_AUDIO)
+	const struct device *hs_dev = DEVICE_DT_GET(DT_NODELABEL(hs_0));
+	static const struct usb_audio_ops usb_ops = {
+		.data_request_cb = usb_data_request_cb,
+		.data_written_cb = usb_data_written_cb,
+	};
+
+	if (!device_is_ready(hs_dev)) {
+		printk("Cannot get USB Headset Device\n");
+		return -EIO;
+	}
+
+	usb_audio_register(hs_dev, &usb_ops);
+	err = usb_enable(NULL);
+	if (err && err != -EALREADY) {
+		printk("Failed to enable USB\n");
+		return err;
+	}
+#endif /* defined(CONFIG_USB_DEVICE_AUDIO) */
 
 	return 0;
 }
@@ -775,24 +1319,10 @@ static int reset(void)
 
 				return err;
 			}
-		} else if (ext_adv != NULL) { /* advertising still running */
-			err = bt_le_ext_adv_stop(ext_adv);
-			if (err) {
-				printk("Stopping advertising set failed (err %d)\n",
-				       err);
+		}
 
-				return err;
-			}
-
-			err = bt_le_ext_adv_delete(ext_adv);
-			if (err) {
-				printk("Deleting advertising set failed (err %d)\n",
-				       err);
-
-				return err;
-			}
-
-			ext_adv = NULL;
+		if (ext_adv != NULL) {
+			stop_adv();
 		}
 
 		k_sem_reset(&sem_connected);
@@ -819,6 +1349,7 @@ static int start_adv(void)
 		BT_DATA_BYTES(BT_DATA_UUID16_ALL,
 			      BT_UUID_16_ENCODE(BT_UUID_BASS_VAL),
 			      BT_UUID_16_ENCODE(BT_UUID_PACS_VAL)),
+		BT_DATA_BYTES(BT_DATA_SVC_DATA16, BT_UUID_16_ENCODE(BT_UUID_BASS_VAL)),
 	};
 	int err;
 
@@ -936,6 +1467,7 @@ int main(void)
 				/* Wait for the PA request to determine if we
 				 * should start scanning, or wait for PAST
 				 */
+				printk("Waiting for PA sync request\n");
 				err = k_sem_take(&sem_pa_request,
 						 BROADCAST_ASSISTANT_TIMEOUT);
 				if (err != 0) {
@@ -1017,17 +1549,17 @@ wait_for_pa_sync:
 		/* sem_broadcast_code_received is also given if the
 		 * broadcast is not encrypted
 		 */
-		printk("Waiting for broadcast code OK\n");
+		printk("Waiting for broadcast code\n");
 		err = k_sem_take(&sem_broadcast_code_received, SEM_TIMEOUT);
 		if (err != 0) {
-			printk("sem_syncable timed out, resetting\n");
+			printk("sem_broadcast_code_received timed out, resetting\n");
 			continue;
 		}
 
 		printk("Waiting for BIS sync request\n");
 		err = k_sem_take(&sem_bis_sync_requested, SEM_TIMEOUT);
 		if (err != 0) {
-			printk("sem_syncable timed out, resetting\n");
+			printk("sem_bis_sync_requested timed out, resetting\n");
 			continue;
 		}
 

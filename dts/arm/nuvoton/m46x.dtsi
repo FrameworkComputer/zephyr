@@ -11,6 +11,7 @@
 #include <zephyr/dt-bindings/reset/numaker_m46x_reset.h>
 #include <zephyr/dt-bindings/gpio/gpio.h>
 #include <zephyr/dt-bindings/i2c/i2c.h>
+#include <zephyr/dt-bindings/adc/adc.h>
 
 / {
 	chosen {
@@ -435,15 +436,13 @@
 			reg = <0x40020000 0x200>, <0x40020200 0x1800>;
 			reg-names = "m_can", "message_ram";
 			interrupts = <112 0>, <113 0>;
-			interrupt-names = "LINE_0", "LINE_1";
+			interrupt-names = "int0", "int1";
 			resets = <&rst NUMAKER_CANFD0_RST>;
 			clocks = <&pcc NUMAKER_CANFD0_MODULE
 				  NUMAKER_CLK_CLKSEL0_CANFD0SEL_HCLK
 				  NUMAKER_CLK_CLKDIV5_CANFD0(1)>;
 			bosch,mram-cfg = <0x0 12 10 3 3 3 3 3>;
 			status = "disabled";
-			sample-point = <875>;
-			sample-point-data = <875>;
 		};
 
 		canfd1: canfd@40024000 {
@@ -451,15 +450,13 @@
 			reg = <0x40024000 0x200>, <0x40024200 0x1800>;
 			reg-names = "m_can", "message_ram";
 			interrupts = <114 0>, <115 0>;
-			interrupt-names = "LINE_0", "LINE_1";
+			interrupt-names = "int0", "int1";
 			resets = <&rst NUMAKER_CANFD1_RST>;
 			clocks = <&pcc NUMAKER_CANFD1_MODULE
 				  NUMAKER_CLK_CLKSEL0_CANFD1SEL_HCLK
 				  NUMAKER_CLK_CLKDIV5_CANFD1(1)>;
 			bosch,mram-cfg = <0x0 12 10 3 3 3 3 3>;
 			status = "disabled";
-			sample-point = <875>;
-			sample-point-data = <875>;
 		};
 
 		canfd2: canfd@40028000 {
@@ -467,15 +464,13 @@
 			reg = <0x40028000 0x200>, <0x40028200 0x1800>;
 			reg-names = "m_can", "message_ram";
 			interrupts = <120 0>, <121 0>;
-			interrupt-names = "LINE_0", "LINE_1";
+			interrupt-names = "int0", "int1";
 			resets = <&rst NUMAKER_CANFD2_RST>;
 			clocks = <&pcc NUMAKER_CANFD2_MODULE
 				  NUMAKER_CLK_CLKSEL0_CANFD2SEL_HCLK
 				  NUMAKER_CLK_CLKDIV5_CANFD2(1)>;
 			bosch,mram-cfg = <0x0 12 10 3 3 3 3 3>;
 			status = "disabled";
-			sample-point = <875>;
-			sample-point-data = <875>;
 		};
 
 		canfd3: canfd@4002c000 {
@@ -483,15 +478,13 @@
 			reg = <0x4002c000 0x200>, <0x4002c200 0x1800>;
 			reg-names = "m_can", "message_ram";
 			interrupts = <122 0>, <123 0>;
-			interrupt-names = "LINE_0", "LINE_1";
+			interrupt-names = "int0", "int1";
 			resets = <&rst NUMAKER_CANFD3_RST>;
 			clocks = <&pcc NUMAKER_CANFD3_MODULE
 				  NUMAKER_CLK_CLKSEL0_CANFD3SEL_HCLK
 				  NUMAKER_CLK_CLKDIV5_CANFD3(1)>;
 			bosch,mram-cfg = <0x0 12 10 3 3 3 3 3>;
 			status = "disabled";
-			sample-point = <875>;
-			sample-point-data = <875>;
 		};
 
 		emac: ethernet@40012000 {
@@ -562,6 +555,66 @@
 			status = "disabled";
 			#address-cells = <1>;
 			#size-cells = <0>;
+		};
+
+		eadc0: eadc@40043000 {
+			compatible = "nuvoton,numaker-adc";
+			reg = <0x40043000 0xffc>;
+			interrupts = <42 0>;
+			resets = <&rst NUMAKER_EADC0_RST>;
+			clocks = <&pcc NUMAKER_EADC0_MODULE
+				  NUMAKER_CLK_CLKSEL0_EADC0SEL_HCLK
+				  NUMAKER_CLK_CLKDIV0_EADC0(12)>;
+			channels = <19>;
+			status = "disabled";
+			#io-channel-cells = <1>;
+		};
+
+		eadc1: eadc@4004b000 {
+			compatible = "nuvoton,numaker-adc";
+			reg = <0x4004b000 0xffc>;
+			interrupts = <104 0>;
+			resets = <&rst NUMAKER_EADC1_RST>;
+			clocks = <&pcc NUMAKER_EADC1_MODULE
+				  NUMAKER_CLK_CLKSEL0_EADC1SEL_HCLK
+				  NUMAKER_CLK_CLKDIV2_EADC1(12)>;
+			channels = <19>;
+			status = "disabled";
+			#io-channel-cells = <1>;
+		};
+
+		eadc2: eadc@40097000 {
+			compatible = "nuvoton,numaker-adc";
+			reg = <0x40097000 0xffc>;
+			interrupts = <124 0>;
+			resets = <&rst NUMAKER_EADC2_RST>;
+			clocks = <&pcc NUMAKER_EADC2_MODULE
+				  NUMAKER_CLK_CLKSEL0_EADC2SEL_HCLK
+				  NUMAKER_CLK_CLKDIV5_EADC2(12)>;
+			channels = <19>;
+			status = "disabled";
+			#io-channel-cells = <1>;
+		};
+
+		usbd: usbd@400c0000 {
+			compatible = "nuvoton,numaker-usbd";
+			reg = <0x400c0000 0x1000>;
+			interrupts = <53 0>;
+			resets = <&rst NUMAKER_USBD_RST>;
+			clocks = <&pcc NUMAKER_USBD_MODULE NUMAKER_CLK_CLKSEL0_USBSEL_PLL_DIV2
+				  NUMAKER_CLK_CLKDIV0_USB(2)>;
+			dma-buffer-size = <1536>;
+			status = "disabled";
+			num-bidir-endpoints = <25>;
+			disallow-iso-in-out-same-number;
+		};
+
+		wwdt: watchdog@40040100 {
+			compatible = "nuvoton,numaker-wwdt";
+			reg = <0x40040100 0x10>;
+			interrupts = <9 0>;
+			clocks = <&pcc NUMAKER_WWDT_MODULE NUMAKER_CLK_CLKSEL1_WWDTSEL_LIRC 0>;
+			status = "disabled";
 		};
 	};
 };

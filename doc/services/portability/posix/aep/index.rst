@@ -25,8 +25,8 @@ Minimal Realtime System Profile (PSE51)
    :header: Symbol, Support, Remarks
    :widths: 50, 10, 50
 
-    POSIX_C_LANG_JUMP,,
-    POSIX_C_LANG_SUPPORT, yes, :ref:`†<posix_undefined_behaviour>`
+    POSIX_C_LANG_JUMP, yes, :ref:`POSIX_C_LANG_JUMP <posix_option_group_c_lang_jump>`
+    POSIX_C_LANG_SUPPORT, yes, :ref:`POSIX_C_LANG_SUPPORT <posix_option_group_c_lang_support>`
     POSIX_DEVICE_IO,, :ref:`†<posix_undefined_behaviour>`
     POSIX_FILE_LOCKING,,
     POSIX_SIGNALS,, :ref:`†<posix_undefined_behaviour>`
@@ -52,13 +52,10 @@ Minimal Realtime System Profile (PSE51)
     _POSIX_THREAD_CPUTIME, -1,
     _POSIX_THREAD_PRIO_INHERIT, 200809L, :kconfig:option:`CONFIG_PTHREAD_MUTEX`
     _POSIX_THREAD_PRIO_PROTECT, -1,
-    _POSIX_THREAD_PRIORITY_SCHEDULING, -1,
+    _POSIX_THREAD_PRIORITY_SCHEDULING, -1, :kconfig:option:`CONFIG_POSIX_PRIORITY_SCHEDULING` (will fail with ``ENOSYS``:ref:`†<posix_undefined_behaviour>`)
     _POSIX_THREAD_SPORADIC_SERVER, -1,
     _POSIX_TIMEOUTS, 200809L, :kconfig:option:`CONFIG_PTHREAD_IPC`
     _POSIX_TIMERS, 200809L, :kconfig:option:`CONFIG_POSIX_CLOCK`
-
-.. note::
-    For PSE51 support, 44 of 75 symbols are currently implemented.
 
 .. _posix_aep_pse52:
 
@@ -77,9 +74,9 @@ Realtime Controller System Profile (PSE52)
    :header: Symbol, Support, Remarks
    :widths: 50, 10, 50
 
-    POSIX_C_LANG_JUMP,,
-    POSIX_C_LANG_MATH, yes,
-    POSIX_C_LANG_SUPPORT, yes, :ref:`†<posix_undefined_behaviour>`
+    POSIX_C_LANG_JUMP, yes, :ref:`POSIX_C_LANG_JUMP <posix_option_group_c_lang_jump>`
+    POSIX_C_LANG_MATH, yes, :ref:`POSIX_C_LANG_MATH <posix_option_group_c_lang_math>`
+    POSIX_C_LANG_SUPPORT, yes, :ref:`POSIX_C_LANG_SUPPORT <posix_option_group_c_lang_support>`
     POSIX_DEVICE_IO,, :ref:`†<posix_undefined_behaviour>`
     POSIX_FD_MGMT,,
     POSIX_FILE_LOCKING,,
@@ -122,21 +119,21 @@ Realtime Controller System Profile (PSE52)
 Dedicated Realtime System Profile (PSE53)
 =========================================
 
-.. Conforming implementations shall define _POSIX_AEP_REALTIME_MINIMAL to the value 200312L
+.. Conforming implementations shall define _POSIX_AEP_REALTIME_DEDICATED to the value 200312L
 
 .. csv-table:: PSE53 System Interfaces
    :header: Symbol, Support, Remarks
    :widths: 50, 10, 50
 
-    _POSIX_AEP_REALTIME_CONTROLLER, -1,
+    _POSIX_AEP_REALTIME_DEDICATED, -1,
 
 .. csv-table:: PSE53 Option Groups
    :header: Symbol, Support, Remarks
    :widths: 50, 10, 50
 
-    POSIX_C_LANG_JUMP,,
-    POSIX_C_LANG_MATH, yes,
-    POSIX_C_LANG_SUPPORT, yes, :ref:`†<posix_undefined_behaviour>`
+    POSIX_C_LANG_JUMP, yes, :ref:`POSIX_C_LANG_JUMP <posix_option_group_c_lang_jump>`
+    POSIX_C_LANG_MATH, yes, :ref:`POSIX_C_LANG_MATH <posix_option_group_c_lang_math>`
+    POSIX_C_LANG_SUPPORT, yes, :ref:`POSIX_C_LANG_SUPPORT <posix_option_group_c_lang_support>`
     POSIX_DEVICE_IO,, :ref:`†<posix_undefined_behaviour>`
     POSIX_FD_MGMT,,
     POSIX_FILE_LOCKING,,

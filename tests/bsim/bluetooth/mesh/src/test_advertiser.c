@@ -10,6 +10,7 @@
 #include "mesh/net.h"
 #include "mesh/mesh.h"
 #include "mesh/foundation.h"
+#include "gatt_common.h"
 
 #define LOG_MODULE_NAME test_adv
 
@@ -17,22 +18,6 @@
 LOG_MODULE_REGISTER(LOG_MODULE_NAME, LOG_LEVEL_INF);
 
 #define WAIT_TIME 60 /*seconds*/
-
-enum bt_mesh_gatt_service {
-	MESH_SERVICE_PROVISIONING,
-	MESH_SERVICE_PROXY,
-};
-
-struct bt_mesh_test_adv {
-	uint8_t retr;     /* number of retransmits of adv frame */
-	int64_t interval; /* interval of transmitted frames */
-};
-
-struct bt_mesh_test_gatt {
-	uint8_t transmits; /* number of frame (pb gatt or proxy beacon) transmits */
-	int64_t interval;  /* interval of transmitted frames */
-	enum bt_mesh_gatt_service service;
-};
 
 extern const struct bt_mesh_comp comp;
 
@@ -183,36 +168,6 @@ static void seq_end_cb(int err, void *cb_data)
 	}
 }
 
-static void parse_mesh_gatt_preamble(struct net_buf_simple *buf)
-{
-	ASSERT_EQUAL(0x0201, net_buf_simple_pull_be16(buf));
-	/* flags */
-	(void)net_buf_simple_pull_u8(buf);
-	ASSERT_EQUAL(0x0303, net_buf_simple_pull_be16(buf));
-}
-
-static void parse_mesh_pb_gatt_service(struct net_buf_simple *buf)
-{
-	/* Figure 7.1: PB-GATT Advertising Data */
-	/* mesh provisioning service */
-	ASSERT_EQUAL(0x2718, net_buf_simple_pull_be16(buf));
-	ASSERT_EQUAL(0x1516, net_buf_simple_pull_be16(buf));
-	/* mesh provisioning service */
-	ASSERT_EQUAL(0x2718, net_buf_simple_pull_be16(buf));
-}
-
-static void parse_mesh_proxy_service(struct net_buf_simple *buf)
-{
-	/* Figure 7.2: Advertising with Network ID (Identification Type 0x00) */
-	/* mesh proxy service */
-	ASSERT_EQUAL(0x2818, net_buf_simple_pull_be16(buf));
-	ASSERT_EQUAL(0x0c16, net_buf_simple_pull_be16(buf));
-	/* mesh proxy service */
-	ASSERT_EQUAL(0x2818, net_buf_simple_pull_be16(buf));
-	/* network ID */
-	ASSERT_EQUAL(0x00, net_buf_simple_pull_u8(buf));
-}
-
 static void gatt_scan_cb(const bt_addr_le_t *addr, int8_t rssi,
 			  uint8_t adv_type, struct net_buf_simple *buf)
 {
@@ -220,12 +175,12 @@ static void gatt_scan_cb(const bt_addr_le_t *addr, int8_t rssi,
 		return;
 	}
 
-	parse_mesh_gatt_preamble(buf);
+	bt_mesh_test_parse_mesh_gatt_preamble(buf);
 
 	if (gatt_param.service == MESH_SERVICE_PROVISIONING) {
-		parse_mesh_pb_gatt_service(buf);
+		bt_mesh_test_parse_mesh_pb_gatt_service(buf);
 	} else {
-		parse_mesh_proxy_service(buf);
+		bt_mesh_test_parse_mesh_proxy_service(buf);
 	}
 
 	LOG_INF("rx: %s", txt_msg);
@@ -234,26 +189,6 @@ static void gatt_scan_cb(const bt_addr_le_t *addr, int8_t rssi,
 		LOG_INF("rx completed. stop observer.");
 		k_sem_give(&observer_sem);
 	}
-}
-
-static void rx_gatt_beacons(void)
-{
-	struct bt_le_scan_param scan_param = {
-		.type       = BT_HCI_LE_SCAN_PASSIVE,
-		.options    = BT_LE_SCAN_OPT_NONE,
-		.interval   = BT_MESH_ADV_SCAN_UNIT(1000),
-		.window     = BT_MESH_ADV_SCAN_UNIT(1000)
-	};
-	int err;
-
-	err = bt_le_scan_start(&scan_param, gatt_scan_cb);
-	ASSERT_FALSE_MSG(err && err != -EALREADY, "Starting scan failed (err %d)\n", err);
-
-	err = k_sem_take(&observer_sem, K_SECONDS(20));
-	ASSERT_OK(err);
-
-	err = bt_le_scan_stop();
-	ASSERT_FALSE_MSG(err && err != -EALREADY, "Stopping scan failed (err %d)\n", err);
 }
 
 static void xmit_scan_cb(const bt_addr_le_t *addr, int8_t rssi, uint8_t adv_type,
@@ -280,26 +215,6 @@ static void xmit_scan_cb(const bt_addr_le_t *addr, int8_t rssi, uint8_t adv_type
 		LOG_INF("rx completed. stop observer.");
 		k_sem_give(&observer_sem);
 	}
-}
-
-static void rx_xmit_adv(void)
-{
-	struct bt_le_scan_param scan_param = {
-		.type       = BT_HCI_LE_SCAN_PASSIVE,
-		.options    = BT_LE_SCAN_OPT_NONE,
-		.interval   = BT_MESH_ADV_SCAN_UNIT(1000),
-		.window     = BT_MESH_ADV_SCAN_UNIT(1000)
-	};
-	int err;
-
-	err = bt_le_scan_start(&scan_param, xmit_scan_cb);
-	ASSERT_FALSE_MSG(err && err != -EALREADY, "Starting scan failed (err %d)\n", err);
-
-	err = k_sem_take(&observer_sem, K_SECONDS(20));
-	ASSERT_OK(err);
-
-	err = bt_le_scan_stop();
-	ASSERT_FALSE_MSG(err && err != -EALREADY, "Stopping scan failed (err %d)\n", err);
 }
 
 static void send_order_start_cb(uint16_t duration, int err, void *user_data)
@@ -355,25 +270,10 @@ static void receive_order_scan_cb(const bt_addr_le_t *addr, int8_t rssi, uint8_t
 
 static void receive_order(int expect_adv)
 {
-	struct bt_le_scan_param scan_param = {
-		.type       = BT_HCI_LE_SCAN_PASSIVE,
-		.options    = BT_LE_SCAN_OPT_NONE,
-		.interval   = BT_MESH_ADV_SCAN_UNIT(1000),
-		.window     = BT_MESH_ADV_SCAN_UNIT(1000)
-	};
-	int err;
-
-	err = bt_le_scan_start(&scan_param, receive_order_scan_cb);
-	ASSERT_FALSE_MSG(err && err != -EALREADY, "Starting scan failed (err %d)\n", err);
-
 	previous_checker = 0xff;
 	for (int i = 0; i < expect_adv; i++) {
-		err = k_sem_take(&observer_sem, K_SECONDS(10));
-		ASSERT_OK_MSG(err, "Didn't receive adv in time");
+		ASSERT_OK(bt_mesh_test_wait_for_packet(receive_order_scan_cb, &observer_sem, 10));
 	}
-
-	err = bt_le_scan_stop();
-	ASSERT_FALSE_MSG(err && err != -EALREADY, "Stopping scan failed (err %d)\n", err);
 }
 
 static void send_adv_buf(struct bt_mesh_adv *adv, uint8_t curr, uint8_t prev)
@@ -446,7 +346,7 @@ static void test_rx_xmit(void)
 	xmit_param.interval = 20;
 
 	bt_init();
-	rx_xmit_adv();
+	ASSERT_OK(bt_mesh_test_wait_for_packet(xmit_scan_cb, &observer_sem, 20));
 
 	PASS();
 }
@@ -548,7 +448,7 @@ static void test_rx_proxy_mixin(void)
 	bt_init();
 
 	/* Scan pb gatt beacons. */
-	rx_gatt_beacons();
+	ASSERT_OK(bt_mesh_test_wait_for_packet(gatt_scan_cb, &observer_sem, 20));
 
 	/* Delay to provision dut */
 	k_sleep(K_MSEC(1000));
@@ -558,15 +458,15 @@ static void test_rx_proxy_mixin(void)
 	gatt_param.transmits = 5000 / 1000;
 	gatt_param.interval = 1000;
 	gatt_param.service = MESH_SERVICE_PROXY;
-	rx_gatt_beacons();
+	ASSERT_OK(bt_mesh_test_wait_for_packet(gatt_scan_cb, &observer_sem, 20));
 
 	/* Scan adv data. */
 	xmit_param.retr = 5;
 	xmit_param.interval = 20;
-	rx_xmit_adv();
+	ASSERT_OK(bt_mesh_test_wait_for_packet(xmit_scan_cb, &observer_sem, 20));
 
 	/* Scan proxy beacons again. */
-	rx_gatt_beacons();
+	ASSERT_OK(bt_mesh_test_wait_for_packet(gatt_scan_cb, &observer_sem, 20));
 
 	PASS();
 }
@@ -680,6 +580,178 @@ static void test_rx_random_order(void)
 	PASS();
 }
 
+static void adv_suspend(void)
+{
+	atomic_set_bit(bt_mesh.flags, BT_MESH_SUSPENDED);
+
+	ASSERT_OK_MSG(bt_mesh_adv_disable(), "Failed to disable advertiser sync");
+}
+
+static void adv_resume(void)
+{
+	atomic_clear_bit(bt_mesh.flags, BT_MESH_SUSPENDED);
+
+	if (!IS_ENABLED(CONFIG_BT_EXT_ADV)) {
+		bt_mesh_adv_init();
+	}
+
+	ASSERT_OK_MSG(bt_mesh_adv_enable(), "Failed to enable advertiser");
+}
+
+struct adv_suspend_ctx {
+	bool suspend;
+	int instance_idx;
+};
+
+static K_SEM_DEFINE(adv_sent_sem, 0, 1);
+static K_SEM_DEFINE(adv_suspended_sem, 0, 1);
+
+static void adv_send_end(int err, void *cb_data)
+{
+	struct adv_suspend_ctx *adv_data = cb_data;
+
+	LOG_DBG("end(): err (%d), suspend (%d), i (%d)", err, adv_data->suspend,
+		adv_data->instance_idx);
+
+	ASSERT_EQUAL(err, 0);
+
+	if (adv_data->suspend) {
+		/* When suspending, the end callback will be called only for the first adv, because
+		 * it was already scheduled.
+		 */
+		ASSERT_EQUAL(adv_data->instance_idx, 0);
+	} else {
+		if (adv_data->instance_idx == CONFIG_BT_MESH_ADV_BUF_COUNT - 1) {
+			k_sem_give(&adv_sent_sem);
+		}
+	}
+}
+
+static void adv_send_start(uint16_t duration, int err, void *cb_data)
+{
+	struct adv_suspend_ctx *adv_data = cb_data;
+
+	LOG_DBG("start(): err (%d), suspend (%d), i (%d)", err, adv_data->suspend,
+		adv_data->instance_idx);
+
+	if (adv_data->suspend) {
+		if (adv_data->instance_idx == 0) {
+			ASSERT_EQUAL(err, 0);
+			adv_suspend();
+		} else {
+			/* For the advs that were pushed to the mesh advertiser by calling
+			 * `bt_mesh_adv_send` function but not sent to the host, the start callback
+			 * shall be called with -ENODEV.
+			 */
+			ASSERT_EQUAL(err, -ENODEV);
+		}
+
+		if (adv_data->instance_idx == CONFIG_BT_MESH_ADV_BUF_COUNT - 1) {
+			k_sem_give(&adv_suspended_sem);
+		}
+	} else {
+		ASSERT_EQUAL(err, 0);
+	}
+}
+
+static void adv_create_and_send(bool suspend, uint8_t first_byte, struct adv_suspend_ctx *adv_data)
+{
+	struct bt_mesh_adv *advs[CONFIG_BT_MESH_ADV_BUF_COUNT];
+	static const struct bt_mesh_send_cb send_cb = {
+		.start = adv_send_start,
+		.end = adv_send_end,
+	};
+
+	for (int i = 0; i < CONFIG_BT_MESH_ADV_BUF_COUNT; i++) {
+		adv_data[i].suspend = suspend;
+		adv_data[i].instance_idx = i;
+
+		advs[i] = bt_mesh_adv_create(BT_MESH_ADV_DATA, BT_MESH_ADV_TAG_LOCAL,
+					    BT_MESH_TRANSMIT(2, 20), K_NO_WAIT);
+		ASSERT_FALSE_MSG(!advs[i], "Out of advs\n");
+
+		net_buf_simple_add_u8(&advs[i]->b, first_byte);
+		net_buf_simple_add_u8(&advs[i]->b, i);
+	}
+
+	for (int i = 0; i < CONFIG_BT_MESH_ADV_BUF_COUNT; i++) {
+		bt_mesh_adv_send(advs[i], &send_cb, &adv_data[i]);
+		bt_mesh_adv_unref(advs[i]);
+	}
+}
+
+static void test_tx_disable(void)
+{
+	struct adv_suspend_ctx adv_data[CONFIG_BT_MESH_ADV_BUF_COUNT];
+	struct bt_mesh_adv *extra_adv;
+	int err;
+
+	bt_init();
+	adv_init();
+
+	/* Fill up the adv pool and suspend the advertiser in the first start callback call. */
+	adv_create_and_send(true, 0xAA, adv_data);
+
+	err = k_sem_take(&adv_suspended_sem, K_SECONDS(10));
+	ASSERT_OK_MSG(err, "Not all advs were sent");
+
+	extra_adv = bt_mesh_adv_create(BT_MESH_ADV_DATA, BT_MESH_ADV_TAG_LOCAL,
+				       BT_MESH_TRANSMIT(2, 20), K_NO_WAIT);
+	ASSERT_TRUE_MSG(!extra_adv, "Created adv while suspended");
+
+	adv_resume();
+
+	/* Fill up the adv pool and suspend the advertiser and let it send all advs. */
+	adv_create_and_send(false, 0xBB, adv_data);
+
+	err = k_sem_take(&adv_sent_sem, K_SECONDS(10));
+	ASSERT_OK_MSG(err, "Not all advs were sent");
+
+	PASS();
+}
+
+static void suspended_adv_scan_cb(const bt_addr_le_t *addr, int8_t rssi, uint8_t adv_type,
+				  struct net_buf_simple *buf)
+{
+	uint8_t length;
+	uint8_t type;
+	uint8_t pdu;
+
+	length = net_buf_simple_pull_u8(buf);
+	ASSERT_EQUAL(buf->len, length);
+	ASSERT_EQUAL(length, sizeof(uint8_t) * 3);
+	type = net_buf_simple_pull_u8(buf);
+	ASSERT_EQUAL(BT_DATA_MESH_MESSAGE, type);
+
+	pdu = net_buf_simple_pull_u8(buf);
+	if (pdu == 0xAA) {
+		pdu = net_buf_simple_pull_u8(buf);
+
+		/* Because the advertiser is stopped after the advertisement has been passed to the
+		 * host, the controller could already start sending the message. Therefore, if the
+		 * tester receives an advertisement with the first byte as 0xAA, the second byte can
+		 * only be 0x00. This applies to both advertisers.
+		 */
+		ASSERT_EQUAL(0, pdu);
+	}
+}
+
+static void test_rx_disable(void)
+{
+	int err;
+
+	bt_init();
+
+	/* It is sufficient to check that the advertiser didn't sent PDUs which the end callback was
+	 * not called for.
+	 */
+	err = bt_mesh_test_wait_for_packet(suspended_adv_scan_cb, &observer_sem, 20);
+	/* The error will always be -ETIMEDOUT as the semaphore is never given in the callback. */
+	ASSERT_EQUAL(-ETIMEDOUT, err);
+
+	PASS();
+}
+
 #define TEST_CASE(role, name, description)                     \
 	{                                                      \
 		.test_id = "adv_" #role "_" #name,             \
@@ -696,11 +768,13 @@ static const struct bst_test_instance test_adv[] = {
 	TEST_CASE(tx, send_order,    "ADV: tx send order"),
 	TEST_CASE(tx, reverse_order, "ADV: tx reversed order"),
 	TEST_CASE(tx, random_order,  "ADV: tx random order"),
+	TEST_CASE(tx, disable,       "ADV: test suspending/resuming advertiser"),
 
 	TEST_CASE(rx, xmit,          "ADV: xmit checker"),
 	TEST_CASE(rx, proxy_mixin,   "ADV: proxy mix-in scanner"),
 	TEST_CASE(rx, receive_order, "ADV: rx receive order"),
 	TEST_CASE(rx, random_order,  "ADV: rx random order"),
+	TEST_CASE(rx, disable,       "ADV: rx adv from resumed advertiser"),
 
 	BSTEST_END_MARKER
 };

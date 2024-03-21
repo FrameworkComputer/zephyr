@@ -33,6 +33,11 @@ config NET_NATIVE
 # Hidden options for enabling native IPv6/IPv4. Using these options
 # avoids having "defined(CONFIG_NET_IPV6) && defined(CONFIG_NET_NATIVE)"
 # in the code as we can have "defined(CONFIG_NET_NATIVE_IPV6)" instead.
+config NET_NATIVE_IP
+	bool
+	depends on NET_NATIVE
+	default y if NET_IP
+
 config NET_NATIVE_IPV6
 	bool
 	depends on NET_NATIVE
@@ -164,7 +169,7 @@ config NET_SHELL
 	bool "Network shell utilities"
 	select SHELL
 	select NET_IPV4_IGMP if NET_IPV4
-	select NET_IPV6_MLD if NET_IPV6
+	select REQUIRES_FLOAT_PRINTF
 	help
 	  Activate shell module that provides network commands like
 	  ping to the console.
@@ -184,13 +189,23 @@ config NET_SHELL_DYN_CMD_COMPLETION
 	  length) by default. Other dynamic completion commands in
 	  net-shell require also some smaller amount of memory.
 
+config NET_SHELL_REQUIRE_TX_THREAD
+	bool
+	depends on NET_SHELL && (SHELL_BACKEND_TELNET || SHELL_BACKEND_MQTT)
+	default y if NET_ARP
+	help
+	  Hidden symbol indicating that network shell requires separate TX
+	  thread due to possible deadlocks during shell/net stack operations.
+
 config NET_TC_TX_COUNT
 	int "How many Tx traffic classes to have for each network device"
-	default 1 if USERSPACE || USB_DEVICE_NETWORK
+	default 1 if USERSPACE || USB_DEVICE_NETWORK || \
+		     NET_SHELL_REQUIRE_TX_THREAD
 	default 0
-	range 1 NET_TC_NUM_PRIORITIES if NET_TC_NUM_PRIORITIES<=8 && USERSPACE
+	range 1 NET_TC_NUM_PRIORITIES if NET_TC_NUM_PRIORITIES<=8 && \
+		(USERSPACE || NET_SHELL_REQUIRE_TX_THREAD)
 	range 0 NET_TC_NUM_PRIORITIES if NET_TC_NUM_PRIORITIES<=8
-	range 1 8 if USERSPACE
+	range 1 8 if USERSPACE || NET_SHELL_REQUIRE_TX_THREAD
 	range 0 8
 	help
 	  Define how many Tx traffic classes (queues) the system should have
@@ -267,6 +282,32 @@ config NET_TC_NUM_PRIORITIES
 	int
 	default NUM_COOP_PRIORITIES if NET_TC_THREAD_COOPERATIVE
 	default NUM_PREEMPT_PRIORITIES if NET_TC_THREAD_PREEMPTIVE
+
+config NET_TC_THREAD_PRIO_CUSTOM
+	bool "Customize traffic class thread priority"
+	help
+	  Customise net threads priority by each.
+
+if NET_TC_THREAD_PRIO_CUSTOM
+config NET_TC_TX_THREAD_BASE_PRIO
+	int "Transmit traffic class base thread priority"
+	default 0
+	help
+	  Transmit traffic class threads priority will increase/decrease
+	  from this priority.
+	  If NET_TC_TX_COUNT is 1, this will be transmit traffic class
+	  thread priority.
+
+config NET_TC_RX_THREAD_BASE_PRIO
+	int "Receive traffic class base thread priority"
+	default 0
+	help
+	  Receive traffic class threads priority will increase/decrease
+	  from this priority.
+	  If NET_TC_RX_COUNT is 1, this will be receive traffic class
+	  thread priority.
+
+endif # NET_TC_THREAD_CUSTOM_PRIO
 
 choice
 	prompt "Priority to traffic class mapping"

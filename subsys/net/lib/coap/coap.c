@@ -51,8 +51,16 @@ LOG_MODULE_REGISTER(net_coap, CONFIG_COAP_LOG_LEVEL);
 
 #define BASIC_HEADER_SIZE	4
 
+#define COAP_OBSERVE_FIRST_OFFSET 2
+
 /* The CoAP message ID that is incremented each time coap_next_id() is called. */
 static uint16_t message_id;
+
+static struct coap_transmission_parameters coap_transmission_params = {
+	.max_retransmission = CONFIG_COAP_MAX_RETRANSMIT,
+	.ack_timeout = CONFIG_COAP_INIT_ACK_TIMEOUT_MS,
+	.coap_backoff_percent = CONFIG_COAP_BACKOFF_PERCENT
+};
 
 static int insert_option(struct coap_packet *cpkt, uint16_t code, const uint8_t *value,
 			 uint16_t len);
@@ -1019,6 +1027,7 @@ uint8_t coap_header_get_code(const struct coap_packet *cpkt)
 	case COAP_RESPONSE_CODE_REQUEST_TOO_LARGE:
 	case COAP_RESPONSE_CODE_UNSUPPORTED_CONTENT_FORMAT:
 	case COAP_RESPONSE_CODE_UNPROCESSABLE_ENTITY:
+	case COAP_RESPONSE_CODE_TOO_MANY_REQUESTS:
 	case COAP_RESPONSE_CODE_INTERNAL_ERROR:
 	case COAP_RESPONSE_CODE_NOT_IMPLEMENTED:
 	case COAP_RESPONSE_CODE_BAD_GATEWAY:
@@ -1547,7 +1556,7 @@ size_t coap_next_block(const struct coap_packet *cpkt,
 int coap_pending_init(struct coap_pending *pending,
 		      const struct coap_packet *request,
 		      const struct sockaddr *addr,
-		      uint8_t retries)
+		      const struct coap_transmission_parameters *params)
 {
 	memset(pending, 0, sizeof(*pending));
 
@@ -1555,10 +1564,16 @@ int coap_pending_init(struct coap_pending *pending,
 
 	memcpy(&pending->addr, addr, sizeof(*addr));
 
+	if (params) {
+		pending->params = *params;
+	} else {
+		pending->params = coap_transmission_params;
+	}
+
 	pending->data = request->data;
 	pending->len = request->offset;
 	pending->t0 = k_uptime_get();
-	pending->retries = retries;
+	pending->retries = pending->params.max_retransmission;
 
 	return 0;
 }
@@ -1670,12 +1685,12 @@ struct coap_pending *coap_pending_next_to_expire(
 	return found;
 }
 
-static uint32_t init_ack_timeout(void)
+static uint32_t init_ack_timeout(const struct coap_transmission_parameters *params)
 {
 #if defined(CONFIG_COAP_RANDOMIZE_ACK_TIMEOUT)
-	const uint32_t max_ack = CONFIG_COAP_INIT_ACK_TIMEOUT_MS *
+	const uint32_t max_ack = params->ack_timeout *
 				 CONFIG_COAP_ACK_RANDOM_PERCENT / 100;
-	const uint32_t min_ack = CONFIG_COAP_INIT_ACK_TIMEOUT_MS;
+	const uint32_t min_ack = params->ack_timeout;
 
 	/* Randomly generated initial ACK timeout
 	 * ACK_TIMEOUT < INIT_ACK_TIMEOUT < ACK_TIMEOUT * ACK_RANDOM_FACTOR
@@ -1683,7 +1698,7 @@ static uint32_t init_ack_timeout(void)
 	 */
 	return min_ack + (sys_rand32_get() % (max_ack - min_ack));
 #else
-	return CONFIG_COAP_INIT_ACK_TIMEOUT_MS;
+	return params->ack_timeout;
 #endif /* defined(CONFIG_COAP_RANDOMIZE_ACK_TIMEOUT) */
 }
 
@@ -1691,8 +1706,7 @@ bool coap_pending_cycle(struct coap_pending *pending)
 {
 	if (pending->timeout == 0) {
 		/* Initial transmission. */
-		pending->timeout = init_ack_timeout();
-
+		pending->timeout = init_ack_timeout(&pending->params);
 		return true;
 	}
 
@@ -1701,7 +1715,7 @@ bool coap_pending_cycle(struct coap_pending *pending)
 	}
 
 	pending->t0 += pending->timeout;
-	pending->timeout = pending->timeout << 1;
+	pending->timeout = pending->timeout * pending->params.coap_backoff_percent / 100;
 	pending->retries--;
 
 	return true;
@@ -1723,11 +1737,33 @@ void coap_pendings_clear(struct coap_pending *pendings, size_t len)
 	}
 }
 
+size_t coap_pendings_count(struct coap_pending *pendings, size_t len)
+{
+	struct coap_pending *p = pendings;
+	size_t c = 0;
+
+	for (size_t i = 0; i < len && p; i++, p++) {
+		if (p->timeout) {
+			c++;
+		}
+	}
+	return c;
+}
+
 /* Reordering according to RFC7641 section 3.4 but without timestamp comparison */
-static inline bool is_newer(int v1, int v2)
+IF_DISABLED(CONFIG_ZTEST, (static inline))
+bool coap_age_is_newer(int v1, int v2)
 {
 	return (v1 < v2 && v2 - v1 < (1 << 23))
 	    || (v1 > v2 && v1 - v2 > (1 << 23));
+}
+
+static inline void coap_observer_increment_age(struct coap_resource *resource)
+{
+	resource->age++;
+	if (resource->age > COAP_OBSERVE_MAX_AGE) {
+		resource->age = COAP_OBSERVE_FIRST_OFFSET;
+	}
 }
 
 struct coap_reply *coap_response_received(
@@ -1767,7 +1803,7 @@ struct coap_reply *coap_response_received(
 
 		age = coap_get_option_int(response, COAP_OPTION_OBSERVE);
 		/* handle observed requests only if received in order */
-		if (age == -ENOENT || is_newer(r->age, age)) {
+		if (age == -ENOENT || coap_age_is_newer(r->age, age)) {
 			r->age = age;
 			if (coap_header_get_code(response) != COAP_RESPONSE_CODE_CONTINUE) {
 				r->reply(response, r, from);
@@ -1822,7 +1858,11 @@ int coap_resource_notify(struct coap_resource *resource)
 		return -ENOENT;
 	}
 
-	resource->age++;
+	if (sys_slist_is_empty(&resource->observers)) {
+		return 0;
+	}
+
+	coap_observer_increment_age(resource);
 
 	SYS_SLIST_FOR_EACH_CONTAINER(&resource->observers, o, list) {
 		resource->notify(resource, o);
@@ -1873,7 +1913,7 @@ bool coap_register_observer(struct coap_resource *resource,
 
 	first = resource->age == 0;
 	if (first) {
-		resource->age = 2;
+		resource->age = COAP_OBSERVE_FIRST_OFFSET;
 	}
 
 	coap_observer_raise_event(resource, observer, NET_EVENT_COAP_OBSERVER_ADDED);
@@ -2005,4 +2045,14 @@ void net_coap_init(void)
 uint16_t coap_next_id(void)
 {
 	return message_id++;
+}
+
+struct coap_transmission_parameters coap_get_transmission_parameters(void)
+{
+	return coap_transmission_params;
+}
+
+void coap_set_transmission_parameters(const struct coap_transmission_parameters *params)
+{
+	coap_transmission_params = *params;
 }

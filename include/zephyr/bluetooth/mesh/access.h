@@ -713,6 +713,8 @@ struct bt_mesh_model_pub {
 	uint8_t  period_div:4, /**< Divisor for the Period. */
 		 count:4;      /**< Transmissions left. */
 
+	uint8_t delayable:1;   /**< Use random delay for publishing. */
+
 	uint32_t period_start; /**< Start of the current period. */
 
 	/** @brief Publication buffer, containing the publication message.
@@ -775,7 +777,7 @@ struct bt_mesh_models_metadata_entry {
 	const uint16_t id;
 
 	/* Pointer to raw data */
-	void *data;
+	const void * const data;
 };
 
 /**
@@ -922,7 +924,7 @@ struct bt_mesh_model {
 
 #if defined(CONFIG_BT_MESH_LARGE_COMP_DATA_SRV) || defined(__DOXYGEN__)
 	/* Pointer to the array of model metadata entries. */
-	struct bt_mesh_models_metadata_entry **metadata;
+	const struct bt_mesh_models_metadata_entry * const * const metadata;
 #endif
 };
 

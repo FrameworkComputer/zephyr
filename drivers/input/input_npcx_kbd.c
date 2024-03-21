@@ -57,8 +57,13 @@ static void npcx_kbd_ksi_isr(const struct device *dev, struct npcx_wui *wui)
 static void npcx_kbd_set_detect_mode(const struct device *dev, bool enabled)
 {
 	const struct npcx_kbd_config *const config = dev->config;
+	const struct input_kbd_matrix_common_config *common = &config->common;
 
 	if (enabled) {
+		for (int i = 0; i < common->row_size; i++) {
+			npcx_miwu_irq_get_and_clear_pending(&config->wui_maps[i]);
+		}
+
 		irq_enable(config->irq);
 	} else {
 		irq_disable(config->irq);
@@ -127,7 +132,7 @@ static void npcx_kbd_init_ksi_wui_callback(const struct device *dev,
 	npcx_miwu_manage_callback(callback, 1);
 
 	/* Configure MIWU setting and enable its interrupt */
-	npcx_miwu_interrupt_configure(wui, NPCX_MIWU_MODE_EDGE, NPCX_MIWU_TRIG_BOTH);
+	npcx_miwu_interrupt_configure(wui, NPCX_MIWU_MODE_EDGE, NPCX_MIWU_TRIG_LOW);
 	npcx_miwu_irq_enable(wui);
 }
 

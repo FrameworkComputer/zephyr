@@ -76,6 +76,7 @@ struct bt_mesh_adv *bt_mesh_adv_create(enum bt_mesh_adv_type type,
 
 void bt_mesh_adv_send(struct bt_mesh_adv *adv, const struct bt_mesh_send_cb *cb,
 		      void *cb_data);
+void bt_mesh_adv_send_end(int err, struct bt_mesh_adv_ctx const *ctx);
 
 struct bt_mesh_adv *bt_mesh_adv_get(k_timeout_t timeout);
 
@@ -93,14 +94,13 @@ int bt_mesh_scan_disable(void);
 
 int bt_mesh_adv_enable(void);
 
-/* Should not be called from work queue due to undefined behavior */
 int bt_mesh_adv_disable(void);
 
 void bt_mesh_adv_local_ready(void);
 
 void bt_mesh_adv_relay_ready(void);
 
-void bt_mesh_adv_terminate(struct bt_mesh_adv *adv);
+int bt_mesh_adv_terminate(struct bt_mesh_adv *adv);
 
 void bt_mesh_adv_friend_ready(void);
 

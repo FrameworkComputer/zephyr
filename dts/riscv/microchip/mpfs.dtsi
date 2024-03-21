@@ -16,10 +16,10 @@
 		#size-cells = <0>;
 		cpu@0 {
 			clock-frequency = <0>;
-			compatible = "riscv";
+			compatible = "sifive,e51", "riscv";
 			device_type = "cpu";
 			reg = < 0x0 >;
-			riscv,isa = "rv64imac_zicsr_zfencei";
+			riscv,isa = "rv64imac_zicsr_zifencei";
 			hlic0: interrupt-controller {
 				compatible = "riscv,cpu-intc";
 				#address-cells = <0>;
@@ -30,7 +30,7 @@
 
 		cpu@1 {
 			clock-frequency = <0>;
-			compatible = "riscv";
+			compatible = "sifive,u54", "riscv";
 			device_type = "cpu";
 			reg = < 0x1 >;
 			riscv,isa = "rv64gc";
@@ -44,7 +44,7 @@
 
 		cpu@2 {
 			clock-frequency = <0>;
-			compatible = "riscv";
+			compatible = "sifive,u54", "riscv";
 			device_type = "cpu";
 			reg = < 0x2 >;
 			riscv,isa = "rv64gc";
@@ -58,7 +58,7 @@
 
 		cpu@3 {
 			clock-frequency = <0>;
-			compatible = "riscv";
+			compatible = "sifive,u54", "riscv";
 			device_type = "cpu";
 			reg = < 0x3 >;
 			riscv,isa = "rv64gc";
@@ -72,7 +72,7 @@
 
 		cpu@4 {
 			clock-frequency = <0>;
-			compatible = "riscv";
+			compatible = "sifive,u54", "riscv";
 			device_type = "cpu";
 			reg = < 0x4 >;
 			riscv,isa = "rv64gc";
@@ -127,6 +127,16 @@
 			reg = <0x0c000000 0x04000000>;
 			riscv,max-priority = <7>;
 			riscv,ndev = <186>;
+		};
+
+		mbox: mailbox@37020000 {
+			compatible = "microchip,mpfs-mailbox";
+			reg = <0x37020000 0x58>, <0x2000318C 0x40>,
+				<0x37020800 0x100>;
+			interrupt-parent = <&plic>;
+			interrupts = <96 1>;
+			#mbox-cells = <1>;
+			status = "disabled";
 		};
 
 		uart0: uart@20000000 {
@@ -191,6 +201,28 @@
 			reg = <0x21000000 0x1000>;
 			interrupt-parent = <&plic>;
 			interrupts = <85 1>;
+			status = "disabled";
+			clock-frequency = <150000000>;
+		};
+
+		spi1: spi@20109000 {
+			compatible = "microchip,mpfs-spi";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x20109000 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <55 1>;
+			status = "disabled";
+			clock-frequency = <150000000>;
+		};
+
+		syscontroller_qspi: spi@37020100 {
+			compatible = "microchip,mpfs-qspi";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			reg = <0x37020100 0x1000>;
+			interrupt-parent = <&plic>;
+			interrupts = <110 1>;
 			status = "disabled";
 			clock-frequency = <150000000>;
 		};

@@ -607,10 +607,6 @@ void bt_mesh_reset(void);
  *  If at all possible, the Friendship feature should be used instead, to
  *  make the node into a Low Power Node.
  *
- * @note Should not be called from work queue due to undefined behavior.
- * This is due to k_work_flush_delayable() being used in disabling of the
- * extended advertising.
- *
  *  @return 0 on success, or (negative) error code on failure.
  */
 int bt_mesh_suspend(void);
@@ -783,7 +779,6 @@ struct bt_mesh_snb {
 	uint64_t auth_val;
 };
 
-#if defined(CONFIG_BT_MESH_V1d1)
 struct bt_mesh_prb {
 	/** Random */
 	uint8_t random[13];
@@ -797,7 +792,6 @@ struct bt_mesh_prb {
 	/** Authentication tag */
 	uint64_t auth_tag;
 };
-#endif
 
 /** Beacon callback functions. */
 struct bt_mesh_beacon_cb {
@@ -810,7 +804,6 @@ struct bt_mesh_beacon_cb {
 	 */
 	void (*snb_received)(const struct bt_mesh_snb *snb);
 
-#if defined(CONFIG_BT_MESH_V1d1)
 	/** @brief Private Beacon received.
 	 *
 	 *  This callback notifies the application that Private Beacon
@@ -819,7 +812,6 @@ struct bt_mesh_beacon_cb {
 	 *  @param prb  Structure describing received Private Beacon
 	 */
 	void (*priv_received)(const struct bt_mesh_prb *prb);
-#endif
 };
 
 /**

@@ -16,6 +16,7 @@ import shutil
 import re
 import argparse
 from datetime import datetime, timezone
+from twisterlib.coverage import supported_coverage_formats
 
 logger = logging.getLogger('twister')
 logger.setLevel(logging.DEBUG)
@@ -85,14 +86,14 @@ Artificially long but functional example:
         "--save-tests",
         metavar="FILENAME",
         action="store",
-        help="Append list of tests and platforms to be run to file.")
+        help="Write a list of tests and platforms to be run to file.")
 
     case_select.add_argument(
         "-F",
         "--load-tests",
         metavar="FILENAME",
         action="store",
-        help="Load list of tests and platforms to be run from file.")
+        help="Load a list of tests and platforms to be run from file.")
 
     case_select.add_argument(
         "-T", "--testsuite-root", action="append", default=[],
@@ -202,7 +203,7 @@ Artificially long but functional example:
         and global timeout multiplier (this parameter)""")
 
     test_xor_subtest.add_argument(
-        "-s", "--test", action="append",
+        "-s", "--test", "--scenario", action="append",
         help="Run only the specified testsuite scenario. These are named by "
              "<path/relative/to/Zephyr/base/section.name.in.testcase.yaml>")
 
@@ -305,13 +306,15 @@ structure in the main Zephyr tree: boards/<arch>/<board_name>/""")
                              "This option may be used multiple times. "
                              "Default to what was selected with --platform.")
 
-    parser.add_argument("--coverage-tool", choices=['lcov', 'gcovr'], default='lcov',
+    parser.add_argument("--coverage-tool", choices=['lcov', 'gcovr'], default='gcovr',
                         help="Tool to use to generate coverage report.")
 
     parser.add_argument("--coverage-formats", action="store", default=None, # default behavior is set in run_coverage
-                        help="Output formats to use for generated coverage reports, as a comma-separated list. "
-                             "Default to html. "
-                             "Valid options are html, xml, csv, txt, coveralls, sonarqube, lcov.")
+                        help="Output formats to use for generated coverage reports, as a comma-separated list. " +
+                             "Valid options for 'gcovr' tool are: " +
+                             ','.join(supported_coverage_formats['gcovr']) + " (html - default)." +
+                             " Valid options for 'lcov' tool are: " +
+                             ','.join(supported_coverage_formats['lcov']) + " (html,lcov - default).")
 
     parser.add_argument("--test-config", action="store", default=os.path.join(ZEPHYR_BASE, "tests", "test_config.yaml"),
         help="Path to file with plans and test configurations.")
@@ -744,8 +747,18 @@ def parse_arguments(parser, args, options = None):
         sys.exit(1)
 
     if not options.testsuite_root:
-        options.testsuite_root = [os.path.join(ZEPHYR_BASE, "tests"),
-                                 os.path.join(ZEPHYR_BASE, "samples")]
+        # if we specify a test scenario which is part of a suite directly, do
+        # not set testsuite root to default, just point to the test directory
+        # directly.
+        if options.test:
+            for scenario in options.test:
+                if dirname := os.path.dirname(scenario):
+                    options.testsuite_root.append(dirname)
+
+        # check again and make sure we have something set
+        if not options.testsuite_root:
+            options.testsuite_root = [os.path.join(ZEPHYR_BASE, "tests"),
+                                     os.path.join(ZEPHYR_BASE, "samples")]
 
     if options.show_footprint or options.compare_report:
         options.enable_size_report = True
@@ -758,6 +771,13 @@ def parse_arguments(parser, args, options = None):
 
     if not options.coverage_platform:
         options.coverage_platform = options.platform
+
+    if options.coverage_formats:
+        for coverage_format in options.coverage_formats.split(','):
+            if coverage_format not in supported_coverage_formats[options.coverage_tool]:
+                logger.error(f"Unsupported coverage report formats:'{options.coverage_formats}' "
+                             f"for {options.coverage_tool}")
+                sys.exit(1)
 
     if options.enable_valgrind and not shutil.which("valgrind"):
         logger.error("valgrind enabled but valgrind executable not found")
@@ -852,6 +872,13 @@ class TwisterEnv:
         else:
             self.board_roots = None
             self.outdir = None
+
+        self.snippet_roots = [Path(ZEPHYR_BASE)]
+        modules = zephyr_module.parse_modules(ZEPHYR_BASE)
+        for module in modules:
+            snippet_root = module.meta.get("build", {}).get("settings", {}).get("snippet_root")
+            if snippet_root:
+                self.snippet_roots.append(Path(module.project) / snippet_root)
 
         self.hwm = None
 

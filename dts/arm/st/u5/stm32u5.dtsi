@@ -798,11 +798,9 @@
 			reg = <0x4000a400 0x400>, <0x4000ac00 0x350>;
 			reg-names = "m_can", "message_ram";
 			interrupts = <39 0>, <40 0>;
-			interrupt-names = "LINE_0", "LINE_1";
+			interrupt-names = "int0", "int1";
 			clocks = <&rcc STM32_CLOCK_BUS_APB1_2 0x00000200>;
 			bosch,mram-cfg = <0x0 28 8 3 3 0 3 3>;
-			sample-point = <875>;
-			sample-point-data = <875>;
 			status = "disabled";
 		};
 
@@ -840,6 +838,17 @@
 				status = "disabled";
 			};
 		};
+
+	};
+
+	swj_port: swj_port {
+		compatible = "swj-connector";
+		pinctrl-0 = <&debug_jtms_swdio_pa13 &debug_jtck_swclk_pa14
+			     &debug_jtdi_pa15 &debug_jtdo_swo_pb3
+			     &debug_jtrst_pb4>;
+		pinctrl-1 = <&analog_pa13 &analog_pa14 &analog_pa15
+			     &analog_pb3 &analog_pb4>;
+		pinctrl-names = "default", "sleep";
 	};
 
 	die_temp: dietemp {
@@ -881,6 +890,38 @@
 		compatible = "st,stm32-vbat";
 		ratio = <4>;
 		io-channels = <&adc4 14>;
+		status = "disabled";
+	};
+
+	smbus1: smbus1 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c1>;
+		status = "disabled";
+	};
+
+	smbus2: smbus2 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c2>;
+		status = "disabled";
+	};
+
+	smbus3: smbus3 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c3>;
+		status = "disabled";
+	};
+
+	smbus4: smbus4 {
+		compatible = "st,stm32-smbus";
+		#address-cells = <1>;
+		#size-cells = <0>;
+		i2c = <&i2c4>;
 		status = "disabled";
 	};
 };

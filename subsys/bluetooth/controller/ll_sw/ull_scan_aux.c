@@ -454,10 +454,27 @@ void ull_scan_aux_setup(memq_link_t *link, struct node_rx_hdr *rx)
 		/* Periodic Advertising Channel Map Indication */
 		ull_sync_chm_update(rx->handle, ptr, acad_len);
 
+#if defined(CONFIG_BT_CTLR_SYNC_ISO)
+		struct ll_sync_set *sync_set;
+		struct pdu_big_info *bi;
+		uint8_t bi_size;
+
+		sync_set = HDR_LLL2ULL(sync_lll);
+
+		/* Provide encryption information for BIG sync creation */
+		bi_size = ptr[PDU_ADV_DATA_HEADER_LEN_OFFSET] -
+			  PDU_ADV_DATA_HEADER_TYPE_SIZE;
+		sync_set->enc = (bi_size == PDU_BIG_INFO_ENCRYPTED_SIZE);
+
+		/* Store number of BISes in the BIG */
+		bi = (void *)&ptr[PDU_ADV_DATA_HEADER_DATA_OFFSET];
+		sync_set->num_bis = PDU_BIG_INFO_NUM_BIS_GET(bi);
+
 		/* Broadcast ISO synchronize */
-		if (IS_ENABLED(CONFIG_BT_CTLR_SYNC_ISO) && sync_iso) {
+		if (sync_iso) {
 			ull_sync_iso_setup(sync_iso, rx, ptr, acad_len);
 		}
+#endif /* CONFIG_BT_CTLR_SYNC_ISO */
 	}
 
 	/* Do not ULL schedule auxiliary PDU reception if no aux pointer
@@ -535,11 +552,24 @@ void ull_scan_aux_setup(memq_link_t *link, struct node_rx_hdr *rx)
 		rx_incomplete = NULL;
 #endif /* CONFIG_BT_CTLR_SYNC_PERIODIC */
 
-	} else {
+	} else if (!(IS_ENABLED(CONFIG_BT_CTLR_SYNC_PERIODIC) && sync_lll)) {
 		aux->data_len += data_len;
 
+		/* Flush auxiliary PDU receptions and stop any more ULL
+		 * scheduling if accumulated data length exceeds configured
+		 * maximum supported.
+		 */
 		if (aux->data_len >= CONFIG_BT_CTLR_SCAN_DATA_LEN_MAX) {
-			goto ull_scan_aux_rx_flush;
+			/* If LLL has already scheduled, then let it proceed.
+			 *
+			 * TODO: LLL to check accumulated data length and
+			 *       stop further reception.
+			 *       Currently LLL will schedule as long as there
+			 *       are free node rx available.
+			 */
+			if (!ftr->aux_lll_sched) {
+				goto ull_scan_aux_rx_flush;
+			}
 		}
 	}
 
@@ -552,6 +582,24 @@ void ull_scan_aux_setup(memq_link_t *link, struct node_rx_hdr *rx)
 		sync_set = HDR_LLL2ULL(sync_lll);
 		sync_set->data_len += data_len;
 		ftr->aux_data_len = sync_set->data_len;
+
+		/* Flush auxiliary PDU receptions and stop any more ULL
+		 * scheduling if accumulated data length exceeds configured
+		 * maximum supported.
+		 */
+		if (sync_set->data_len >= CONFIG_BT_CTLR_SCAN_DATA_LEN_MAX) {
+			/* If LLL has already scheduled, then let it proceed.
+			 *
+			 * TODO: LLL to check accumulated data length and
+			 *       stop further reception.
+			 *       Currently LLL will schedule as long as there
+			 *       are free node rx available.
+			 */
+			if (!ftr->aux_lll_sched) {
+				sync_set->data_len = 0U;
+				goto ull_scan_aux_rx_flush;
+			}
+		}
 	} else {
 		if (aux->rx_last) {
 			aux->rx_last->rx_ftr.extra = rx;

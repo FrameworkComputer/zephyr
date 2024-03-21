@@ -24,6 +24,7 @@
 #include <stm32_ll_rtc.h>
 #include <zephyr/drivers/counter.h>
 #include <zephyr/sys/timeutil.h>
+#include <zephyr/pm/device.h>
 
 #include <zephyr/logging/log.h>
 #include <zephyr/irq.h>
@@ -239,6 +240,12 @@ tick_t rtc_stm32_read(const struct device *dev)
 #endif /* CONFIG_COUNTER_RTC_STM32_SUBSECONDS */
 	ARG_UNUSED(dev);
 
+	/* Enable Backup access */
+#if defined(PWR_CR_DBP) || defined(PWR_CR1_DBP) || \
+	defined(PWR_DBPCR_DBP) || defined(PWR_DBPR_DBP)
+	LL_PWR_EnableBkUpAccess();
+#endif /* PWR_CR_DBP || PWR_CR1_DBP || PWR_DBPR_DBP */
+
 	/* Read time and date registers. Make sure value of the previous register
 	 * hasn't been changed while reading the next one.
 	 */
@@ -293,6 +300,12 @@ tick_t rtc_stm32_read(const struct device *dev)
 	uint32_t rtc_time, ticks;
 
 	ARG_UNUSED(dev);
+
+	/* Enable Backup access */
+#if defined(PWR_CR_DBP) || defined(PWR_CR1_DBP) || \
+	defined(PWR_DBPCR_DBP) || defined(PWR_DBPR_DBP)
+	LL_PWR_EnableBkUpAccess();
+#endif /* PWR_CR_DBP || PWR_CR1_DBP || PWR_DBPR_DBP */
 
 	rtc_time = LL_RTC_TIME_Get(RTC);
 
@@ -648,6 +661,30 @@ static const struct rtc_stm32_config rtc_config = {
 	.pclken = rtc_clk,
 };
 
+#ifdef CONFIG_PM_DEVICE
+static int rtc_stm32_pm_action(const struct device *dev,
+			       enum pm_device_action action)
+{
+	const struct device *const clk = DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE);
+	const struct rtc_stm32_config *cfg = dev->config;
+
+	switch (action) {
+	case PM_DEVICE_ACTION_RESUME:
+		/* Enable RTC bus clock */
+		if (clock_control_on(clk, (clock_control_subsys_t) &cfg->pclken[0]) != 0) {
+			LOG_ERR("clock op failed\n");
+			return -EIO;
+		}
+		break;
+	case PM_DEVICE_ACTION_SUSPEND:
+		break;
+	default:
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+#endif /* CONFIG_PM_DEVICE */
 
 static const struct counter_driver_api rtc_stm32_driver_api = {
 	.start = rtc_stm32_start,
@@ -663,7 +700,9 @@ static const struct counter_driver_api rtc_stm32_driver_api = {
 	.get_top_value = rtc_stm32_get_top_value,
 };
 
-DEVICE_DT_INST_DEFINE(0, &rtc_stm32_init, NULL,
+PM_DEVICE_DT_INST_DEFINE(0, rtc_stm32_pm_action);
+
+DEVICE_DT_INST_DEFINE(0, &rtc_stm32_init, PM_DEVICE_DT_INST_GET(0),
 		    &rtc_data, &rtc_config, PRE_KERNEL_1,
 		    CONFIG_COUNTER_INIT_PRIORITY, &rtc_stm32_driver_api);
 

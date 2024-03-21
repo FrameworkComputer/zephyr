@@ -38,6 +38,8 @@ BUILD_ASSERT(sizeof(intptr_t) == sizeof(long));
 /**
  * @brief Kernel APIs
  * @defgroup kernel_apis Kernel APIs
+ * @since 1.0
+ * @version 1.0.0
  * @{
  * @}
  */
@@ -420,7 +422,7 @@ __syscall int k_thread_stack_space_get(const struct k_thread *thread,
 				       size_t *unused_ptr);
 #endif
 
-#if (CONFIG_HEAP_MEM_POOL_SIZE > 0)
+#if (K_HEAP_MEM_POOL_SIZE > 0)
 /**
  * @brief Assign the system heap as a thread's resource pool
  *
@@ -434,7 +436,7 @@ __syscall int k_thread_stack_space_get(const struct k_thread *thread,
  *
  */
 void k_thread_system_pool_assign(struct k_thread *thread);
-#endif /* (CONFIG_HEAP_MEM_POOL_SIZE > 0) */
+#endif /* (K_HEAP_MEM_POOL_SIZE > 0) */
 
 /**
  * @brief Sleep until a thread exits
@@ -639,12 +641,12 @@ k_ticks_t z_timeout_remaining(const struct _timeout *timeout);
  * executes, in units of system ticks.  If the thread is not waiting,
  * it returns current system time.
  */
-__syscall k_ticks_t k_thread_timeout_expires_ticks(const struct k_thread *t);
+__syscall k_ticks_t k_thread_timeout_expires_ticks(const struct k_thread *thread);
 
 static inline k_ticks_t z_impl_k_thread_timeout_expires_ticks(
-						const struct k_thread *t)
+						const struct k_thread *thread)
 {
-	return z_timeout_expires(&t->base.timeout);
+	return z_timeout_expires(&thread->base.timeout);
 }
 
 /**
@@ -654,12 +656,12 @@ static inline k_ticks_t z_impl_k_thread_timeout_expires_ticks(
  * next executes, in units of system ticks.  If the thread is not
  * waiting, it returns zero.
  */
-__syscall k_ticks_t k_thread_timeout_remaining_ticks(const struct k_thread *t);
+__syscall k_ticks_t k_thread_timeout_remaining_ticks(const struct k_thread *thread);
 
 static inline k_ticks_t z_impl_k_thread_timeout_remaining_ticks(
-						const struct k_thread *t)
+						const struct k_thread *thread)
 {
-	return z_timeout_remaining(&t->base.timeout);
+	return z_timeout_remaining(&thread->base.timeout);
 }
 
 #endif /* CONFIG_SYS_CLOCK_EXISTS */
@@ -3289,7 +3291,7 @@ void k_work_init(struct k_work *work,
  * @param work pointer to the work item.
  *
  * @return a mask of flags K_WORK_DELAYED, K_WORK_QUEUED,
- * K_WORK_RUNNING, and K_WORK_CANCELING.
+ * K_WORK_RUNNING, K_WORK_CANCELING, and K_WORK_FLUSHING.
  */
 int k_work_busy_get(const struct k_work *work);
 
@@ -3545,9 +3547,9 @@ k_work_delayable_from_work(struct k_work *work);
  *
  * @param dwork pointer to the delayable work item.
  *
- * @return a mask of flags K_WORK_DELAYED, K_WORK_QUEUED, K_WORK_RUNNING, and
- * K_WORK_CANCELING.  A zero return value indicates the work item appears to
- * be idle.
+ * @return a mask of flags K_WORK_DELAYED, K_WORK_QUEUED, K_WORK_RUNNING,
+ * K_WORK_CANCELING, and K_WORK_FLUSHING.  A zero return value indicates the
+ * work item appears to be idle.
  */
 int k_work_delayable_busy_get(const struct k_work_delayable *dwork);
 
@@ -3795,9 +3797,10 @@ enum {
 	K_WORK_CANCELING_BIT = 1,
 	K_WORK_QUEUED_BIT = 2,
 	K_WORK_DELAYED_BIT = 3,
+	K_WORK_FLUSHING_BIT = 4,
 
 	K_WORK_MASK = BIT(K_WORK_DELAYED_BIT) | BIT(K_WORK_QUEUED_BIT)
-		| BIT(K_WORK_RUNNING_BIT) | BIT(K_WORK_CANCELING_BIT),
+		| BIT(K_WORK_RUNNING_BIT) | BIT(K_WORK_CANCELING_BIT) | BIT(K_WORK_FLUSHING_BIT),
 
 	/* Static work flags */
 	K_WORK_DELAYABLE_BIT = 8,
@@ -3848,6 +3851,12 @@ enum {
 	 * Accessed via k_work_busy_get().  May co-occur with other flags.
 	 */
 	K_WORK_DELAYED = BIT(K_WORK_DELAYED_BIT),
+
+	/** @brief Flag indicating a synced work item that is being flushed.
+	 *
+	 * Accessed via k_work_busy_get().  May co-occur with other flags.
+	 */
+	K_WORK_FLUSHING = BIT(K_WORK_FLUSHING_BIT),
 };
 
 /** @brief A structure used to submit work. */
@@ -4685,8 +4694,6 @@ static inline uint32_t z_impl_k_msgq_num_used_get(struct k_msgq *msgq)
  *
  */
 struct k_mbox_msg {
-	/** internal use only - needed for legacy API support */
-	uint32_t _mailbox;
 	/** size of message (in bytes) */
 	size_t size;
 	/** application-defined information value */
@@ -4968,7 +4975,7 @@ __syscall int k_pipe_alloc_init(struct k_pipe *pipe, size_t size);
  * @retval -EAGAIN Waiting period timed out; between zero and @a min_xfer
  *                 minus one data bytes were written.
  */
-__syscall int k_pipe_put(struct k_pipe *pipe, void *data,
+__syscall int k_pipe_put(struct k_pipe *pipe, const void *data,
 			 size_t bytes_to_write, size_t *bytes_written,
 			 size_t min_xfer, k_timeout_t timeout);
 
@@ -5933,22 +5940,7 @@ static inline void k_cpu_atomic_idle(unsigned int key)
 /**
  * @internal
  */
-#ifdef CONFIG_MULTITHREADING
-/**
- * @internal
- */
-void z_init_static_threads(void);
-#else
-/**
- * @internal
- */
-#define z_init_static_threads() do { } while (false)
-#endif
-
-/**
- * @internal
- */
-void z_timer_expiration_handler(struct _timeout *t);
+void z_timer_expiration_handler(struct _timeout *timeout);
 /**
  * INTERNAL_HIDDEN @endcond
  */

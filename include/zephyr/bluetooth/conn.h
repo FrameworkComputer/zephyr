@@ -871,11 +871,12 @@ int bt_le_set_auto_conn(const bt_addr_le_t *addr,
  *  the device has bond information or is already paired and the keys are too
  *  weak then the pairing procedure will be initiated.
  *
- *  This function may return error if required level of security is not possible
- *  to achieve due to local or remote device limitation (e.g., input output
- *  capabilities), or if the maximum number of paired devices has been reached.
+ *  This function may return an error if the required level of security defined using
+ *  @p sec is not possible to achieve due to local or remote device limitation
+ *  (e.g., input output capabilities), or if the maximum number of paired devices
+ *  has been reached.
  *
- *  This function may return error if the pairing procedure has already been
+ *  This function may return an error if the pairing procedure has already been
  *  initiated by the local device or the peer device.
  *
  *  @note When @kconfig{CONFIG_BT_SMP_SC_ONLY} is enabled then the security
@@ -888,7 +889,7 @@ int bt_le_set_auto_conn(const bt_addr_le_t *addr,
  *        procedure will always be initiated.
  *
  *  @param conn Connection object.
- *  @param sec Requested security level.
+ *  @param sec Requested minimum security level.
  *
  *  @return 0 on success or negative error
  */
@@ -999,6 +1000,20 @@ struct bt_conn_cb {
 	 */
 	void (*disconnected)(struct bt_conn *conn, uint8_t reason);
 
+	/** @brief A connection object has been returned to the pool.
+	 *
+	 * This callback notifies the application that it might be able to
+	 * allocate a connection object. No guarantee, first come, first serve.
+	 *
+	 * Use this to e.g. re-start connectable advertising or scanning.
+	 *
+	 * Treat this callback as an ISR, as it originates from
+	 * @ref bt_conn_unref which is used by the BT stack. Making
+	 * Bluetooth API calls in this context is error-prone and strongly
+	 * discouraged.
+	 */
+	void (*recycled)(void);
+
 	/** @brief LE connection parameter update request.
 	 *
 	 *  This callback notifies the application that a remote device
@@ -1052,7 +1067,7 @@ struct bt_conn_cb {
 				  const bt_addr_le_t *rpa,
 				  const bt_addr_le_t *identity);
 #endif /* CONFIG_BT_SMP */
-#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_CLASSIC)
 	/** @brief The security level of a connection has changed.
 	 *
 	 *  This callback notifies the application that the security of a
@@ -1071,7 +1086,7 @@ struct bt_conn_cb {
 	 */
 	void (*security_changed)(struct bt_conn *conn, bt_security_t level,
 				 enum bt_security_err err);
-#endif /* defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR) */
+#endif /* defined(CONFIG_BT_SMP) || defined(CONFIG_BT_CLASSIC) */
 
 #if defined(CONFIG_BT_REMOTE_INFO)
 	/** @brief Remote information procedures has completed.
@@ -1149,6 +1164,19 @@ struct bt_conn_cb {
  *  @param cb Callback struct. Must point to memory that remains valid.
  */
 void bt_conn_cb_register(struct bt_conn_cb *cb);
+
+/**
+ * @brief Unregister connection callbacks.
+ *
+ * Unregister the state of connections callbacks.
+ *
+ * @param cb Callback struct point to memory that remains valid.
+ *
+ * @retval 0 Success
+ * @retval -EINVAL If @p cb is NULL
+ * @retval -ENOENT if @p cb was not registered
+ */
+int bt_conn_cb_unregister(struct bt_conn_cb *cb);
 
 /**
  *  @brief Register a callback structure for connection events.
@@ -1523,7 +1551,7 @@ struct bt_conn_auth_cb {
 	 */
 	void (*pairing_confirm)(struct bt_conn *conn);
 
-#if defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_CLASSIC)
 	/** @brief Request the user to enter a passkey.
 	 *
 	 *  This callback will be called for a BR/EDR (Bluetooth Classic)
@@ -1745,19 +1773,6 @@ struct bt_br_conn_param {
  */
 struct bt_conn *bt_conn_create_br(const bt_addr_t *peer,
 				  const struct bt_br_conn_param *param);
-
-/** @brief Initiate an SCO connection to a remote device.
- *
- *  Allows initiate new SCO link to remote peer using its address.
- *
- *  The caller gets a new reference to the connection object which must be
- *  released with bt_conn_unref() once done using the object.
- *
- *  @param peer  Remote address.
- *
- *  @return Valid connection object on success or NULL otherwise.
- */
-struct bt_conn *bt_conn_create_sco(const bt_addr_t *peer);
 
 #ifdef __cplusplus
 }

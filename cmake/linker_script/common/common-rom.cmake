@@ -99,7 +99,7 @@ endif()
 
 zephyr_iterable_section(NAME bt_l2cap_fixed_chan KVMA RAM_REGION GROUP RODATA_REGION SUBALIGN 4)
 
-if(CONFIG_BT_BREDR)
+if(CONFIG_BT_CLASSIC)
   zephyr_iterable_section(NAME bt_l2cap_br_fixed_chan KVMA RAM_REGION GROUP RODATA_REGION SUBALIGN 4)
 endif()
 
@@ -216,6 +216,7 @@ endif()
 
 if(CONFIG_ZBUS)
   zephyr_iterable_section(NAME zbus_channel KVMA RAM_REGION GROUP RODATA_REGION SUBALIGN 4)
+  zephyr_iterable_section(NAME zbus_observer KVMA RAM_REGION GROUP RODATA_REGION SUBALIGN 4)
   zephyr_iterable_section(NAME zbus_channel_observation KVMA RAM_REGION GROUP RODATA_REGION SUBALIGN 4)
 endif()
 

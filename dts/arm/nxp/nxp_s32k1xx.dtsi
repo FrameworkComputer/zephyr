@@ -1,5 +1,5 @@
 /*
- * Copyright 2023 NXP
+ * Copyright 2023-2024 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,6 +9,10 @@
 #include <zephyr/dt-bindings/i2c/i2c.h>
 
 / {
+	aliases {
+		watchdog0 = &wdog;
+	};
+
 	cpus {
 		#address-cells = <1>;
 		#size-cells = <0>;
@@ -41,6 +45,28 @@
 			interrupt-names = "command-complete", "read-collision", "double-bit";
 			#address-cells = <1>;
 			#size-cells = <1>;
+			status = "disabled";
+		};
+
+		flexcan0: can@40024000 {
+			compatible = "nxp,flexcan-fd", "nxp,flexcan";
+			reg = <0x40024000 0x1000>;
+			clocks = <&clock NXP_S32_FLEXCAN0_CLK>;
+			clk-source = <1>;
+			status = "disabled";
+		};
+
+		flexcan1: can@40025000 {
+			compatible = "nxp,flexcan-fd", "nxp,flexcan";
+			reg = <0x40025000 0x1000>;
+			clk-source = <1>;
+			status = "disabled";
+		};
+
+		flexcan2: can@4002b000 {
+			compatible = "nxp,flexcan-fd", "nxp,flexcan";
+			reg = <0x4002b000 0x1000>;
+			clk-source = <1>;
 			status = "disabled";
 		};
 
@@ -100,6 +126,15 @@
 			compatible = "nxp,kinetis-pinmux";
 			reg = <0x4004d000 0x1000>;
 			clocks = <&clock NXP_S32_PORTE_CLK>;
+		};
+
+		wdog: watchdog@40052000 {
+			compatible = "nxp,kinetis-wdog32";
+			reg = <0x40052000 0x1000>;
+			interrupts = <22 0>;
+			clocks = <&clock NXP_S32_LPO_128K_CLK>;
+			clk-source = <1>;
+			clk-divider = <256>;
 		};
 
 		clock: clock-controller@40064000 {
@@ -201,6 +236,95 @@
 			#gpio-cells = <2>;
 			nxp,kinetis-port = <&porte>;
 			status = "disabled";
+		};
+
+		ftm0: ftm@40038000 {
+			compatible = "nxp,kinetis-ftm";
+			reg = <0x40038000 0x1000>;
+			interrupts = <99 0>, <100 0>, <101 0>, <102 0>, <104 0>;
+			interrupt-names = "0-1", "2-3", "4-5", "6-7", "overflow";
+			clocks = <&clock NXP_S32_RTC_CLK>;
+			prescaler = <1>;
+			status = "disabled";
+		};
+
+		ftm1: ftm@40039000 {
+			compatible = "nxp,kinetis-ftm";
+			reg = <0x40039000 0x1000>;
+			interrupts = <105 0>, <106 0>, <107 0>, <108 0>, <110 0>;
+			interrupt-names = "0-1", "2-3", "4-5", "6-7", "overflow";
+			clocks = <&clock NXP_S32_RTC_CLK>;
+			prescaler = <1>;
+			status = "disabled";
+		};
+
+		ftm2: ftm@4003a000 {
+			compatible = "nxp,kinetis-ftm";
+			reg = <0x4003a000 0x1000>;
+			interrupts = <111 0>, <112 0>, <113 0>, <114 0>, <116 0>;
+			interrupt-names = "0-1", "2-3", "4-5", "6-7", "overflow";
+			clocks = <&clock NXP_S32_RTC_CLK>;
+			prescaler = <1>;
+			status = "disabled";
+		};
+
+		ftm3: ftm@40026000 {
+			compatible = "nxp,kinetis-ftm";
+			reg = <0x40026000 0x1000>;
+			interrupts = <117 0>, <118 0>, <119 0>, <120 0>, <122 0>;
+			interrupt-names = "0-1", "2-3", "4-5", "6-7", "overflow";
+			clocks = <&clock NXP_S32_RTC_CLK>;
+			prescaler = <1>;
+			status = "disabled";
+		};
+
+		ftm4: ftm@4006e000 {
+			compatible = "nxp,kinetis-ftm";
+			reg = <0x4006e000 0x1000>;
+			interrupts = <123 0>, <124 0>, <125 0>, <126 0>, <128 0>;
+			interrupt-names = "0-1", "2-3", "4-5", "6-7", "overflow";
+			clocks = <&clock NXP_S32_RTC_CLK>;
+			prescaler = <1>;
+			status = "disabled";
+		};
+
+		ftm5: ftm@4006f000 {
+			compatible = "nxp,kinetis-ftm";
+			reg = <0x4006f000 0x1000>;
+			interrupts = <129 0>, <130 0>, <131 0>, <132 0>, <134 0>;
+			interrupt-names = "0-1", "2-3", "4-5", "6-7", "overflow";
+			clocks = <&clock NXP_S32_RTC_CLK>;
+			prescaler = <1>;
+			status = "disabled";
+		};
+
+		ftm6: ftm@40070000 {
+			compatible = "nxp,kinetis-ftm";
+			reg = <0x40070000 0x1000>;
+			interrupts = <135 0>, <136 0>, <137 0>, <138 0>, <140 0>;
+			interrupt-names = "0-1", "2-3", "4-5", "6-7", "overflow";
+			clocks = <&clock NXP_S32_RTC_CLK>;
+			prescaler = <1>;
+			status = "disabled";
+		};
+
+		ftm7: ftm@40071000 {
+			compatible = "nxp,kinetis-ftm";
+			reg = <0x40071000 0x1000>;
+			interrupts = <141 0>, <142 0>, <143 0>, <144 0>, <146 0>;
+			interrupt-names = "0-1", "2-3", "4-5", "6-7", "overflow";
+			clocks = <&clock NXP_S32_RTC_CLK>;
+			prescaler = <1>;
+			status = "disabled";
+		};
+
+		rtc: rtc@4003d000 {
+			compatible = "nxp,kinetis-rtc";
+			reg = <0x4003d000 0x1000>;
+			interrupts = <46 0>, <47 0>;
+			interrupt-names = "alarm", "seconds";
+			clock-frequency = <32768>;
+			prescaler = <32768>;
 		};
 	};
 };

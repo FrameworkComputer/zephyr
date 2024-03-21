@@ -959,15 +959,18 @@ static void event_handler(enum mdm_hl7800_event event, void *event_data)
 {
 	sys_snode_t *node;
 	struct mdm_hl7800_callback_agent *agent;
+	int ret;
 
-	k_sem_take(&cb_lock, K_FOREVER);
-	SYS_SLIST_FOR_EACH_NODE(&hl7800_event_callback_list, node) {
-		agent = CONTAINER_OF(node, struct mdm_hl7800_callback_agent, node);
-		if (agent->event_callback != NULL) {
-			agent->event_callback(event, event_data);
+	ret = k_sem_take(&cb_lock, K_FOREVER);
+	if (ret == 0) {
+		SYS_SLIST_FOR_EACH_NODE(&hl7800_event_callback_list, node) {
+			agent = CONTAINER_OF(node, struct mdm_hl7800_callback_agent, node);
+			if (agent->event_callback != NULL) {
+				agent->event_callback(event, event_data);
+			}
 		}
+		k_sem_give(&cb_lock);
 	}
-	k_sem_give(&cb_lock);
 }
 
 void mdm_hl7800_get_signal_quality(int *rsrp, int *sinr)
@@ -1903,10 +1906,9 @@ static void dns_work_cb(struct k_work *work)
 	if (!valid_address && IS_ENABLED(CONFIG_NET_IPV4)) {
 		/* IPv6 DNS string is not valid, replace it with IPv4 address and recheck */
 		strncpy(iface_ctx.dns_v6_string, iface_ctx.dns_v4_string,
-			strlen(iface_ctx.dns_v4_string));
+			sizeof(iface_ctx.dns_v6_string) - 1);
 		valid_address = net_ipaddr_parse(iface_ctx.dns_v6_string,
-						 strlen(iface_ctx.dns_v6_string),
-						 &temp_addr);
+						 strlen(iface_ctx.dns_v6_string), &temp_addr);
 	}
 #else
 	valid_address =
@@ -1996,8 +1998,11 @@ static int hl7800_net_addr6_pton(const char *src, struct in6_addr *dst)
 
 		ipv6_section = (uint16_t)strtol(src, NULL, 10);
 		src = strchr(src, '.');
+		if (!src) {
+			return -EINVAL;
+		}
 		src++;
-		if (!src || *src == '\0') {
+		if (*src == '\0') {
 			return -EINVAL;
 		}
 		ipv6_section = (ipv6_section << 8) | (uint16_t)strtol(src, NULL, 10);
@@ -2168,7 +2173,9 @@ static bool on_cmd_atcmdinfo_ipaddr(struct net_buf **buf, uint16_t len)
 				LOG_ERR("Cannot set iface IPv4 addr");
 			}
 
-			net_if_ipv4_set_netmask(iface_ctx.iface, &iface_ctx.subnet);
+			net_if_ipv4_set_netmask_by_addr(iface_ctx.iface,
+							&new_ipv4_addr,
+							&iface_ctx.subnet);
 			net_if_ipv4_set_gw(iface_ctx.iface, &iface_ctx.gateway);
 #endif
 			/* store the new IP addr */
@@ -2716,6 +2723,9 @@ static bool on_cmd_atcmdinfo_pdp_authentication_cfg(struct net_buf **buf,
 					MDM_HL7800_APN_USERNAME_MAX_STRLEN)) {
 					iface_ctx.mdm_apn.username[i++] = *p++;
 				}
+			} else {
+				LOG_WRN("Issue parsing APN username");
+				goto done;
 			}
 			LOG_INF("APN Username: %s",
 				iface_ctx.mdm_apn.username);
@@ -2734,6 +2744,7 @@ static bool on_cmd_atcmdinfo_pdp_authentication_cfg(struct net_buf **buf,
 				iface_ctx.mdm_apn.password);
 		}
 	}
+done:
 	net_buf_remove(buf, line_length);
 	net_buf_skipcrlf(buf);
 
@@ -4047,7 +4058,7 @@ static void sockreadrecv_cb_work(struct k_work *work)
 	}
 }
 
-static void sock_read(struct net_buf **buf, uint16_t len)
+static void sock_read(struct net_buf **buf)
 {
 	struct hl7800_socket *sock = NULL;
 	struct net_buf *frag;
@@ -4153,7 +4164,7 @@ static void sock_read(struct net_buf **buf, uint16_t len)
 	}
 
 	frag = NULL;
-	len = net_buf_findcrlf(*buf, &frag);
+	(void)net_buf_findcrlf(*buf, &frag);
 	if (!frag) {
 		LOG_WRN("Unable to find OK start");
 		goto all_rx_data;
@@ -4217,7 +4228,7 @@ static bool on_cmd_connect(struct net_buf **buf, uint16_t len)
 
 	if (sock->state == SOCK_RX) {
 		remove_data_from_buffer = false;
-		sock_read(buf, len);
+		sock_read(buf);
 	} else {
 		k_sem_give(&sock->sock_send_sem);
 	}

@@ -27,7 +27,7 @@ Some configuration is required to make sure services can be started using the Co
 
 All services are added to a predefined linker section and all resources for each service also get
 their respective linker sections. If you would have a service ``my_service`` it has to be
-prefixed wth ``coap_resource_`` and added to a linker file:
+prefixed with ``coap_resource_`` and added to a linker file:
 
 .. code-block:: c
     :caption: ``sections-ram.ld``
@@ -97,7 +97,7 @@ The following is an example of a CoAP resource registered with our service:
         coap_packet_append_payload(&response, (uint8_t *)msg, sizeof(msg));
 
         /* Send to response back to the client */
-        return coap_resource_send(resource, &response, addr, addr_len);
+        return coap_resource_send(resource, &response, addr, addr_len, NULL);
     }
 
     static int my_put(struct coap_resource *resource, struct coap_packet *request,
@@ -178,7 +178,7 @@ of CoAP services. An example using a temperature sensor can look like:
         coap_packet_append_payload_marker(&response);
         coap_packet_append_payload(&response, (uint8_t *)payload, strlen(payload));
 
-        return coap_resource_send(resource, &response, addr, addr_len);
+        return coap_resource_send(resource, &response, addr, addr_len, NULL);
     }
 
     static int temp_get(struct coap_resource *resource, struct coap_packet *request,
@@ -281,3 +281,4 @@ API Reference
 *************
 
 .. doxygengroup:: coap_service
+.. doxygengroup:: coap_mgmt

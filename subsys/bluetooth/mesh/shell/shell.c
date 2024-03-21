@@ -145,12 +145,12 @@ static const struct bt_mesh_health_srv_cb health_srv_cb = {
 #endif /* CONFIG_BT_MESH_SHELL_HEALTH_SRV_INSTANCE */
 
 #ifdef CONFIG_BT_MESH_LARGE_COMP_DATA_SRV
-static uint8_t health_tests[] = {
+static const uint8_t health_tests[] = {
 	BT_MESH_HEALTH_TEST_INFO(COMPANY_ID_LF, 6, 0x01, 0x02, 0x03, 0x04, 0x34, 0x15),
 	BT_MESH_HEALTH_TEST_INFO(COMPANY_ID_NORDIC_SEMI, 3, 0x01, 0x02, 0x03),
 };
 
-static struct bt_mesh_models_metadata_entry health_srv_meta[] = {
+static const struct bt_mesh_models_metadata_entry health_srv_meta[] = {
 	BT_MESH_HEALTH_TEST_INFO_METADATA(health_tests),
 	BT_MESH_MODELS_METADATA_END,
 };
@@ -726,6 +726,11 @@ static int cmd_beacon_listen(const struct shell *sh, size_t argc,
 		return err;
 	}
 
+	if (!bt_mesh_is_provisioned()) {
+		shell_error(sh, "Not yet provisioned");
+		return -EINVAL;
+	}
+
 	if (val) {
 		bt_mesh_shell_prov.unprovisioned_beacon = print_unprovisioned_beacon;
 #if defined(CONFIG_BT_MESH_PB_GATT_CLIENT)
@@ -771,7 +776,7 @@ static int cmd_provision_gatt(const struct shell *sh, size_t argc,
 }
 #endif /* CONFIG_BT_MESH_PB_GATT_CLIENT */
 
-#if defined(CONFIG_BT_MESH_PROV_DEVICE)
+#if defined(CONFIG_BT_MESH_PROVISIONEE)
 static int cmd_pb(bt_mesh_prov_bearer_t bearer, const struct shell *sh,
 		  size_t argc, char *argv[])
 {
@@ -822,7 +827,7 @@ static int cmd_pb_gatt(const struct shell *sh, size_t argc, char *argv[])
 	return cmd_pb(BT_MESH_PROV_GATT, sh, argc, argv);
 }
 #endif /* CONFIG_BT_MESH_PB_GATT */
-#endif /* CONFIG_BT_MESH_PROV_DEVICE */
+#endif /* CONFIG_BT_MESH_PROVISIONEE */
 
 #if defined(CONFIG_BT_MESH_PROVISIONER)
 static int cmd_remote_pub_key_set(const struct shell *sh, size_t argc, char *argv[])
@@ -1681,14 +1686,14 @@ SHELL_STATIC_SUBCMD_SET_CREATE(
 	SHELL_CMD_ARG(comp-change, NULL, NULL, cmd_comp_change, 1, 0),
 
 /* Provisioning operations */
-#if defined(CONFIG_BT_MESH_PROV_DEVICE)
+#if defined(CONFIG_BT_MESH_PROVISIONEE)
 #if defined(CONFIG_BT_MESH_PB_GATT)
 	SHELL_CMD_ARG(pb-gatt, NULL, "<Val(off, on)>", cmd_pb_gatt, 2, 0),
 #endif
 #if defined(CONFIG_BT_MESH_PB_ADV)
 	SHELL_CMD_ARG(pb-adv, NULL, "<Val(off, on)>", cmd_pb_adv, 2, 0),
 #endif
-#endif /* CONFIG_BT_MESH_PROV_DEVICE */
+#endif /* CONFIG_BT_MESH_PROVISIONEE */
 
 #if defined(CONFIG_BT_MESH_PROVISIONER)
 	SHELL_CMD(auth-method, &auth_cmds, "Authentication methods", bt_mesh_shell_mdl_cmds_help),

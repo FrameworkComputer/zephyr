@@ -282,7 +282,7 @@ Provisioning
 ============
 
 To allow a device to broadcast connectable unprovisioned beacons, the
-:kconfig:option:`CONFIG_BT_MESH_PROV_DEVICE` configuration option must be enabled, along with the
+:kconfig:option:`CONFIG_BT_MESH_PROVISIONEE` configuration option must be enabled, along with the
 :kconfig:option:`CONFIG_BT_MESH_PB_GATT` option.
 
 ``mesh prov pb-gatt <Val(off, on)>``
@@ -295,7 +295,7 @@ To allow a device to broadcast connectable unprovisioned beacons, the
 	* ``Val``: Enable or disable provisioning with GATT
 
 To allow a device to broadcast unprovisioned beacons, the
-:kconfig:option:`CONFIG_BT_MESH_PROV_DEVICE` configuration option must be enabled, along with the
+:kconfig:option:`CONFIG_BT_MESH_PROVISIONEE` configuration option must be enabled, along with the
 :kconfig:option:`CONFIG_BT_MESH_PB_ADV` option.
 
 ``mesh prov pb-adv <Val(off, on)>``
@@ -944,7 +944,7 @@ application. This shell module can be used to trigger interaction between Health
 on devices in a Mesh network.
 
 By default, the module will choose the first Health Client instance in the model composition when
-using the Health Client commands. To choose a spesific Health Client instance the user can utilize
+using the Health Client commands. To choose a specific Health Client instance the user can utilize
 the commands ``mesh models health instance set`` and ``mesh models health instance get-all``.
 
 The Health Client may use the general messages parameters set by ``mesh target dst``,
@@ -1524,11 +1524,11 @@ firmware before accepting it. The commands are enabled through the
 	* ``Rev``: Revision number of the firmware.
 	* ``BuildNum``: Build number.
 	* ``Size``: Size of the signed bin file.
-	* ``CoreType``: New firmware core type in bit field format:
+	* ``CoreType``: New firmware core type:
 
-		* ``0``: Application core.
-		* ``1``: Network core.
-		* ``2``: Applications specific BLOB.
+		* ``1``: Application core.
+		* ``2``: Network core.
+		* ``4``: Applications specific BLOB.
 	* ``Hash``: Hash of the composition data generated using ``mesh models dfu metadata comp-hash-get`` command.
 	* ``Elems``: Number of elements on the new firmware.
 	* ``UserData``: User data supplied with the metadata.
@@ -1761,6 +1761,31 @@ Provisioning Servers on devices in a mesh network.
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 	Get a list of all Remote Provisioning Client model instances on the node.
+
+
+Large Composition Data Client
+-----------------------------
+
+The Large Composition Data Client is an optional Bluetooth Mesh model enabled through the
+:kconfig:option:`CONFIG_BT_MESH_LARGE_COMP_DATA_CLI` configuration option. The Large Composition Data Client
+model is used to support the functionality of reading pages of Composition Data that do not fit in
+a Config Composition Data Status message, and reading the metadata of the model instances.
+
+``mesh models lcd large-comp-data-get <Page> <Offset>``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+	Send the Large Composition Data Get message to query a portion of the Composition Data state of a node.
+
+	* ``Page``: Page number of the Composition Data.
+	* ``Offset``: Offset within the page.
+
+``mesh models lcd models-metadata-get <Page> <Offset>``
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+	Send the Models Metadata Get message to query a portion of a page of the Models Metadata state.
+
+	* ``Page``: Page number of the Models Metadata.
+	* ``Offset``: Offset within the page.
 
 
 Configuration database

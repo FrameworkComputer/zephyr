@@ -104,7 +104,9 @@ static int bt_data_send(uint8_t num_events, uint16_t adv_int,
 		bt_mesh_adv_send_start(duration, err, ctx);
 	}
 
-	k_sleep(K_MSEC(duration));
+	if (enabled) {
+		k_sleep(K_MSEC(duration));
+	}
 
 	err = bt_le_adv_stop();
 	if (err) {
@@ -182,7 +184,11 @@ static void adv_thread(void *p1, void *p2, void *p3)
 			adv_send(adv);
 		}
 
+		struct bt_mesh_adv_ctx ctx = adv->ctx;
+
+		adv->ctx.started = 0;
 		bt_mesh_adv_unref(adv);
+		bt_mesh_adv_send_end(0, &ctx);
 
 		/* Give other threads a chance to run */
 		k_yield();
@@ -210,9 +216,11 @@ void bt_mesh_adv_gatt_update(void)
 	bt_mesh_adv_get_cancel();
 }
 
-void bt_mesh_adv_terminate(struct bt_mesh_adv *adv)
+int bt_mesh_adv_terminate(struct bt_mesh_adv *adv)
 {
 	ARG_UNUSED(adv);
+
+	return 0;
 }
 
 void bt_mesh_adv_init(void)
@@ -233,9 +241,13 @@ int bt_mesh_adv_enable(void)
 
 int bt_mesh_adv_disable(void)
 {
+	int err;
+
 	enabled = false;
-	k_thread_join(&adv_thread_data, K_FOREVER);
-	LOG_DBG("Advertising disabled");
+
+	err = k_thread_join(&adv_thread_data, K_FOREVER);
+	LOG_DBG("Advertising disabled: %d", err);
+
 	return 0;
 }
 

@@ -231,16 +231,16 @@ struct elf32_sym {
 struct elf64_sym {
 	/** Name of the symbol as an index into the symbol string table */
 	elf64_word st_name;
-	/** Value or location of the symbol */
-	elf64_addr st_value;
-	/** Size of the symbol */
-	elf64_xword st_size;
 	/** Symbol binding and type information */
 	unsigned char st_info;
 	/** Symbol visibility */
 	unsigned char st_other;
 	/** Symbols related section given by section header index */
 	elf64_half st_shndx;
+	/** Value or location of the symbol */
+	elf64_addr st_value;
+	/** Size of the symbol */
+	elf64_xword st_size;
 };
 
 #define SHN_UNDEF 0
@@ -309,7 +309,7 @@ struct elf32_rel {
 struct elf32_rela {
 	elf32_addr r_offset;
 	elf32_word r_info;
-	elf32_word r_addend;
+	elf32_sword r_addend;
 };
 
 /**
@@ -338,8 +338,8 @@ struct elf64_rel {
 
 struct elf64_rela {
 	elf64_addr r_offset;
-	elf64_word r_info;
-	elf64_word r_addend;
+	elf64_xword r_info;
+	elf64_sxword r_addend;
 };
 
 /** @brief Relocation symbol from r_info
@@ -371,6 +371,7 @@ struct elf64_rela {
 #define R_ARM_ABS32 2
 #define R_ARM_REL32 3
 #define R_ARM_COPY 4
+#define R_ARM_THM_CALL 10
 #define R_ARM_CALL 28
 #define R_ARM_V4BX 40
 

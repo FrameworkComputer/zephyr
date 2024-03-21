@@ -82,12 +82,12 @@ void k_sys_fatal_error_handler(unsigned int reason, const z_arch_esf_t *pEsf)
 		} else {
 			printk("Wrong fault reason, expecting %d\n",
 			       expected_reason);
-			printk("PROJECT EXECUTION FAILED\n");
+			TC_END_REPORT(TC_FAIL);
 			k_fatal_halt(reason);
 		}
 	} else {
 		printk("Unexpected fault during test\n");
-		printk("PROJECT EXECUTION FAILED\n");
+		TC_END_REPORT(TC_FAIL);
 		k_fatal_halt(reason);
 	}
 }
@@ -267,7 +267,7 @@ ZTEST_USER(userspace, test_disable_mmu_mpu)
 	uint32_t addr = 0U;
 
 	for (int i = 0; i < 8; i++) {
-		uint32_t attr = addr | Z_XTENSA_MMU_XW;
+		uint32_t attr = addr | XTENSA_MMU_PERM_WX;
 
 		__asm__ volatile("wdtlb %0, %1; witlb %0, %1"
 				 :: "r"(attr), "r"(addr));

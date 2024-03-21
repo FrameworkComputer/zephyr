@@ -96,7 +96,7 @@ static bool adjust_owner_prio(struct k_mutex *mutex, int32_t new_prio)
 			'y' : 'n',
 			new_prio, mutex->owner->base.prio);
 
-		return z_set_prio(mutex->owner, new_prio);
+		return z_thread_prio_set(mutex->owner, new_prio);
 	}
 	return false;
 }
@@ -301,7 +301,7 @@ static int init_mutex_obj_core_list(void)
 	z_obj_type_init(&obj_type_mutex, K_OBJ_TYPE_MUTEX_ID,
 			offsetof(struct k_mutex, obj_core));
 
-	/* Initialize and link statically defined mutexs */
+	/* Initialize and link statically defined mutexes */
 
 	STRUCT_SECTION_FOREACH(k_mutex, mutex) {
 		k_obj_core_init_and_link(K_OBJ_CORE(mutex), &obj_type_mutex);

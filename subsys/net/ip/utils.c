@@ -539,7 +539,7 @@ uint16_t calc_chksum(uint16_t sum_in, const uint8_t *data, size_t len)
 	 * and the offset of starting
 	 */
 	if (odd_start == CHECKSUM_BIG_ENDIAN) {
-		sum = __bswap_16(sum_in);
+		sum = BSWAP_16(sum_in);
 	} else {
 		sum = sum_in;
 	}
@@ -591,7 +591,7 @@ uint16_t calc_chksum(uint16_t sum_in, const uint8_t *data, size_t len)
 	 * and the offset of starting
 	 */
 	if (odd_start == CHECKSUM_BIG_ENDIAN) {
-		return __bswap_16((uint16_t)sum);
+		return BSWAP_16((uint16_t)sum);
 	} else {
 		return sum;
 	}
@@ -930,6 +930,25 @@ bool net_ipaddr_parse(const char *str, size_t str_len, struct sockaddr *addr)
 	return parse_ipv6(str, str_len, addr, false);
 #endif
 	return false;
+}
+
+int net_port_set_default(struct sockaddr *addr, uint16_t default_port)
+{
+	if (IS_ENABLED(CONFIG_NET_IPV4) && addr->sa_family == AF_INET &&
+	    net_sin(addr)->sin_port == 0) {
+		net_sin(addr)->sin_port = htons(default_port);
+	} else if (IS_ENABLED(CONFIG_NET_IPV6) && addr->sa_family == AF_INET6 &&
+		   net_sin6(addr)->sin6_port == 0) {
+		net_sin6(addr)->sin6_port = htons(default_port);
+	} else if ((IS_ENABLED(CONFIG_NET_IPV4) && addr->sa_family == AF_INET) ||
+		   (IS_ENABLED(CONFIG_NET_IPV6) && addr->sa_family == AF_INET6)) {
+		; /* Port is already set */
+	} else {
+		LOG_ERR("Unknown address family");
+		return -EINVAL;
+	}
+
+	return 0;
 }
 
 int net_bytes_from_str(uint8_t *buf, int buf_len, const char *src)

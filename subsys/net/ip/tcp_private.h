@@ -250,6 +250,9 @@ struct tcp_collision_avoidance_reno {
 };
 #endif
 
+struct tcp;
+typedef void (*net_tcp_closed_cb_t)(struct tcp *conn, void *user_data);
+
 struct tcp { /* TCP connection */
 	sys_snode_t next;
 	struct net_context *context;
@@ -263,6 +266,10 @@ struct tcp { /* TCP connection */
 		struct tcp *accepted_conn;
 	};
 	net_context_connect_cb_t connect_cb;
+#if defined(CONFIG_NET_TEST)
+	net_tcp_closed_cb_t test_closed_cb;
+	void *test_user_data;
+#endif
 	struct k_mutex lock;
 	struct k_sem connect_sem; /* semaphore for blocking connect */
 	struct k_sem tx_sem; /* Semaphore indicating if transfers are blocked . */
@@ -290,6 +297,9 @@ struct tcp { /* TCP connection */
 	};
 	union tcp_endpoint src;
 	union tcp_endpoint dst;
+#if defined(CONFIG_NET_TCP_IPV6_ND_REACHABILITY_HINT)
+	int64_t last_nd_hint_time;
+#endif
 	size_t send_data_total;
 	size_t send_retries;
 	int unacked_len;
@@ -345,3 +355,9 @@ struct tcp { /* TCP connection */
 	_flags(_fl, _op, _mask, sizeof(#_args) > 1 ? _args : true)
 
 typedef void (*net_tcp_cb_t)(struct tcp *conn, void *user_data);
+
+#if defined(CONFIG_NET_TEST)
+void tcp_install_close_cb(struct net_context *ctx,
+			  net_tcp_closed_cb_t cb,
+			  void *user_data);
+#endif

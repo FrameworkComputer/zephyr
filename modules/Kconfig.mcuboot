@@ -103,7 +103,7 @@ config MCUBOOT_ENCRYPTION_KEY_FILE
 
 config MCUBOOT_IMGTOOL_SIGN_VERSION
 	string "Version to pass to imgtool when signing"
-	default "$(VERSION_MAJOR).$(VERSION_MINOR).$(PATCHLEVEL)+$(VERSION_TWEAK)" if "$(VERSION_MAJOR)" != ""
+	default "$(APP_VERSION_TWEAK_STRING)" if "$(VERSION_MAJOR)" != ""
 	default "0.0.0+0"
 	help
 	  When signing with imgtool then this setting will be passed as version
@@ -230,6 +230,15 @@ config MCUBOOT_BOOTLOADER_MODE_DIRECT_XIP_WITH_REVERT
 	  This mode selects MCUBOOT_BOOTLOADER_NO_DOWNGRADE as it is not possible
 	  to downgrade running application, but note that MCUboot may do that
 	  if application with higher version will not get confirmed.
+
+config MCUBOOT_BOOTLOADER_MODE_FIRMWARE_UPDATER
+	bool "MCUboot has been configured in firmware updater mode"
+	select MCUBOOT_IMGTOOL_OVERWRITE_ONLY
+	help
+	  MCUboot will only boot slot0_partition for the main application but has
+	  an entrance mechanism defined for entering the slot1_partition which is
+	  a dedicated firmware updater application used to update the slot0_partition
+	  application.
 
 endchoice # MCUBOOT_BOOTLOADER_MODE
 

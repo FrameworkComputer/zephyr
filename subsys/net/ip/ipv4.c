@@ -23,7 +23,7 @@ LOG_MODULE_REGISTER(net_ipv4, CONFIG_NET_IPV4_LOG_LEVEL);
 #include "icmpv4.h"
 #include "udp_internal.h"
 #include "tcp_internal.h"
-#include "dhcpv4.h"
+#include "dhcpv4/dhcpv4_internal.h"
 #include "ipv4.h"
 
 BUILD_ASSERT(sizeof(struct in_addr) == NET_IPV4_ADDR_SIZE);
@@ -232,7 +232,7 @@ int net_ipv4_parse_hdr_options(struct net_pkt *pkt,
 }
 #endif
 
-enum net_verdict net_ipv4_input(struct net_pkt *pkt)
+enum net_verdict net_ipv4_input(struct net_pkt *pkt, bool is_loopback)
 {
 	NET_PKT_DATA_ACCESS_CONTIGUOUS_DEFINE(ipv4_access, struct net_ipv4_hdr);
 	NET_PKT_DATA_ACCESS_DEFINE(udp_access, struct net_udp_hdr);
@@ -293,6 +293,19 @@ enum net_verdict net_ipv4_input(struct net_pkt *pkt)
 		net_pkt_update_length(pkt, pkt_len);
 	}
 
+	if (!is_loopback) {
+		if (net_ipv4_is_addr_loopback((struct in_addr *)hdr->dst) ||
+		    net_ipv4_is_addr_loopback((struct in_addr *)hdr->src)) {
+			NET_DBG("DROP: localhost packet");
+			goto drop;
+		}
+
+		if (net_ipv4_is_my_addr((struct in_addr *)hdr->src)) {
+			NET_DBG("DROP: src addr is %s", "mine");
+			goto drop;
+		}
+	}
+
 	if (net_ipv4_is_addr_mcast((struct in_addr *)hdr->src)) {
 		NET_DBG("DROP: src addr is %s", "mcast");
 		goto drop;
@@ -304,7 +317,8 @@ enum net_verdict net_ipv4_input(struct net_pkt *pkt)
 	}
 
 	if (net_ipv4_is_addr_unspecified((struct in_addr *)hdr->src) &&
-	    !net_ipv4_is_addr_bcast(net_pkt_iface(pkt), (struct in_addr *)hdr->dst)) {
+	    !net_ipv4_is_addr_bcast(net_pkt_iface(pkt), (struct in_addr *)hdr->dst) &&
+	    (hdr->proto != IPPROTO_IGMP)) {
 		NET_DBG("DROP: src addr is %s", "unspecified");
 		goto drop;
 	}

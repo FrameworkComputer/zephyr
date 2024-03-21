@@ -39,6 +39,14 @@ config NET_IF_IPV6_PREFIX_COUNT
 
 if NET_NATIVE_IPV6
 
+config NET_IPV6_MTU
+	int "Initial IPv6 MTU value"
+	default 1280
+	range 1280 1500
+	help
+	  The value should normally be 1280 which is the minimum IPv6 packet
+	  size that implementations need to support without fragmentation.
+
 config NET_INITIAL_HOP_LIMIT
 	int "Initial IPv6 hop limit value for unicast packets"
 	default 64
@@ -135,6 +143,7 @@ config NET_IPV6_NBR_CACHE
 config NET_IPV6_ND
 	bool "Activate neighbor discovery"
 	depends on NET_IPV6_NBR_CACHE
+	select NET_IPV6_MLD if !NET_TEST
 	default y
 	help
 	  The value depends on your network needs. ND should normally
@@ -183,12 +192,6 @@ config NET_MAX_6LO_CONTEXTS
 	  6lowpan context options table size. The value depends on your
 	  network and memory consumption. More 6CO options uses more memory.
 
-config NET_DHCPV6
-	bool "DHCPv6 client"
-	select NET_MGMT
-	select NET_MGMT_EVENT
-	depends on NET_UDP
-
 if NET_6LO
 module = NET_6LO
 module-dep = NET_LOG
@@ -214,14 +217,6 @@ module-dep = NET_LOG
 module-str = Log level for IPv6 neighbor cache
 module-help = Enables IPv6 Neighbor Cache code to output debug messages.
 source "subsys/net/Kconfig.template.log_config.net"
-
-if NET_DHCPV6
-module = NET_DHCPV6
-module-dep = NET_LOG
-module-str = Log level for DHCPv6 client
-module-help = Enables DHCPv6 client code to output debug messages.
-source "subsys/net/Kconfig.template.log_config.net"
-endif # NET_DHCPV6
 
 endif # NET_NATIVE_IPV6
 endif # NET_IPV6
