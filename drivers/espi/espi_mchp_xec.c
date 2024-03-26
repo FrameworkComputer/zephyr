@@ -647,6 +647,11 @@ static int espi_xec_flash_write(const struct device *dev,
 
 	LOG_DBG("%s", __func__);
 
+	if (sizeof(target_mem) < pckt->len) {
+		LOG_ERR("Packet length is too big");
+		return -ENOMEM;
+	}
+
 	if (!(ESPI_FC_REGS->STS & MCHP_ESPI_FC_STS_CHAN_EN)) {
 		LOG_ERR("Flash channel is disabled");
 		return -EIO;
@@ -1360,6 +1365,7 @@ static void espi_xec_vw_isr(const struct device *dev)
 	uint32_t girq_result;
 
 	girq_result = MCHP_GIRQ_RESULT(config->vw_girq_ids[0]);
+	MCHP_GIRQ_SRC(config->vw_girq_ids[0]) = girq_result;
 
 	for (int i = 0; i < m2s_vwires_isr_cnt; i++) {
 		struct espi_isr entry = m2s_vwires_isr[i];
@@ -1370,8 +1376,6 @@ static void espi_xec_vw_isr(const struct device *dev)
 			}
 		}
 	}
-
-	REG32(MCHP_GIRQ_SRC_ADDR(config->vw_girq_ids[0])) = girq_result;
 }
 
 #if DT_INST_PROP_HAS_IDX(0, vw_girqs, 1)

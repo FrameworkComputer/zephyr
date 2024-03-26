@@ -32,10 +32,10 @@
 		#size-cells = <0>;
 
 		cpu0: cpu@0 {
-			compatible = "sifive,s7";
+			compatible = "sifive,s7", "riscv";
 			device_type = "cpu";
 			reg = <0>;
-			riscv,isa = "rv64imac";
+			riscv,isa = "rv64imac_zicsr_zifencei";
 			status = "okay";
 
 			hlic: interrupt-controller {
@@ -46,11 +46,11 @@
 			};
 		};
 		cpu1: cpu@1 {
-			compatible = "sifive,u74";
+			compatible = "sifive,u74", "riscv";
 			device_type = "cpu";
 			mmu-type = "riscv,sv39";
 			reg = <0x1>;
-			riscv,isa = "rv64imafdc";
+			riscv,isa = "rv64gc";
 
 			cpu1_intc: interrupt-controller {
 				compatible = "riscv,cpu-intc";
@@ -59,11 +59,11 @@
 			};
 		};
 		cpu2: cpu@2 {
-			compatible = "sifive,u74";
+			compatible = "sifive,u74", "riscv";
 			device_type = "cpu";
 			mmu-type = "riscv,sv39";
 			reg = <0x2>;
-			riscv,isa = "rv64imafdc";
+			riscv,isa = "rv64gc";
 
 			cpu2_intc: interrupt-controller {
 				compatible = "riscv,cpu-intc";
@@ -72,11 +72,11 @@
 			};
 		};
 		cpu3: cpu@3 {
-			compatible = "sifive,u74";
+			compatible = "sifive,u74", "riscv";
 			device_type = "cpu";
 			mmu-type = "riscv,sv39";
 			reg = <0x3>;
-			riscv,isa = "rv64imafdc";
+			riscv,isa = "rv64gc";
 
 			cpu3_intc: interrupt-controller {
 				compatible = "riscv,cpu-intc";
@@ -85,11 +85,11 @@
 			};
 		};
 		cpu4: cpu@4 {
-			compatible = "sifive,u74";
+			compatible = "sifive,u74", "riscv";
 			device_type = "cpu";
 			mmu-type = "riscv,sv39";
 			reg = <0x4>;
-			riscv,isa = "rv64imafdc";
+			riscv,isa = "rv64gc";
 
 			cpu4_intc: interrupt-controller {
 				compatible = "riscv,cpu-intc";
@@ -142,10 +142,7 @@
 			#interrupt-cells = <2>;
 			interrupt-controller;
 			interrupts-extended = <&hlic 11>;
-			reg = <0x0 0x0c000000 0x0 0x00002000
-			       0x0 0x0c002000 0x0 0x001fe000
-			       0x0 0x0c200000 0x0 0x03e00000>;
-			reg-names = "prio", "irq_en", "reg";
+			reg = <0x0 0x0c000000 0x0 0x04000000>;
 			riscv,max-priority = <7>;
 			riscv,ndev = <52>;
 		};

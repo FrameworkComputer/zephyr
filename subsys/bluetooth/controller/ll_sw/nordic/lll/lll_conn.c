@@ -579,9 +579,10 @@ void lll_conn_isr_tx(void *param)
 	}
 #endif /* CONFIG_BT_CTLR_DF_CONN_CTE_TX */
 
-	/* +/- 2us active clock jitter, +1 us hcto compensation */
-	hcto = radio_tmr_tifs_base_get() + EVENT_IFS_US + (EVENT_CLOCK_JITTER_US << 1) +
-	       RANGE_DELAY_US + HCTO_START_DELAY_US;
+	/* +/- 2us active clock jitter, +1 us PPI to timer start compensation */
+	hcto = radio_tmr_tifs_base_get() + EVENT_IFS_US +
+	       (EVENT_CLOCK_JITTER_US << 1) + RANGE_DELAY_US +
+	       HAL_RADIO_TMR_START_DELAY_US;
 #if defined(CONFIG_BT_CTLR_DF_CONN_CTE_TX)
 	hcto += cte_len;
 #endif /* CONFIG_BT_CTLR_DF_CONN_CTE_TX */
@@ -814,12 +815,12 @@ void lll_conn_pdu_tx_prep(struct lll_conn *lll, struct pdu_data **pdu_data_tx)
 }
 
 #if defined(CONFIG_BT_CTLR_FORCE_MD_AUTO)
-uint8_t lll_conn_force_md_cnt_set(uint8_t force_md_cnt)
+uint8_t lll_conn_force_md_cnt_set(uint8_t reload_cnt)
 {
 	uint8_t previous;
 
 	previous = force_md_cnt_reload;
-	force_md_cnt_reload = force_md_cnt;
+	force_md_cnt_reload = reload_cnt;
 
 	return previous;
 }

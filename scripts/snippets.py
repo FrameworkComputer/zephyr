@@ -56,7 +56,9 @@ class Snippet:
                 path = pathobj.parent / value
                 if not path.is_file():
                     _err(f'snippet file {pathobj}: {variable}: file not found: {path}')
-                return f'"{path}"'
+                return f'"{path.as_posix()}"'
+            if variable in ('DTS_EXTRA_CPPFLAGS'):
+                return f'"{value}"'
             _err(f'unknown append variable: {variable}')
 
         for variable, value in snippet_data.get('append', {}).items():
@@ -157,11 +159,11 @@ zephyr_create_scope(snippets)
             board_re = board[1:-1]
             self.print(f'''\
 # Appends for board regular expression '{board_re}'
-if("${{BOARD}}" MATCHES "^{board_re}$")''')
+if("${{BOARD}}${{BOARD_IDENTIFIER}}" MATCHES "^{board_re}$")''')
         else:
             self.print(f'''\
 # Appends for board '{board}'
-if("${{BOARD}}" STREQUAL "{board}")''')
+if("${{BOARD}}${{BOARD_IDENTIFIER}}" STREQUAL "{board}")''')
         self.print_appends(appends, 1)
         self.print('endif()')
 
@@ -232,6 +234,22 @@ def process_snippets(args: argparse.Namespace) -> Snippets:
     # Process each path in snippet_root in order, adjusting
     # snippets as needed for each one.
     for root in args.snippet_root:
+        process_snippets_in(root, snippets)
+
+    return snippets
+
+def find_snippets_in_roots(requested_snippets, snippet_roots) -> Snippets:
+    '''Process snippet.yml files under each *snippet_root*
+    by recursive search. Return a Snippets object describing
+    the results of the search.
+    '''
+    # This will contain information about all the snippets
+    # we discover in each snippet_root element.
+    snippets = Snippets(requested=requested_snippets)
+
+    # Process each path in snippet_root in order, adjusting
+    # snippets as needed for each one.
+    for root in snippet_roots:
         process_snippets_in(root, snippets)
 
     return snippets

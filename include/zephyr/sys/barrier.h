@@ -11,7 +11,7 @@
 
 #if defined(CONFIG_BARRIER_OPERATIONS_ARCH)
 # if defined(CONFIG_ARM)
-# include <zephyr/arch/arm/aarch32/barrier.h>
+# include <zephyr/arch/arm/barrier.h>
 # elif defined(CONFIG_ARM64)
 # include <zephyr/arch/arm64/barrier.h>
 # endif
@@ -25,6 +25,8 @@ extern "C" {
 
 /**
  * @addtogroup barrier_apis Barrier Services APIs
+ * @since 3.4
+ * @version 0.1.0
  * @ingroup kernel_apis
  * @{
  */

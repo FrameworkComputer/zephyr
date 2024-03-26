@@ -14,13 +14,13 @@ LOG_MODULE_REGISTER(net_ethernet, CONFIG_NET_L2_ETHERNET_LOG_LEVEL);
 #include <zephyr/net/ethernet.h>
 #include <zephyr/net/ethernet_mgmt.h>
 #include <zephyr/net/gptp.h>
-#include <zephyr/random/rand32.h>
+#include <zephyr/random/random.h>
 
 #if defined(CONFIG_NET_LLDP)
 #include <zephyr/net/lldp.h>
 #endif
 
-#include <zephyr/syscall_handler.h>
+#include <zephyr/internal/syscall_handler.h>
 
 #include "arp.h"
 #include "eth_stats.h"
@@ -36,6 +36,10 @@ static const struct net_eth_addr multicast_eth_addr __unused = {
 
 static const struct net_eth_addr broadcast_eth_addr = {
 	{ 0xff, 0xff, 0xff, 0xff, 0xff, 0xff } };
+
+#if defined(CONFIG_NET_NATIVE_IP) && !defined(CONFIG_NET_RAW_MODE)
+static struct net_if_mcast_monitor mcast_monitor;
+#endif
 
 const struct net_eth_addr *net_eth_broadcast_addr(void)
 {
@@ -183,6 +187,50 @@ enum net_verdict ethernet_check_ipv4_bcast_addr(struct net_pkt *pkt,
 	return NET_OK;
 }
 
+#if defined(CONFIG_NET_NATIVE_IP) && !defined(CONFIG_NET_RAW_MODE)
+static void ethernet_mcast_monitor_cb(struct net_if *iface, const struct net_addr *addr,
+				      bool is_joined)
+{
+	struct ethernet_config cfg = {
+		.filter = {
+			.set = is_joined,
+			.type = ETHERNET_FILTER_TYPE_DST_MAC_ADDRESS,
+		},
+	};
+	const struct device *dev;
+	const struct ethernet_api *api;
+
+	/* Make sure we're an ethernet device */
+	if (net_if_l2(iface) != &NET_L2_GET_NAME(ETHERNET)) {
+		return;
+	}
+
+	dev = net_if_get_device(iface);
+	api = dev->api;
+
+	if (!(api->get_capabilities(dev) & ETHERNET_HW_FILTERING) || api->set_config == NULL) {
+		return;
+	}
+
+	switch (addr->family) {
+#if defined(CONFIG_NET_IPV4)
+	case AF_INET:
+		net_eth_ipv4_mcast_to_mac_addr(&addr->in_addr, &cfg.filter.mac_address);
+		break;
+#endif /* CONFIG_NET_IPV4 */
+#if defined(CONFIG_NET_IPV6)
+	case AF_INET6:
+		net_eth_ipv6_mcast_to_mac_addr(&addr->in6_addr, &cfg.filter.mac_address);
+		break;
+#endif /* CONFIG_NET_IPV6 */
+	default:
+		return;
+	}
+
+	api->set_config(dev, ETHERNET_CONFIG_TYPE_FILTER, &cfg);
+}
+#endif
+
 static enum net_verdict ethernet_recv(struct net_if *iface,
 				      struct net_pkt *pkt)
 {
@@ -302,6 +350,7 @@ static enum net_verdict ethernet_recv(struct net_if *iface,
 	    !net_eth_is_addr_multicast((struct net_eth_addr *)lladdr->addr) &&
 	    !net_eth_is_addr_lldp_multicast(
 		    (struct net_eth_addr *)lladdr->addr) &&
+	    !net_eth_is_addr_ptp_multicast((struct net_eth_addr *)lladdr->addr) &&
 	    !net_linkaddr_cmp(net_if_get_link_addr(iface), lladdr)) {
 		/* The ethernet frame is not for me as the link addresses
 		 * are different.
@@ -517,7 +566,8 @@ static struct net_buf *ethernet_fill_header(struct ethernet_context *ctx,
 	}
 
 	if (IS_ENABLED(CONFIG_NET_VLAN) &&
-	    net_eth_is_vlan_enabled(ctx, net_pkt_iface(pkt))) {
+	    net_eth_is_vlan_enabled(ctx, net_pkt_iface(pkt)) &&
+	    (IS_ENABLED(CONFIG_NET_GPTP_VLAN) || ptype != htons(NET_ETH_PTYPE_PTP))) {
 		struct net_eth_vlan_hdr *hdr_vlan;
 
 		hdr_vlan = (struct net_eth_vlan_hdr *)(hdr_frag->data);
@@ -694,10 +744,11 @@ static int ethernet_send(struct net_if *iface, struct net_pkt *pkt)
 	}
 
 	if (IS_ENABLED(CONFIG_NET_VLAN) &&
-	    net_eth_is_vlan_enabled(ctx, iface)) {
+	    net_eth_is_vlan_enabled(ctx, iface) &&
+	    (IS_ENABLED(CONFIG_NET_GPTP_VLAN) || ptype != htons(NET_ETH_PTYPE_PTP))) {
 		if (set_vlan_tag(ctx, iface, pkt) == NET_DROP) {
 			ret = -EINVAL;
-			goto error;
+			goto arp_error;
 		}
 
 		set_vlan_priority(ctx, pkt);
@@ -707,7 +758,7 @@ static int ethernet_send(struct net_if *iface, struct net_pkt *pkt)
 	 */
 	if (!ethernet_fill_header(ctx, pkt, ptype)) {
 		ret = -ENOMEM;
-		goto error;
+		goto arp_error;
 	}
 
 	net_pkt_cursor_init(pkt);
@@ -717,20 +768,7 @@ send:
 	if (ret != 0) {
 		eth_stats_update_errors_tx(iface);
 		ethernet_remove_l2_header(pkt);
-		if (IS_ENABLED(CONFIG_NET_ARP) && ptype == htons(NET_ETH_PTYPE_ARP)) {
-			/* Original packet was added to ARP's pending Q, so, to avoid it
-			 * being freed, take a reference, the reference is dropped when we
-			 * clear the pending Q in ARP and then it will be freed by net_if.
-			 */
-			net_pkt_ref(orig_pkt);
-			if (net_arp_clear_pending(iface,
-				(struct in_addr *)NET_IPV4_HDR(pkt)->dst)) {
-				NET_DBG("Could not find pending ARP entry");
-			}
-			/* Free the ARP request */
-			net_pkt_unref(pkt);
-		}
-		goto error;
+		goto arp_error;
 	}
 
 	ethernet_update_tx_stats(iface, pkt);
@@ -740,6 +778,23 @@ send:
 
 	net_pkt_unref(pkt);
 error:
+	return ret;
+
+arp_error:
+	if (IS_ENABLED(CONFIG_NET_ARP) && ptype == htons(NET_ETH_PTYPE_ARP)) {
+		/* Original packet was added to ARP's pending Q, so, to avoid it
+		 * being freed, take a reference, the reference is dropped when we
+		 * clear the pending Q in ARP and then it will be freed by net_if.
+		 */
+		net_pkt_ref(orig_pkt);
+		if (net_arp_clear_pending(
+			    iface, (struct in_addr *)NET_IPV4_HDR(pkt)->dst)) {
+			NET_DBG("Could not find pending ARP entry");
+		}
+		/* Free the ARP request */
+		net_pkt_unref(pkt);
+	}
+
 	return ret;
 }
 
@@ -1194,6 +1249,46 @@ int net_eth_promisc_mode(struct net_if *iface, bool enable)
 }
 #endif/* CONFIG_NET_PROMISCUOUS_MODE */
 
+int net_eth_txinjection_mode(struct net_if *iface, bool enable)
+{
+	struct ethernet_req_params params;
+
+	if (!(net_eth_get_hw_capabilities(iface) & ETHERNET_TXINJECTION_MODE)) {
+		return -ENOTSUP;
+	}
+
+	params.txinjection_mode = enable;
+
+	return net_mgmt(NET_REQUEST_ETHERNET_SET_TXINJECTION_MODE, iface,
+			&params, sizeof(struct ethernet_req_params));
+}
+
+int net_eth_mac_filter(struct net_if *iface, struct net_eth_addr *mac,
+		       enum ethernet_filter_type type, bool enable)
+{
+#ifdef CONFIG_NET_L2_ETHERNET_MGMT
+	struct ethernet_req_params params;
+
+	if (!(net_eth_get_hw_capabilities(iface) & ETHERNET_HW_FILTERING)) {
+		return -ENOTSUP;
+	}
+
+	memcpy(&params.filter.mac_address, mac, sizeof(struct net_eth_addr));
+	params.filter.type = type;
+	params.filter.set = enable;
+
+	return net_mgmt(NET_REQUEST_ETHERNET_SET_MAC_FILTER, iface, &params,
+			sizeof(struct ethernet_req_params));
+#else
+	ARG_UNUSED(iface);
+	ARG_UNUSED(mac);
+	ARG_UNUSED(type);
+	ARG_UNUSED(enable);
+
+	return -ENOTSUP;
+#endif
+}
+
 void ethernet_init(struct net_if *iface)
 {
 	struct ethernet_context *ctx = net_if_l2_data(iface);
@@ -1211,6 +1306,12 @@ void ethernet_init(struct net_if *iface)
 	if (net_eth_get_hw_capabilities(iface) & ETHERNET_PROMISC_MODE) {
 		ctx->ethernet_l2_flags |= NET_L2_PROMISC_MODE;
 	}
+
+#if defined(CONFIG_NET_NATIVE_IP) && !defined(CONFIG_NET_RAW_MODE)
+	if (net_eth_get_hw_capabilities(iface) & ETHERNET_HW_FILTERING) {
+		net_if_mcast_mon_register(&mcast_monitor, NULL, ethernet_mcast_monitor_cb);
+	}
+#endif
 
 #if defined(CONFIG_NET_VLAN)
 	if (!(net_eth_get_hw_capabilities(iface) & ETHERNET_HW_VLAN)) {

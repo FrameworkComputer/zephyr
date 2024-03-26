@@ -6,6 +6,7 @@
 
 /**
  * @defgroup arch-interface Architecture Interface
+ * @ingroup internal_api
  * @brief Internal kernel APIs with public scope
  *
  * Any public kernel APIs that are implemented as inline functions and need to
@@ -215,7 +216,7 @@ void arch_cpu_atomic_idle(unsigned int key);
  *
  * @param data context parameter, implementation specific
  */
-typedef FUNC_NORETURN void (*arch_cpustart_t)(void *data);
+typedef void (*arch_cpustart_t)(void *data);
 
 /**
  * @brief Start a numbered CPU on a MP-capable system
@@ -322,6 +323,24 @@ int arch_irq_is_enabled(unsigned int irq);
 int arch_irq_connect_dynamic(unsigned int irq, unsigned int priority,
 			     void (*routine)(const void *parameter),
 			     const void *parameter, uint32_t flags);
+
+/**
+ * Arch-specific hook to dynamically uninstall a shared interrupt.
+ * If the interrupt is not being shared, then the associated
+ * _sw_isr_table entry will be replaced by (NULL, z_irq_spurious)
+ * (default entry).
+ *
+ * @param irq IRQ line number
+ * @param priority Interrupt priority
+ * @param routine Interrupt service routine
+ * @param parameter ISR parameter
+ * @param flags Arch-specific IRQ configuration flag
+ *
+ * @return 0 in case of success, negative value otherwise
+ */
+int arch_irq_disconnect_dynamic(unsigned int irq, unsigned int priority,
+				void (*routine)(const void *parameter),
+				const void *parameter, uint32_t flags);
 
 /**
  * @def ARCH_IRQ_CONNECT(irq, pri, isr, arg, flags)
@@ -476,6 +495,9 @@ static inline uint32_t arch_proc_id(void);
  */
 void arch_sched_ipi(void);
 
+
+int arch_smp_init(void);
+
 #endif /* CONFIG_SMP */
 
 /**
@@ -498,6 +520,8 @@ static inline unsigned int arch_num_cpus(void);
  */
 
 #ifdef CONFIG_USERSPACE
+#include <zephyr/arch/syscall.h>
+
 /**
  * Invoke a system call with 0 arguments.
  *
@@ -512,7 +536,7 @@ static inline unsigned int arch_num_cpus(void);
  * should be enabled when invoking the system call marshallers from the
  * dispatch table. Thread preemption may occur when handling system calls.
  *
- * Call ids are untrusted and must be bounds-checked, as the value is used to
+ * Call IDs are untrusted and must be bounds-checked, as the value is used to
  * index the system call dispatch table, containing function pointers to the
  * specific system call code.
  *
@@ -623,7 +647,7 @@ static inline uintptr_t arch_syscall_invoke6(uintptr_t arg1, uintptr_t arg2,
 /**
  * Indicate whether we are currently running in user mode
  *
- * @return true if the CPU is currently running with user permissions
+ * @return True if the CPU is currently running with user permissions
  */
 static inline bool arch_is_user_context(void);
 
@@ -750,11 +774,11 @@ int arch_mem_domain_partition_add(struct k_mem_domain *domain,
  * if the supplied memory buffer spans multiple enabled memory management
  * regions (even if all such regions permit user access).
  *
- * @warning 0 size buffer has undefined behavior.
+ * @warning Buffer of size zero (0) has undefined behavior.
  *
  * @param addr start address of the buffer
  * @param size the size of the buffer
- * @param write If nonzero, additionally check if the area is writable.
+ * @param write If non-zero, additionally check if the area is writable.
  *	  Otherwise, just check if the memory can be read.
  *
  * @return nonzero if the permissions don't match.
@@ -769,15 +793,17 @@ int arch_buffer_validate(void *addr, size_t size, int write);
  * This call returns the optimal virtual address alignment in order to permit
  * such optimization in the following MMU mapping call.
  *
- * @param[in] phys Physical address of region to be mapped, aligned to MMU_PAGE_SIZE
- * @param[in] size Size of region to be mapped, aligned to MMU_PAGE_SIZE
+ * @param[in] phys Physical address of region to be mapped,
+ *                 aligned to @kconfig{CONFIG_MMU_PAGE_SIZE}
+ * @param[in] size Size of region to be mapped,
+ *                 aligned to @kconfig{CONFIG_MMU_PAGE_SIZE}
  *
- * @retval alignment to apply on the virtual address of this region
+ * @return Alignment to apply on the virtual address of this region
  */
 size_t arch_virt_region_align(uintptr_t phys, size_t size);
 
 /**
- * Perform a one-way transition from supervisor to kernel mode.
+ * Perform a one-way transition from supervisor to user mode.
  *
  * Implementations of this function must do the following:
  *
@@ -816,9 +842,9 @@ FUNC_NORETURN void arch_syscall_oops(void *ssf);
 /**
  * @brief Safely take the length of a potentially bad string
  *
- * This must not fault, instead the err parameter must have -1 written to it.
+ * This must not fault, instead the @p err parameter must have -1 written to it.
  * This function otherwise should work exactly like libc strnlen(). On success
- * *err should be set to 0.
+ * @p err should be set to 0.
  *
  * @param s String to measure
  * @param maxsize Max length of the string
@@ -880,15 +906,15 @@ static inline bool arch_mem_coherent(void *ptr)
  * is not sufficient on many architectures and coordination with the
  * arch_switch() implementation is likely required.
  *
- * @arg old_thread The old thread to be flushed before being allowed
- *                 to run on other CPUs.
- * @arg old_switch_handle The switch handle to be stored into
- *                        old_thread (it will not be valid until the
- *                        cache is flushed so is not present yet).
- *                        This will be NULL if inside z_swap()
- *                        (because the arch_switch() has not saved it
- *                        yet).
- * @arg new_thread The new thread to be invalidated before it runs locally.
+ * @param old_thread The old thread to be flushed before being allowed
+ *                   to run on other CPUs.
+ * @param old_switch_handle The switch handle to be stored into
+ *                          old_thread (it will not be valid until the
+ *                          cache is flushed so is not present yet).
+ *                          This will be NULL if inside z_swap()
+ *                          (because the arch_switch() has not saved it
+ *                          yet).
+ * @param new_thread The new thread to be invalidated before it runs locally.
  */
 #ifndef CONFIG_KERNEL_COHERENCE
 static inline void arch_cohere_stacks(struct k_thread *old_thread,
@@ -1034,7 +1060,13 @@ int arch_gdb_remove_breakpoint(struct gdb_ctx *ctx, uint8_t type,
 #include <zephyr/timing/types.h>
 
 /**
- * @ingroup arch-timing
+ * @brief Arch specific Timing Measurement APIs
+ * @defgroup timing_api_arch Arch specific Timing Measurement APIs
+ * @ingroup timing_api
+ *
+ * Implements the necessary bits to support timing measurement
+ * using architecture specific timing measurement mechanism.
+ *
  * @{
  */
 
@@ -1078,16 +1110,24 @@ void arch_timing_stop(void);
 /**
  * @brief Return timing counter.
  *
+ * @parblock
+ *
  * @note Any call to arch_timing_counter_get() must be done between
  * calls to arch_timing_start() and arch_timing_stop(), and on the
  * same CPU core.
  *
- * @note Not all platforms have a timing counter with 64 bit precision.  It
- * is possible to see this value "go backwards" due to internal
+ * @endparblock
+ *
+ * @parblock
+ *
+ * @note Not all architectures have a timing counter with 64 bit precision.
+ * It is possible to see this value "go backwards" due to internal
  * rollover.  Timing code must be prepared to address the rollover
  * (with platform-dependent code, e.g. by casting to a uint32_t before
  * subtraction) or by using arch_timing_cycles_get() which is required
  * to understand the distinction.
+ *
+ * @endparblock
  *
  * @return Timing counter.
  *
@@ -1098,7 +1138,7 @@ timing_t arch_timing_counter_get(void);
 /**
  * @brief Get number of cycles between @p start and @p end.
  *
- * For some architectures or SoCs, the raw numbers from counter need
+ * @note For some architectures, the raw numbers from counter need
  * to be scaled to obtain actual number of cycles, or may roll over
  * internally.  This function computes a positive-definite interval
  * between two returned cycle values.

@@ -16,6 +16,7 @@ import shutil
 import re
 import argparse
 from datetime import datetime, timezone
+from twisterlib.coverage import supported_coverage_formats
 
 logger = logging.getLogger('twister')
 logger.setLevel(logging.DEBUG)
@@ -85,14 +86,14 @@ Artificially long but functional example:
         "--save-tests",
         metavar="FILENAME",
         action="store",
-        help="Append list of tests and platforms to be run to file.")
+        help="Write a list of tests and platforms to be run to file.")
 
     case_select.add_argument(
         "-F",
         "--load-tests",
         metavar="FILENAME",
         action="store",
-        help="Load list of tests and platforms to be run from file.")
+        help="Load a list of tests and platforms to be run from file.")
 
     case_select.add_argument(
         "-T", "--testsuite-root", action="append", default=[],
@@ -196,8 +197,13 @@ Artificially long but functional example:
         help="""Only run device tests with current artifacts, do not build
              the code""")
 
+    parser.add_argument("--timeout-multiplier", type=float, default=1,
+        help="""Globally adjust tests timeouts by specified multiplier. The resulting test
+        timeout would be multiplication of test timeout value, board-level timeout multiplier
+        and global timeout multiplier (this parameter)""")
+
     test_xor_subtest.add_argument(
-        "-s", "--test", action="append",
+        "-s", "--test", "--scenario", action="append",
         help="Run only the specified testsuite scenario. These are named by "
              "<path/relative/to/Zephyr/base/section.name.in.testcase.yaml>")
 
@@ -211,11 +217,17 @@ Artificially long but functional example:
         and 'fifo_loop' is a name of a function found in main.c without test prefix.
         """)
 
+    parser.add_argument(
+        "--pytest-args", action="append",
+        help="""Pass additional arguments to the pytest subprocess. This parameter
+        will override the pytest_args from the harness_config in YAML file.
+        """)
+
     valgrind_asan_group.add_argument(
         "--enable-valgrind", action="store_true",
         help="""Run binary through valgrind and check for several memory access
         errors. Valgrind needs to be installed on the host. This option only
-        works with host binaries such as those generated for the native_posix
+        works with host binaries such as those generated for the native_sim
         configuration and is mutual exclusive with --enable-asan.
         """)
 
@@ -223,7 +235,7 @@ Artificially long but functional example:
         "--enable-asan", action="store_true",
         help="""Enable address sanitizer to check for several memory access
         errors. Libasan needs to be installed on the host. This option only
-        works with host binaries such as those generated for the native_posix
+        works with host binaries such as those generated for the native_sim
         configuration and is mutual exclusive with --enable-valgrind.
         """)
 
@@ -294,13 +306,15 @@ structure in the main Zephyr tree: boards/<arch>/<board_name>/""")
                              "This option may be used multiple times. "
                              "Default to what was selected with --platform.")
 
-    parser.add_argument("--coverage-tool", choices=['lcov', 'gcovr'], default='lcov',
+    parser.add_argument("--coverage-tool", choices=['lcov', 'gcovr'], default='gcovr',
                         help="Tool to use to generate coverage report.")
 
     parser.add_argument("--coverage-formats", action="store", default=None, # default behavior is set in run_coverage
-                        help="Output formats to use for generated coverage reports, as a comma-separated list. "
-                             "Default to html. "
-                             "Valid options are html, xml, csv, txt, coveralls, sonarqube, lcov.")
+                        help="Output formats to use for generated coverage reports, as a comma-separated list. " +
+                             "Valid options for 'gcovr' tool are: " +
+                             ','.join(supported_coverage_formats['gcovr']) + " (html - default)." +
+                             " Valid options for 'lcov' tool are: " +
+                             ','.join(supported_coverage_formats['lcov']) + " (html,lcov - default).")
 
     parser.add_argument("--test-config", action="store", default=os.path.join(ZEPHYR_BASE, "tests", "test_config.yaml"),
         help="Path to file with plans and test configurations.")
@@ -344,7 +358,7 @@ structure in the main Zephyr tree: boards/<arch>/<board_name>/""")
         "--enable-lsan", action="store_true",
         help="""Enable leak sanitizer to check for heap memory leaks.
         Libasan needs to be installed on the host. This option only
-        works with host binaries such as those generated for the native_posix
+        works with host binaries such as those generated for the native_sim
         configuration and when --enable-asan is given.
         """)
 
@@ -353,11 +367,16 @@ structure in the main Zephyr tree: boards/<arch>/<board_name>/""")
         help="""Enable undefined behavior sanitizer to check for undefined
         behaviour during program execution. It uses an optional runtime library
         to provide better error diagnostics. This option only works with host
-        binaries such as those generated for the native_posix configuration.
+        binaries such as those generated for the native_sim configuration.
         """)
 
     parser.add_argument("--enable-size-report", action="store_true",
                         help="Enable expensive computation of RAM/ROM segment sizes.")
+
+    parser.add_argument("--create-rom-ram-report", action="store_true",
+                        help="Generate detailed ram/rom json reports for "
+                             "each build, via cmake build calls with the "
+                             "`--target footprint` argument")
 
     parser.add_argument(
         "--filter", choices=['buildable', 'runnable'],
@@ -437,6 +456,30 @@ structure in the main Zephyr tree: boards/<arch>/<board_name>/""")
         help="Re-use the outdir before building. Will result in "
              "faster compilation since builds will be incremental.")
 
+    parser.add_argument(
+        "--aggressive-no-clean", action="store_true",
+        help="Re-use the outdir before building and do not re-run cmake. Will result in "
+             "much faster compilation since builds will be incremental. This option might "
+             " result in build failures and inconsistencies if dependencies change or when "
+             " applied on a significantly changed code base. Use on your own "
+             " risk. It is recommended to only use this option for local "
+             " development and when testing localized change in a subsystem.")
+
+    parser.add_argument(
+        '--detailed-test-id', action='store_true',
+        help="Include paths to tests' locations in tests' names. Names will follow "
+             "PATH_TO_TEST/SCENARIO_NAME schema "
+             "e.g. samples/hello_world/sample.basic.helloworld")
+
+    parser.add_argument(
+        "--no-detailed-test-id", dest='detailed_test_id', action="store_false",
+        help="Don't put paths into tests' names. "
+             "With this arg a test name will be a scenario name "
+             "e.g. sample.basic.helloworld.")
+
+    # Include paths in names by default.
+    parser.set_defaults(detailed_test_id=True)
+
     # To be removed in favor of --detailed-skipped-report
     parser.add_argument(
         "--no-skipped-report", action="store_true",
@@ -482,6 +525,10 @@ structure in the main Zephyr tree: boards/<arch>/<board_name>/""")
                         """)
 
     parser.add_argument(
+            "--vendor", action="append", default=[],
+            help="Vendor filter for testing")
+
+    parser.add_argument(
         "-p", "--platform", action="append", default=[],
         help="Platform filter for testing. This option may be used multiple "
              "times. Test suites will only be built/run on the platforms "
@@ -521,12 +568,6 @@ structure in the main Zephyr tree: boards/<arch>/<board_name>/""")
                         default=True,
                         help="deprecated, left for compatibility")
 
-    parser.add_argument("--report-excluded",
-                        action="store_true",
-                        help="""List all tests that are never run based on current scope and
-            coverage. If you are looking for accurate results, run this with
-            --all, but this will take a while...""")
-
     parser.add_argument(
         "--report-name",
         help="""Create a report with a custom name.
@@ -563,7 +604,7 @@ structure in the main Zephyr tree: boards/<arch>/<board_name>/""")
 
     parser.add_argument(
         "--seed", type=int,
-        help="Seed for native posix pseudo-random number generator")
+        help="Seed for native_sim pseudo-random number generator")
 
     parser.add_argument(
         "--short-build-path",
@@ -706,17 +747,37 @@ def parse_arguments(parser, args, options = None):
         sys.exit(1)
 
     if not options.testsuite_root:
-        options.testsuite_root = [os.path.join(ZEPHYR_BASE, "tests"),
-                                 os.path.join(ZEPHYR_BASE, "samples")]
+        # if we specify a test scenario which is part of a suite directly, do
+        # not set testsuite root to default, just point to the test directory
+        # directly.
+        if options.test:
+            for scenario in options.test:
+                if dirname := os.path.dirname(scenario):
+                    options.testsuite_root.append(dirname)
+
+        # check again and make sure we have something set
+        if not options.testsuite_root:
+            options.testsuite_root = [os.path.join(ZEPHYR_BASE, "tests"),
+                                     os.path.join(ZEPHYR_BASE, "samples")]
 
     if options.show_footprint or options.compare_report:
         options.enable_size_report = True
+
+    if options.aggressive_no_clean:
+        options.no_clean = True
 
     if options.coverage:
         options.enable_coverage = True
 
     if not options.coverage_platform:
         options.coverage_platform = options.platform
+
+    if options.coverage_formats:
+        for coverage_format in options.coverage_formats.split(','):
+            if coverage_format not in supported_coverage_formats[options.coverage_tool]:
+                logger.error(f"Unsupported coverage report formats:'{options.coverage_formats}' "
+                             f"for {options.coverage_tool}")
+                sys.exit(1)
 
     if options.enable_valgrind and not shutil.which("valgrind"):
         logger.error("valgrind enabled but valgrind executable not found")
@@ -728,12 +789,8 @@ def parse_arguments(parser, args, options = None):
                         only one platform is allowed""")
         sys.exit(1)
 
-    if options.device_flash_timeout and options.device_testing is None:
-        logger.error("--device-flash-timeout requires --device-testing")
-        sys.exit(1)
-
-    if options.device_flash_with_test and options.device_testing is None:
-        logger.error("--device-flash-with-test requires --device-testing")
+    if options.device_flash_with_test and not options.device_testing:
+        logger.error("--device-flash-with-test requires --device_testing")
         sys.exit(1)
 
     if options.shuffle_tests and options.subset is None:
@@ -749,7 +806,7 @@ def parse_arguments(parser, args, options = None):
         for fn in options.size:
             sc = SizeCalculator(fn, [])
             sc.size_report()
-        sys.exit(1)
+        sys.exit(0)
 
     if len(options.extra_test_args) > 0:
         # extra_test_args is a list of CLI args that Twister did not recognize
@@ -790,11 +847,12 @@ def parse_arguments(parser, args, options = None):
 class TwisterEnv:
 
     def __init__(self, options=None) -> None:
-        self.version = None
+        self.version = "Unknown"
         self.toolchain = None
-        self.commit_date = None
+        self.commit_date = "Unknown"
         self.run_date = None
         self.options = options
+
         if options and options.ninja:
             self.generator_cmd = "ninja"
             self.generator = "Ninja"
@@ -803,10 +861,8 @@ class TwisterEnv:
             self.generator = "Unix Makefiles"
         logger.info(f"Using {self.generator}..")
 
-        if options:
-            self.test_roots = options.testsuite_root
-        else:
-            self.test_roots = None
+        self.test_roots = options.testsuite_root if options else None
+
         if options:
             if not isinstance(options.board_root, list):
                 self.board_roots = [self.options.board_root]
@@ -817,11 +873,18 @@ class TwisterEnv:
             self.board_roots = None
             self.outdir = None
 
+        self.snippet_roots = [Path(ZEPHYR_BASE)]
+        modules = zephyr_module.parse_modules(ZEPHYR_BASE)
+        for module in modules:
+            snippet_root = module.meta.get("build", {}).get("settings", {}).get("snippet_root")
+            if snippet_root:
+                self.snippet_roots.append(Path(module.project) / snippet_root)
+
         self.hwm = None
 
-        self.test_config = options.test_config
+        self.test_config = options.test_config if options else None
 
-        self.alt_config_root = options.alt_config_root
+        self.alt_config_root = options.alt_config_root if options else None
 
     def discover(self):
         self.check_zephyr_version()
@@ -839,20 +902,21 @@ class TwisterEnv:
                 if _version:
                     self.version = _version
                     logger.info(f"Zephyr version: {self.version}")
-                else:
-                    self.version = "Unknown"
-                    logger.error("Coult not determine version")
         except OSError:
-            logger.info("Cannot read zephyr version.")
+            logger.exception("Failure while reading Zephyr version.")
 
-        subproc = subprocess.run(["git", "show", "-s", "--format=%cI", "HEAD"],
-                                     stdout=subprocess.PIPE,
-                                     universal_newlines=True,
-                                     cwd=ZEPHYR_BASE)
-        if subproc.returncode == 0:
-            self.commit_date = subproc.stdout.strip()
-        else:
-            self.commit_date = "Unknown"
+        if self.version == "Unknown":
+            logger.warning("Could not determine version")
+
+        try:
+            subproc = subprocess.run(["git", "show", "-s", "--format=%cI", "HEAD"],
+                                        stdout=subprocess.PIPE,
+                                        universal_newlines=True,
+                                        cwd=ZEPHYR_BASE)
+            if subproc.returncode == 0:
+                self.commit_date = subproc.stdout.strip()
+        except OSError:
+            logger.exception("Failure while reading head commit date.")
 
     @staticmethod
     def run_cmake_script(args=[]):
@@ -887,7 +951,7 @@ class TwisterEnv:
         out = ansi_escape.sub('', out.decode())
 
         if p.returncode == 0:
-            msg = "Finished running  %s" % (args[0])
+            msg = "Finished running %s" % (args[0])
             logger.debug(msg)
             results = {"returncode": p.returncode, "msg": msg, "stdout": out}
 

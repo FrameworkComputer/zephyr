@@ -16,11 +16,13 @@ LOG_MODULE_REGISTER(net_config, CONFIG_NET_CONFIG_LOG_LEVEL);
 #include <stdlib.h>
 
 #include <zephyr/logging/log_backend.h>
+#include <zephyr/logging/log_backend_net.h>
 #include <zephyr/net/ethernet.h>
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_ip.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/dhcpv4.h>
+#include <zephyr/net/dhcpv6.h>
 #include <zephyr/net/net_mgmt.h>
 #include <zephyr/net/dns_resolve.h>
 
@@ -29,7 +31,6 @@ LOG_MODULE_REGISTER(net_config, CONFIG_NET_CONFIG_LOG_LEVEL);
 #include "ieee802154_settings.h"
 #include "bt_settings.h"
 
-extern const struct log_backend *log_backend_net_get(void);
 extern int net_init_clock_via_sntp(void);
 
 static K_SEM_DEFINE(waiter, 0, 1);
@@ -61,15 +62,14 @@ static void ipv4_addr_add_handler(struct net_mgmt_event_callback *cb,
 #if CONFIG_NET_CONFIG_LOG_LEVEL >= LOG_LEVEL_INF
 	char hr_addr[NET_IPV4_ADDR_LEN];
 #endif
-	int i;
 
 	if (mgmt_event != NET_EVENT_IPV4_ADDR_ADD) {
 		return;
 	}
 
-	for (i = 0; i < NET_IF_MAX_IPV4_ADDR; i++) {
+	ARRAY_FOR_EACH(iface->config.ip.ipv4->unicast, i) {
 		struct net_if_addr *if_addr =
-					&iface->config.ip.ipv4->unicast[i];
+					&iface->config.ip.ipv4->unicast[i].ipv4;
 
 		if (if_addr->addr_type != NET_ADDR_DHCP || !if_addr->is_used) {
 			continue;
@@ -84,7 +84,7 @@ static void ipv4_addr_add_handler(struct net_mgmt_event_callback *cb,
 			 iface->config.dhcpv4.lease_time);
 		NET_INFO("Subnet: %s",
 			 net_addr_ntop(AF_INET,
-				       &iface->config.ip.ipv4->netmask,
+				       &iface->config.ip.ipv4->unicast[i].netmask,
 				       hr_addr, sizeof(hr_addr)));
 		NET_INFO("Router: %s",
 			 net_addr_ntop(AF_INET,
@@ -140,7 +140,7 @@ static void setup_ipv4(struct net_if *iface)
 #if CONFIG_NET_CONFIG_LOG_LEVEL >= LOG_LEVEL_INF
 	char hr_addr[NET_IPV4_ADDR_LEN];
 #endif
-	struct in_addr addr;
+	struct in_addr addr, netmask;
 
 	if (sizeof(CONFIG_NET_CONFIG_MY_IPV4_ADDR) == 1) {
 		/* Empty address, skip setting ANY address in this case */
@@ -176,11 +176,11 @@ static void setup_ipv4(struct net_if *iface)
 	if (sizeof(CONFIG_NET_CONFIG_MY_IPV4_NETMASK) > 1) {
 		/* If not empty */
 		if (net_addr_pton(AF_INET, CONFIG_NET_CONFIG_MY_IPV4_NETMASK,
-				  &addr)) {
+				  &netmask)) {
 			NET_ERR("Invalid netmask: %s",
 				CONFIG_NET_CONFIG_MY_IPV4_NETMASK);
 		} else {
-			net_if_ipv4_set_netmask(iface, &addr);
+			net_if_ipv4_set_netmask_by_addr(iface, &addr, &netmask);
 		}
 	}
 
@@ -203,8 +203,26 @@ static void setup_ipv4(struct net_if *iface)
 #endif /* CONFIG_NET_IPV4 && !CONFIG_NET_DHCPV4 */
 
 #if defined(CONFIG_NET_NATIVE_IPV6)
-#if !defined(CONFIG_NET_CONFIG_MY_IPV6_ADDR)
-#error "You need to define an IPv6 address!"
+
+#if defined(CONFIG_NET_DHCPV6)
+static void setup_dhcpv6(struct net_if *iface)
+{
+	struct net_dhcpv6_params params = {
+		.request_addr = IS_ENABLED(CONFIG_NET_CONFIG_DHCPV6_REQUEST_ADDR),
+		.request_prefix = IS_ENABLED(CONFIG_NET_CONFIG_DHCPV6_REQUEST_PREFIX),
+	};
+
+	NET_INFO("Running dhcpv6 client...");
+
+	net_dhcpv6_start(iface, &params);
+}
+#else /* CONFIG_NET_DHCPV6 */
+#define setup_dhcpv6(...)
+#endif /* CONFIG_NET_DHCPV6 */
+
+#if !defined(CONFIG_NET_CONFIG_DHCPV6_REQUEST_ADDR) && \
+	!defined(CONFIG_NET_CONFIG_MY_IPV6_ADDR)
+#error "You need to define an IPv6 address or enable DHCPv6!"
 #endif
 
 static struct net_mgmt_event_callback mgmt6_cb;
@@ -249,6 +267,21 @@ static void ipv6_event_handler(struct net_mgmt_event_callback *cb,
 #if CONFIG_NET_CONFIG_LOG_LEVEL >= LOG_LEVEL_INF
 		NET_INFO("IPv6 address: %s",
 			 net_addr_ntop(AF_INET6, &laddr, hr_addr, NET_IPV6_ADDR_LEN));
+
+		if (ifaddr->addr_type == NET_ADDR_DHCP) {
+			char remaining_str[] = "infinite";
+			uint32_t remaining;
+
+			remaining = net_timeout_remaining(&ifaddr->lifetime,
+							  k_uptime_get_32());
+
+			if (!ifaddr->is_infinite) {
+				snprintk(remaining_str, sizeof(remaining_str),
+					 "%u", remaining);
+			}
+
+			NET_INFO("Lifetime: %s seconds", remaining_str);
+		}
 #endif
 
 		services_notify_ready(NET_CONFIG_NEED_IPV6);
@@ -310,6 +343,7 @@ exit:
 
 #else
 #define setup_ipv6(...)
+#define setup_dhcpv6(...)
 #endif /* CONFIG_NET_IPV6 */
 
 #if defined(CONFIG_NET_NATIVE)
@@ -367,6 +401,14 @@ int net_config_init_by_iface(struct net_if *iface, const char *app_info,
 		iface = net_if_get_default();
 	}
 
+	if (!iface) {
+		return -ENOENT;
+	}
+
+	if (net_if_flag_is_set(iface, NET_IF_NO_AUTO_START)) {
+		return -ENETDOWN;
+	}
+
 	if (timeout < 0) {
 		count = -1;
 	} else if (timeout == 0) {
@@ -400,6 +442,7 @@ int net_config_init_by_iface(struct net_if *iface, const char *app_info,
 	setup_ipv4(iface);
 	setup_dhcpv4(iface);
 	setup_ipv6(iface, flags);
+	setup_dhcpv6(iface);
 
 	/* Network interface did not come up. */
 	if (timeout > 0 && count < 0) {
@@ -453,7 +496,7 @@ int net_config_init_app(const struct device *dev, const char *app_info)
 		}
 	}
 
-	ret = z_net_config_ieee802154_setup();
+	ret = z_net_config_ieee802154_setup(iface);
 	if (ret < 0) {
 		NET_ERR("Cannot setup IEEE 802.15.4 interface (%d)", ret);
 	}
@@ -466,6 +509,17 @@ int net_config_init_app(const struct device *dev, const char *app_info)
 	}
 #endif
 
+	/* Only try to use a network interface that is auto started */
+	if (iface == NULL) {
+		net_if_foreach(iface_find_cb, &iface);
+	}
+
+	if (!iface) {
+		NET_WARN("No auto-started network interface - "
+			 "network-bound app initialization skipped.");
+		return 0;
+	}
+
 	if (IS_ENABLED(CONFIG_NET_CONFIG_NEED_IPV6)) {
 		flags |= NET_CONFIG_NEED_IPV6;
 	}
@@ -476,11 +530,6 @@ int net_config_init_app(const struct device *dev, const char *app_info)
 
 	if (IS_ENABLED(CONFIG_NET_CONFIG_NEED_IPV4)) {
 		flags |= NET_CONFIG_NEED_IPV4;
-	}
-
-	/* Only try to use a network interface that is auto started */
-	if (iface == NULL) {
-		net_if_foreach(iface_find_cb, &iface);
 	}
 
 	/* Initialize the application automatically if needed */

@@ -10,6 +10,8 @@
 /**
  * @brief Input Interface
  * @defgroup input_interface Input Interface
+ * @since 3.4
+ * @version 0.1.0
  * @ingroup io_interfaces
  * @{
  */
@@ -135,7 +137,7 @@ struct input_listener {
  * @param _dev @ref device pointer or NULL.
  * @param _callback The callback function.
  */
-#define INPUT_LISTENER_CB_DEFINE(_dev, _callback)                              \
+#define INPUT_CALLBACK_DEFINE(_dev, _callback)                                 \
 	static const STRUCT_SECTION_ITERABLE(input_listener,                   \
 					     _input_listener__##_callback) = { \
 		.dev = _dev,                                                   \

@@ -1032,6 +1032,16 @@ uint8_t ull_cp_data_length_update(struct ll_conn *conn, uint16_t max_tx_octets,
 {
 	struct proc_ctx *ctx;
 
+	if (!feature_dle(conn)) {
+		/* Data Length Update procedure not supported */
+
+		/* Returning BT_HCI_ERR_SUCCESS here might seem counter-intuitive,
+		 * but nothing in the specification seems to suggests
+		 * BT_HCI_ERR_UNSUPP_REMOTE_FEATURE.
+		 */
+		return BT_HCI_ERR_SUCCESS;
+	}
+
 	ctx = llcp_create_local_procedure(PROC_DATA_LENGTH_UPDATE);
 
 	if (!ctx) {
@@ -1397,6 +1407,20 @@ bool ull_cp_cc_awaiting_established(struct ll_conn *conn)
 #endif /* CONFIG_BT_CTLR_CENTRAL_ISO */
 	return false;
 }
+
+#if defined(CONFIG_BT_CTLR_CENTRAL_ISO)
+bool ull_cp_cc_cancel(struct ll_conn *conn)
+{
+	struct proc_ctx *ctx;
+
+	ctx = llcp_lr_peek(conn);
+	if (ctx && ctx->proc == PROC_CIS_CREATE) {
+		return llcp_lp_cc_cancel(conn, ctx);
+	}
+
+	return false;
+}
+#endif /* CONFIG_BT_CTLR_CENTRAL_ISO */
 
 void ull_cp_cc_established(struct ll_conn *conn, uint8_t error_code)
 {

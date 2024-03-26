@@ -3,7 +3,7 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
-#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <zephyr/drivers/timer/arm_arch_timer.h>
 #include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/irq.h>
@@ -18,6 +18,14 @@ static uint32_t cyc_per_tick;
 #else
 #define CYC_PER_TICK (uint32_t)(sys_clock_hw_cycles_per_sec() \
 				/ CONFIG_SYS_CLOCK_TICKS_PER_SEC)
+#endif
+
+#if defined(CONFIG_GDBSTUB)
+/* When interactively debugging, the cycle diff can overflow 32-bit variable */
+#define TO_CYCLE_DIFF(x) (x)
+#else
+/* Convert to 32-bit for fast division */
+#define TO_CYCLE_DIFF(x) ((cycle_diff_t)(x))
 #endif
 
 /* the unsigned long cast limits divisors to native CPU register width */
@@ -58,7 +66,7 @@ static void arm_arch_timer_compare_isr(const void *arg)
 
 	uint64_t curr_cycle = arm_arch_timer_count();
 	uint64_t delta_cycles = curr_cycle - last_cycle;
-	uint32_t delta_ticks = (cycle_diff_t)delta_cycles / CYC_PER_TICK;
+	uint32_t delta_ticks = TO_CYCLE_DIFF(delta_cycles) / CYC_PER_TICK;
 
 	last_cycle += (cycle_diff_t)delta_ticks * CYC_PER_TICK;
 	last_tick += delta_ticks;

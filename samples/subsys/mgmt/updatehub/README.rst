@@ -1,7 +1,8 @@
-.. _updatehub_fota_sample:
+.. zephyr:code-sample:: updatehub-fota
+   :name: UpdateHub embedded Firmware Over-The-Air (FOTA) update
+   :relevant-api: updatehub
 
-UpdateHub embedded Firmware Over-The-Air (FOTA) sample
-######################################################
+   Perform Firmware Over-The-Air (FOTA) updates using UpdateHub.
 
 Overview
 ********
@@ -187,7 +188,7 @@ for details.
 
 .. zephyr-app-commands::
     :zephyr-app: zephyr/samples/subsys/mgmt/updatehub
-    :board: [ frdm_k64f | nrf52840dk_nrf52840 | nucleo_f767zi ]
+    :board: [ frdm_k64f | nrf52840dk/nrf52840 | nucleo_f767zi ]
     :build-dir: app
     :gen-args: -DEXTRA_CONF_FILE="overlay-wifi.conf;overlay-prj.conf"
     :shield: esp_8266_arduino
@@ -203,11 +204,11 @@ Step 4.3: Build for Modem
 
 Modem needs add ``overlay-modem.conf``.  Now, a DTC overlay file is used to
 configure the glue between the modem and an arduino headers.  The modem config
-uses PPP over GSM modem, see :ref:`gsm-modem-sample`.
+uses PPP over GSM modem, see :zephyr:code-sample:`gsm-modem` sample application.
 
 .. zephyr-app-commands::
     :zephyr-app: zephyr/samples/subsys/mgmt/updatehub
-    :board: [ frdm_k64f | nrf52840dk_nrf52840 | nucleo_f767zi ]
+    :board: [ frdm_k64f | nrf52840dk/nrf52840 | nucleo_f767zi ]
     :build-dir: app
     :gen-args: -DEXTRA_CONF_FILE="overlay-modem.conf;overlay-prj.conf" \
       -DDTC_OVERLAY_FILE=arduino.overlay
@@ -220,13 +221,13 @@ Step 4.4: Build for IEEE 802.15.4 [experimental]
 For IEEE 802.15.4 needs add ``overlay-802154.conf``.  This requires two nodes:
 one will be the host and the second one will be the device under test.  The
 validation needs a Linux kernel >= 4.9 with all 6loWPAN support.  The start
-point is try reproduce the Zephyr :ref:`wpanusb-sample`. It is out of scope
+point is try reproduce the Zephyr :zephyr:code-sample:`wpan-usb`. It is out of scope
 at this moment provide support since it is experimental.  The gateway was
 tested with both native linux driver and ``atusb`` and with ``wpanusb`` sample.
 
 .. zephyr-app-commands::
     :zephyr-app: zephyr/samples/subsys/mgmt/updatehub
-    :board: nrf52840dk_nrf52840
+    :board: nrf52840dk/nrf52840
     :build-dir: app
     :gen-args: -DEXTRA_CONF_FILE="overlay-802154.conf;overlay-prj.conf"
     :goals: build
@@ -254,7 +255,7 @@ tested with native linux driver and an USB dongle.
 
 .. zephyr-app-commands::
     :zephyr-app: zephyr/samples/subsys/mgmt/updatehub
-    :board: nrf52840dk_nrf52840
+    :board: nrf52840dk/nrf52840
     :build-dir: app
     :gen-args: -DEXTRA_CONF_FILE="overlay-ipsp.conf;overlay-prj.conf"
     :goals: build
@@ -272,7 +273,7 @@ gateway was tested using two boards with OpenThread 1.1.1 on NCP mode.
 
 .. zephyr-app-commands::
     :zephyr-app: zephyr/samples/subsys/mgmt/updatehub
-    :board: nrf52840dk_nrf52840
+    :board: nrf52840dk/nrf52840
     :build-dir: app
     :gen-args: -DEXTRA_CONF_FILE="overlay-ot.conf;overlay-prj.conf"
     :goals: build

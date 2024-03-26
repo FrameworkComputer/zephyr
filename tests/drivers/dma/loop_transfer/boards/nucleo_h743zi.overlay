@@ -10,7 +10,7 @@
 	status = "okay";
 };
 
-test_dma0: &dmamux1 {
+tst_dma0: &dmamux1 {
 	status = "okay";
 };
 
@@ -18,13 +18,13 @@ test_dma0: &dmamux1 {
  * to be non-cachable.
  */
 &sram4 {
-	zephyr,memory-region-mpu = "RAM_NOCACHE";
+	zephyr,memory-attr = <( DT_MEM_ARM(ATTR_MPU_RAM_NOCACHE) )>;
 };
 
 &bdma1 {
 	status = "okay";
 };
 
-test_dma1: &dmamux2 {
+tst_dma1: &dmamux2 {
 	status = "okay";
 };

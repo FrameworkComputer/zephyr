@@ -392,7 +392,8 @@ __set_comp_west_projs()
 
 __set_comp_west_boards()
 {
-	__set_comp "$(__west_x boards --format={name} "$@")"
+	boards="$(__west_x boards --format={identifiers} "$@")\n$(__west_x boards --format={name} "$@")"
+	__set_comp ${boards//,/\ }
 }
 
 __comp_west_west()
@@ -644,7 +645,7 @@ __comp_west_completion()
 		*)
 			local counter=$( __west_pos_first_nonflag "$(__west_to_extglob "$global_args_opts")" )
 			if [ "$cword" -eq "$counter" ]; then
-				__set_comp "bash zsh"
+				__set_comp "bash zsh fish"
 			fi
 			;;
 	esac
@@ -660,6 +661,7 @@ __comp_west_boards()
 	local dir_opts="
 		--arch-root
 		--board-root
+		--soc-root
 	"
 
 	all_opts="$dir_opts $other_opts"

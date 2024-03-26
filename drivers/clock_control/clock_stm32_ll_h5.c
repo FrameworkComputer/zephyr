@@ -18,6 +18,7 @@
 #include <zephyr/drivers/clock_control.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/drivers/clock_control/stm32_clock_control.h>
+#include "clock_stm32_ll_mco.h"
 
 /* Macros to fill up prescaler values */
 #define z_hsi_divider(v) LL_RCC_HSI_DIV_ ## v
@@ -74,6 +75,10 @@ static uint32_t get_startup_frequency(void)
 		return STM32_CSI_FREQ;
 	case LL_RCC_SYS_CLKSOURCE_STATUS_HSI:
 		return STM32_HSI_FREQ;
+	case LL_RCC_SYS_CLKSOURCE_STATUS_HSE:
+		return STM32_HSE_FREQ;
+	case LL_RCC_SYS_CLKSOURCE_STATUS_PLL1:
+		return get_pllsrc_frequency(PLL1_ID);
 	default:
 		__ASSERT(0, "Unexpected startup freq");
 		return 0;
@@ -343,7 +348,11 @@ static int get_vco_input_range(uint32_t m_div, uint32_t *range, size_t pll_id)
 
 	vco_freq = get_pllsrc_frequency(pll_id) / m_div;
 
-	if (MHZ(4) <= vco_freq && vco_freq <= MHZ(8)) {
+	if (MHZ(1) <= vco_freq && vco_freq <= MHZ(2)) {
+		*range = LL_RCC_PLLINPUTRANGE_1_2;
+	} else if (MHZ(2) < vco_freq && vco_freq <= MHZ(4)) {
+		*range = LL_RCC_PLLINPUTRANGE_2_4;
+	} else if (MHZ(4) < vco_freq && vco_freq <= MHZ(8)) {
 		*range = LL_RCC_PLLINPUTRANGE_4_8;
 	} else if (MHZ(8) < vco_freq && vco_freq <= MHZ(16)) {
 		*range = LL_RCC_PLLINPUTRANGE_8_16;
@@ -747,6 +756,9 @@ int stm32_clock_control_init(const struct device *dev)
 
 	/* Update CMSIS variable */
 	SystemCoreClock = CONFIG_SYS_CLOCK_HW_CYCLES_PER_SEC;
+
+	/* configure MCO1/MCO2 based on Kconfig */
+	stm32_clock_control_mco_init();
 
 	return 0;
 }

@@ -27,7 +27,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <zephyr/sys/byteorder.h>
 #include <string.h>
-#include <zephyr/random/rand32.h>
+#include <zephyr/random/random.h>
 
 #include <zephyr/drivers/gpio.h>
 
@@ -591,9 +591,12 @@ static inline bool verify_rxfifo_validity(const struct device *dev,
 	return true;
 }
 
-static void cc2520_rx(void *arg)
+static void cc2520_rx(void *p1, void *p2, void *p3)
 {
-	const struct device *dev = arg;
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	const struct device *dev = p1;
 	struct cc2520_context *cc2520 = dev->data;
 	struct net_pkt *pkt;
 	uint8_t pkt_len;
@@ -668,7 +671,7 @@ out:
 static enum ieee802154_hw_caps cc2520_get_capabilities(const struct device *dev)
 {
 	/* TODO: Add support for IEEE802154_HW_PROMISC */
-	return IEEE802154_HW_FCS | IEEE802154_HW_2_4_GHZ | IEEE802154_HW_FILTER |
+	return IEEE802154_HW_FCS | IEEE802154_HW_FILTER |
 	       IEEE802154_HW_RX_TX_ACK;
 }
 
@@ -686,8 +689,12 @@ static int cc2520_set_channel(const struct device *dev, uint16_t channel)
 {
 	LOG_DBG("%u", channel);
 
-	if (channel < 11 || channel > 26) {
+	if (channel > 26) {
 		return -EINVAL;
+	}
+
+	if (channel < 11) {
+		return -ENOTSUP;
 	}
 
 	/* See chapter 16 */
@@ -878,6 +885,19 @@ static int cc2520_stop(const struct device *dev)
 	return 0;
 }
 
+/* driver-allocated attribute memory - constant across all driver instances */
+IEEE802154_DEFINE_PHY_SUPPORTED_CHANNELS(drv_attr, 11, 26);
+
+static int cc2520_attr_get(const struct device *dev, enum ieee802154_attr attr,
+			   struct ieee802154_attr_value *value)
+{
+	ARG_UNUSED(dev);
+
+	return ieee802154_attr_get_channel_page_and_range(
+		attr, IEEE802154_ATTR_PHY_CHANNEL_PAGE_ZERO_OQPSK_2450_BPSK_868_915,
+		&drv_attr.phy_supported_channels, value);
+}
+
 /******************
  * Initialization *
  *****************/
@@ -951,12 +971,12 @@ static int configure_gpios(const struct device *dev)
 {
 	const struct cc2520_config *cfg = dev->config;
 
-	if (!device_is_ready(cfg->vreg_en.port) ||
-	    !device_is_ready(cfg->reset.port) ||
-	    !device_is_ready(cfg->fifo.port) ||
-	    !device_is_ready(cfg->cca.port) ||
-	    !device_is_ready(cfg->sfd.port) ||
-	    !device_is_ready(cfg->fifop.port)) {
+	if (!gpio_is_ready_dt(&cfg->vreg_en) ||
+	    !gpio_is_ready_dt(&cfg->reset) ||
+	    !gpio_is_ready_dt(&cfg->fifo) ||
+	    !gpio_is_ready_dt(&cfg->cca) ||
+	    !gpio_is_ready_dt(&cfg->sfd) ||
+	    !gpio_is_ready_dt(&cfg->fifop)) {
 		return -ENODEV;
 	}
 
@@ -1003,7 +1023,7 @@ static int cc2520_init(const struct device *dev)
 
 	k_thread_create(&cc2520->cc2520_rx_thread, cc2520->cc2520_rx_stack,
 			CONFIG_IEEE802154_CC2520_RX_STACK_SIZE,
-			(k_thread_entry_t)cc2520_rx,
+			cc2520_rx,
 			(void *)dev, NULL, NULL, K_PRIO_COOP(2), 0, K_NO_WAIT);
 	k_thread_name_set(&cc2520->cc2520_rx_thread, "cc2520_rx");
 
@@ -1037,7 +1057,7 @@ static const struct cc2520_config cc2520_config = {
 
 static struct cc2520_context cc2520_context_data;
 
-static struct ieee802154_radio_api cc2520_radio_api = {
+static const struct ieee802154_radio_api cc2520_radio_api = {
 	.iface_api.init	= cc2520_iface_init,
 
 	.get_capabilities	= cc2520_get_capabilities,
@@ -1048,6 +1068,7 @@ static struct ieee802154_radio_api cc2520_radio_api = {
 	.start			= cc2520_start,
 	.stop			= cc2520_stop,
 	.tx			= cc2520_tx,
+	.attr_get		= cc2520_attr_get,
 };
 
 #if defined(CONFIG_IEEE802154_RAW_MODE)

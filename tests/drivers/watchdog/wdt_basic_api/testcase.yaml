@@ -8,12 +8,14 @@ tests:
     filter: >
       not (CONFIG_WDT_SAM or dt_compat_enabled("st,stm32-window-watchdog")
        or dt_compat_enabled("st,stm32-watchdog") or CONFIG_SOC_FAMILY_LPC or
-       CONFIG_SOC_SERIES_IMX_RT6XX or CONFIG_SOC_SERIES_IMX_RT5XX or
-       CONFIG_SOC_FAMILY_GD32 or SOC_SERIES_GD32VF103)
+       CONFIG_SOC_SERIES_IMXRT6XX or CONFIG_SOC_SERIES_IMXRT5XX or
+       CONFIG_SOC_FAMILY_GD_GD32 or SOC_SERIES_GD32VF103)
     platform_exclude:
       - mec15xxevb_assy6853
-      - s32z270dc2_rtu0_r52
-      - s32z270dc2_rtu1_r52
+      - s32z2xxdc2/s32z270/rtu0
+      - s32z2xxdc2/s32z270/rtu1
+      - s32z2xxdc2@D/s32z270/rtu0
+      - s32z2xxdc2@D/s32z270/rtu1
   drivers.watchdog.stm32wwdg:
     filter: dt_compat_enabled("st,stm32-window-watchdog") or dt_compat_enabled("st,stm32-watchdog")
     extra_args: DTC_OVERLAY_FILE="boards/stm32_wwdg.overlay"
@@ -36,6 +38,7 @@ tests:
       - nucleo_u575zi_q
       - nucleo_c031c6
       - stm32h573i_dk
+      - nucleo_wba52cg
     integration_platforms:
       - nucleo_f091rc
   drivers.watchdog.stm32wwdg_h7:
@@ -68,13 +71,14 @@ tests:
       - nucleo_h743zi
       - nucleo_c031c6
       - nucleo_h753zi
+      - nucleo_wba52cg
     integration_platforms:
       - nucleo_f091rc
   drivers.watchdog.mec15xxevb_assy6853:
     build_only: true
     platform_allow: mec15xxevb_assy6853
   drivers.watchdog.counter_watchdog:
-    platform_allow: nrf52840dk_nrf52840
+    platform_allow: nrf52840dk/nrf52840
     extra_args:
       - OVERLAY_CONFIG="boards/nrf52840dk_nrf52840_counter.conf"
       - DTC_OVERLAY_FILE="boards/nrf52840dk_nrf52840_counter.overlay"
@@ -110,11 +114,14 @@ tests:
       - longan_nano
     integration_platforms:
       - gd32e103v_eval
-  drivers.watchdog.s32z270dc2_r52:
+  drivers.watchdog.nxp_s32:
     build_only: true
     platform_allow:
-      - s32z270dc2_rtu0_r52
-      - s32z270dc2_rtu1_r52
+      - s32z2xxdc2/s32z270/rtu0
+      - s32z2xxdc2/s32z270/rtu1
+      - s32z2xxdc2@D/s32z270/rtu0
+      - s32z2xxdc2@D/s32z270/rtu1
+      - mr_canhubk3
   drivers.watchdog.mimxrt1050_evk_ti_tps382x:
     filter: dt_compat_enabled("ti,tps382x")
     platform_allow: mimxrt1050_evk

@@ -24,11 +24,44 @@ mapping:
     enum: ["mcu", "qemu", "sim", "unit", "native"]
   "simulation":
     type: str
-    enum: ["qemu", "simics", "xt-sim", "renode", "nsim", "mdb-nsim", "tsim", "armfvp", "native"]
+    enum:
+      [
+        "qemu",
+        "simics",
+        "xt-sim",
+        "renode",
+        "nsim",
+        "mdb-nsim",
+        "tsim",
+        "armfvp",
+        "native",
+        "custom",
+      ]
   "simulation_exec":
     type: str
   "arch":
     type: str
+    enum:
+      [
+        # architectures
+        "arc",
+        "arm",
+        "arm64",
+        "mips",
+        "nios2",
+        "posix",
+        "riscv",
+        "sparc",
+        "x86",
+        "xtensa",
+
+        # unit testing
+        "unit",
+      ]
+  "vendor":
+    type: str
+  "tier":
+    type: int
   "toolchain":
     type: seq
     seq:

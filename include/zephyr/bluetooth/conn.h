@@ -98,9 +98,9 @@ enum {
 
 /** Preferred PHY parameters for LE connections */
 struct bt_conn_le_phy_param {
-	uint16_t options;     /** Connection PHY options. */
-	uint8_t  pref_tx_phy; /** Bitmask of preferred transmit PHYs */
-	uint8_t  pref_rx_phy; /** Bitmask of preferred receive PHYs */
+	uint16_t options; /**< Connection PHY options. */
+	uint8_t  pref_tx_phy; /**< Bitmask of preferred transmit PHYs */
+	uint8_t  pref_rx_phy; /**< Bitmask of preferred receive PHYs */
 };
 
 /** Initialize PHY parameters
@@ -196,6 +196,21 @@ struct bt_conn_le_data_len_param {
 	BT_CONN_LE_DATA_LEN_PARAM(BT_GAP_DATA_LEN_MAX, \
 				  BT_GAP_DATA_TIME_MAX)
 
+/** Connection Type */
+enum __packed bt_conn_type {
+	/** LE Connection Type */
+	BT_CONN_TYPE_LE = BIT(0),
+	/** BR/EDR Connection Type */
+	BT_CONN_TYPE_BR = BIT(1),
+	/** SCO Connection Type */
+	BT_CONN_TYPE_SCO = BIT(2),
+	/** ISO Connection Type */
+	BT_CONN_TYPE_ISO = BIT(3),
+	/** All Connection Type */
+	BT_CONN_TYPE_ALL = BT_CONN_TYPE_LE | BT_CONN_TYPE_BR |
+			   BT_CONN_TYPE_SCO | BT_CONN_TYPE_ISO,
+};
+
 /** @brief Increment a connection's reference count.
  *
  *  Increment the reference count of a connection object.
@@ -233,7 +248,8 @@ void bt_conn_unref(struct bt_conn *conn);
  * @param func  Function to call for each connection.
  * @param data  Data to pass to the callback function.
  */
-void bt_conn_foreach(int type, void (*func)(struct bt_conn *conn, void *data),
+void bt_conn_foreach(enum bt_conn_type type,
+		     void (*func)(struct bt_conn *conn, void *data),
 		     void *data);
 
 /** @brief Look up an existing connection by address.
@@ -270,21 +286,6 @@ const bt_addr_le_t *bt_conn_get_dst(const struct bt_conn *conn);
  */
 uint8_t bt_conn_index(const struct bt_conn *conn);
 
-/** Connection Type */
-enum {
-	/** LE Connection Type */
-	BT_CONN_TYPE_LE = BIT(0),
-	/** BR/EDR Connection Type */
-	BT_CONN_TYPE_BR = BIT(1),
-	/** SCO Connection Type */
-	BT_CONN_TYPE_SCO = BIT(2),
-	/** ISO Connection Type */
-	BT_CONN_TYPE_ISO = BIT(3),
-	/** All Connection Type */
-	BT_CONN_TYPE_ALL = BT_CONN_TYPE_LE | BT_CONN_TYPE_BR |
-			   BT_CONN_TYPE_SCO | BT_CONN_TYPE_ISO,
-};
-
 /** LE Connection Info Structure */
 struct bt_conn_le_info {
 	/** Source (Local) Identity Address */
@@ -297,9 +298,9 @@ struct bt_conn_le_info {
 	const bt_addr_le_t *local;
 	/** Remote device address used during connection setup. */
 	const bt_addr_le_t *remote;
-	uint16_t interval; /** Connection interval */
-	uint16_t latency; /** Connection peripheral latency */
-	uint16_t timeout; /** Connection supervision timeout */
+	uint16_t interval; /**< Connection interval */
+	uint16_t latency; /**< Connection peripheral latency */
+	uint16_t timeout; /**< Connection supervision timeout */
 
 #if defined(CONFIG_BT_USER_PHY_UPDATE)
 	const struct bt_conn_le_phy_info      *phy;
@@ -328,7 +329,7 @@ struct bt_conn_le_info {
 
 /** BR/EDR Connection Info Structure */
 struct bt_conn_br_info {
-	const bt_addr_t *dst; /** Destination (Remote) BR/EDR address */
+	const bt_addr_t *dst; /**< Destination (Remote) BR/EDR address */
 };
 
 enum {
@@ -390,7 +391,7 @@ struct bt_security_info {
 /** Connection Info Structure */
 struct bt_conn_info {
 	/** Connection Type. */
-	uint8_t type;
+	enum bt_conn_type type;
 	/** Connection Role. */
 	uint8_t role;
 	/** Which local identity the connection was created with */
@@ -478,6 +479,42 @@ struct bt_conn_le_tx_power {
 	int8_t max_level;
 };
 
+
+/** LE Transmit Power Reporting Structure */
+struct bt_conn_le_tx_power_report {
+
+	/** Reason for Transmit power reporting,
+	 * as documented in Core Spec. Version 5.4 Vol. 4, Part E, 7.7.65.33.
+	 */
+	uint8_t reason;
+
+	/** Phy of Transmit power reporting. */
+	enum bt_conn_le_tx_power_phy phy;
+
+	/** Transmit power level
+	 * - 0xXX - Transmit power level
+	 *  + Range: -127 to 20
+	 *  + Units: dBm
+	 *
+	 * - 0x7E - Remote device is not managing power levels on this PHY.
+	 * - 0x7F - Transmit power level is not available
+	 */
+	int8_t tx_power_level;
+
+	/** Bit 0: Transmit power level is at minimum level.
+	 *  Bit 1: Transmit power level is at maximum level.
+	 */
+	uint8_t tx_power_level_flag;
+
+	/** Change in transmit power level
+	 * - 0xXX - Change in transmit power level (positive indicates increased
+	 *   power, negative indicates decreased power, zero indicates unchanged)
+	 *   Units: dB
+	 * - 0x7F - Change is not available or is out of range.
+	 */
+	int8_t delta;
+};
+
 /** @brief Passkey Keypress Notification type
  *
  *  The numeric values are the same as in the Core specification for Pairing
@@ -528,6 +565,41 @@ int bt_conn_get_remote_info(struct bt_conn *conn,
  */
 int bt_conn_le_get_tx_power_level(struct bt_conn *conn,
 				  struct bt_conn_le_tx_power *tx_power_level);
+
+/** @brief Get local enhanced connection transmit power level.
+ *
+ *  @param conn           Connection object.
+ *  @param tx_power       Transmit power level descriptor.
+ *
+ *  @return Zero on success or (negative) error code on failure.
+ *  @retval -ENOBUFS HCI command buffer is not available.
+ */
+int bt_conn_le_enhanced_get_tx_power_level(struct bt_conn *conn,
+					   struct bt_conn_le_tx_power *tx_power);
+
+/** @brief Get remote (peer) transmit power level.
+ *
+ *  @param conn           Connection object.
+ *  @param phy            PHY information.
+ *
+ *  @return Zero on success or (negative) error code on failure.
+ *  @retval -ENOBUFS HCI command buffer is not available.
+ */
+int bt_conn_le_get_remote_tx_power_level(struct bt_conn *conn,
+					 enum bt_conn_le_tx_power_phy phy);
+
+/** @brief Enable transmit power reporting.
+ *
+ *  @param conn           Connection object.
+ *  @param local_enable   Enable/disable reporting for local.
+ *  @param remote_enable  Enable/disable reporting for remote.
+ *
+ *  @return Zero on success or (negative) error code on failure.
+ *  @retval -ENOBUFS HCI command buffer is not available.
+ */
+int bt_conn_le_set_tx_power_report_enable(struct bt_conn *conn,
+					  bool local_enable,
+					  bool remote_enable);
 
 /** @brief Update the connection parameters.
  *
@@ -744,7 +816,7 @@ int bt_conn_le_create_synced(const struct bt_le_ext_adv *adv,
 			     const struct bt_conn_le_create_synced_param *synced_param,
 			     const struct bt_le_conn_param *conn_param, struct bt_conn **conn);
 
-/** @brief Automatically connect to remote devices in the filter accept list..
+/** @brief Automatically connect to remote devices in the filter accept list.
  *
  *  This uses the Auto Connection Establishment procedure.
  *  The procedure will continue until a single connection is established or the
@@ -799,11 +871,12 @@ int bt_le_set_auto_conn(const bt_addr_le_t *addr,
  *  the device has bond information or is already paired and the keys are too
  *  weak then the pairing procedure will be initiated.
  *
- *  This function may return error if required level of security is not possible
- *  to achieve due to local or remote device limitation (e.g., input output
- *  capabilities), or if the maximum number of paired devices has been reached.
+ *  This function may return an error if the required level of security defined using
+ *  @p sec is not possible to achieve due to local or remote device limitation
+ *  (e.g., input output capabilities), or if the maximum number of paired devices
+ *  has been reached.
  *
- *  This function may return error if the pairing procedure has already been
+ *  This function may return an error if the pairing procedure has already been
  *  initiated by the local device or the peer device.
  *
  *  @note When @kconfig{CONFIG_BT_SMP_SC_ONLY} is enabled then the security
@@ -812,8 +885,11 @@ int bt_le_set_auto_conn(const bt_addr_le_t *addr,
  *  @note When @kconfig{CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY} is enabled then the
  *        security level will always be level 3.
  *
+ *  @note When @ref BT_SECURITY_FORCE_PAIR within @p sec is enabled then the pairing
+ *        procedure will always be initiated.
+ *
  *  @param conn Connection object.
- *  @param sec Requested security level.
+ *  @param sec Requested minimum security level.
  *
  *  @return 0 on success or negative error
  */
@@ -924,6 +1000,20 @@ struct bt_conn_cb {
 	 */
 	void (*disconnected)(struct bt_conn *conn, uint8_t reason);
 
+	/** @brief A connection object has been returned to the pool.
+	 *
+	 * This callback notifies the application that it might be able to
+	 * allocate a connection object. No guarantee, first come, first serve.
+	 *
+	 * Use this to e.g. re-start connectable advertising or scanning.
+	 *
+	 * Treat this callback as an ISR, as it originates from
+	 * @ref bt_conn_unref which is used by the BT stack. Making
+	 * Bluetooth API calls in this context is error-prone and strongly
+	 * discouraged.
+	 */
+	void (*recycled)(void);
+
 	/** @brief LE connection parameter update request.
 	 *
 	 *  This callback notifies the application that a remote device
@@ -977,7 +1067,7 @@ struct bt_conn_cb {
 				  const bt_addr_le_t *rpa,
 				  const bt_addr_le_t *identity);
 #endif /* CONFIG_BT_SMP */
-#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_CLASSIC)
 	/** @brief The security level of a connection has changed.
 	 *
 	 *  This callback notifies the application that the security of a
@@ -996,7 +1086,7 @@ struct bt_conn_cb {
 	 */
 	void (*security_changed)(struct bt_conn *conn, bt_security_t level,
 				 enum bt_security_err err);
-#endif /* defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR) */
+#endif /* defined(CONFIG_BT_SMP) || defined(CONFIG_BT_CLASSIC) */
 
 #if defined(CONFIG_BT_REMOTE_INFO)
 	/** @brief Remote information procedures has completed.
@@ -1048,6 +1138,22 @@ struct bt_conn_cb {
 			      const struct bt_df_conn_iq_samples_report *iq_report);
 #endif /* CONFIG_BT_DF_CONNECTION_CTE_RX */
 
+#if defined(CONFIG_BT_TRANSMIT_POWER_CONTROL)
+	/** @brief LE Read Remote Transmit Power Level procedure has completed or LE
+	 *  Transmit Power Reporting event.
+	 *
+	 *  This callback notifies the application that either the remote transmit power level
+	 *  has been read from the peer or transmit power level has changed for the local or
+	 *  remote controller when transmit power reporting is enabled for the respective side
+	 *  using @ref bt_conn_le_set_tx_power_report_enable.
+	 *
+	 *  @param conn Connection object.
+	 *  @param report Transmit power report.
+	 */
+	void (*tx_power_report)(struct bt_conn *conn,
+				const struct bt_conn_le_tx_power_report *report);
+#endif /* CONFIG_BT_TRANSMIT_POWER_CONTROL */
+
 	struct bt_conn_cb *_next;
 };
 
@@ -1058,6 +1164,19 @@ struct bt_conn_cb {
  *  @param cb Callback struct. Must point to memory that remains valid.
  */
 void bt_conn_cb_register(struct bt_conn_cb *cb);
+
+/**
+ * @brief Unregister connection callbacks.
+ *
+ * Unregister the state of connections callbacks.
+ *
+ * @param cb Callback struct point to memory that remains valid.
+ *
+ * @retval 0 Success
+ * @retval -EINVAL If @p cb is NULL
+ * @retval -ENOENT if @p cb was not registered
+ */
+int bt_conn_cb_unregister(struct bt_conn_cb *cb);
 
 /**
  *  @brief Register a callback structure for connection events.
@@ -1080,6 +1199,26 @@ void bt_conn_cb_register(struct bt_conn_cb *cb);
  *  @param enable Value allowing/disallowing to be bondable.
  */
 void bt_set_bondable(bool enable);
+
+/** @brief Set/clear the bonding flag for a given connection.
+ *
+ *  Set/clear the Bonding flag in the Authentication Requirements of
+ *  SMP Pairing Request/Response data for a given connection.
+ *
+ *  The bonding flag for a given connection cannot be set/cleared if
+ *  security procedures in the SMP module have already started.
+ *  This function can be called only once per connection.
+ *
+ *  If the bonding flag is not set/cleared for a given connection,
+ *  the value will depend on global configuration which is set using
+ *  bt_set_bondable.
+ *  The default value of the global configuration is defined using
+ *  CONFIG_BT_BONDABLE Kconfig option.
+ *
+ *  @param conn Connection object.
+ *  @param enable Value allowing/disallowing to be bondable.
+ */
+int bt_conn_set_bondable(struct bt_conn *conn, bool enable);
 
 /** @brief Allow/disallow remote LE SC OOB data to be used for pairing.
  *
@@ -1412,7 +1551,7 @@ struct bt_conn_auth_cb {
 	 */
 	void (*pairing_confirm)(struct bt_conn *conn);
 
-#if defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_CLASSIC)
 	/** @brief Request the user to enter a passkey.
 	 *
 	 *  This callback will be called for a BR/EDR (Bluetooth Classic)
@@ -1634,19 +1773,6 @@ struct bt_br_conn_param {
  */
 struct bt_conn *bt_conn_create_br(const bt_addr_t *peer,
 				  const struct bt_br_conn_param *param);
-
-/** @brief Initiate an SCO connection to a remote device.
- *
- *  Allows initiate new SCO link to remote peer using its address.
- *
- *  The caller gets a new reference to the connection object which must be
- *  released with bt_conn_unref() once done using the object.
- *
- *  @param peer  Remote address.
- *
- *  @return Valid connection object on success or NULL otherwise.
- */
-struct bt_conn *bt_conn_create_sco(const bt_addr_t *peer);
 
 #ifdef __cplusplus
 }

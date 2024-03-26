@@ -9,6 +9,7 @@ menuconfig ADC_ADS114S0X
 	select SPI
 	select ADC_CONFIGURABLE_INPUTS
 	select ADC_CONFIGURABLE_EXCITATION_CURRENT_SOURCE_PIN
+	select ADC_CONFIGURABLE_VBIAS_PIN
 	help
 	  Enable the driver implementation for the ADS114S0X family
 
@@ -34,3 +35,10 @@ config ADC_ADS114S0X_GPIO
 
 	  The GPIO functionality is handled by the ADS114S0x GPIO
 	  driver.
+
+config ADC_ADS114S0X_WAIT_FOR_COMPLETION_TIMEOUT_MS
+	int "Timeout for wait for completion of a read in ms"
+	default 1000
+	depends on ADC_ADS114S0X
+	help
+	  This is the wait time in ms until a read is completed.

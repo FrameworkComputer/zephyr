@@ -38,29 +38,45 @@ config BT_BAP_UNICAST_CLIENT
 	  This option enables support for Bluetooth Unicast Audio Client
 	  using Isochronous channels.
 
-config BT_CODEC_MAX_DATA_COUNT
-	int "Codec Capabilities Data Count"
-	default 5
-	range 1 128
+config BT_AUDIO_CODEC_CFG_MAX_DATA_SIZE
+	int "Codec Specific Configuration Data Size"
+	default 19
+	range 0 255
 	help
-	  This option defines the maximum number of LTV entries a codec can
-	  store.
+	  Number of octets to support for Codec Specific Configuration data.
+	  The default value 19 matches the required fields for the LC3 codec.
 
-config BT_CODEC_MAX_DATA_LEN
-	int "Codec Capabilities Data Length"
+config BT_AUDIO_CODEC_CFG_MAX_METADATA_SIZE
+	int "Codec Specific Configuration Metadata Size"
 	default 4
-	range 1 128
+	range 0 255
 	help
-	  This option defines the maximum value length of an LTV entry a codec
-	  can store.
+	  Number of octets to support for Codec Specific Configuration metadata.
 
-config BT_CODEC_MAX_METADATA_COUNT
-	int "Codec Metadata Count"
-	default 2
-	range 1 128
+config BT_BAP_BASS_MAX_SUBGROUPS
+	int "Maximum number of subgroups supported for the BASS receive states"
+	default 1
+	range 1 24
 	help
-	  This option defines the maximum number of LTV entries a metadata can
-	  store.
+	  This option sets the maximum number of subgroups supported.
+	  Due to limitations in advertising data, the maximum size of all subgroups are 249.
+	  The minimum size of a subgroup is 10 octets.
+	  So effectively there can be a maximum of 24 subgroups in a BASE.
+
+config BT_AUDIO_CODEC_CAP_MAX_DATA_SIZE
+	int "Codec Capabilities Data Size"
+	default 19
+	range 0 255
+	help
+	  Number of octets to support for Codec Specific Capabilities data.
+	  The default value 19 matches the required fields for the LC3 codec.
+
+config BT_AUDIO_CODEC_CAP_MAX_METADATA_SIZE
+	int "Codec Capabilities Metadata Size"
+	default 4
+	range 0 255
+	help
+	  Number of octets to support for Codec Specific Capabilities metadata.
 
 if BT_BAP_UNICAST_CLIENT
 config BT_BAP_UNICAST_CLIENT_GROUP_COUNT
@@ -93,7 +109,7 @@ config BT_BAP_UNICAST_CLIENT_ASE_SNK_COUNT
 
 config BT_BAP_UNICAST_CLIENT_ASE_SRC_COUNT
 	int "Basic Audio Profile ASE Source count"
-	default 1
+	default 2
 	range 0 255
 	help
 	  This option enables caching a number of Audio Stream Endpoint Source
@@ -154,8 +170,8 @@ config BT_BAP_BROADCAST_SINK
 	select EXPERIMENTAL
 	select BT_ISO_SYNC_RECEIVER
 	select BT_AUDIO_RX
+	select BT_PAC_SNK
 	depends on BT_PERIPHERAL
-	depends on BT_PAC_SNK
 	depends on BT_BAP_SCAN_DELEGATOR
 	help
 	  This option enables support for Bluetooth Broadcast Sink Audio using
@@ -215,19 +231,14 @@ config BT_BAP_SCAN_DELEGATOR_RECV_STATE_COUNT
 	  server. Each characteristic may hold information to sync to a
 	  periodic advertise or a broadcast isochronous stream.
 
-config BT_BAP_SCAN_DELEGATOR_MAX_METADATA_LEN
-	int "Scan Delegator Maximum Metadata Length"
-	default 32
-	range 0 255
+config BT_BAP_SCAN_DELEGATOR_BUF_TIMEOUT
+	int "Milliseconds of timeout when handle concurrent access to the long read ASE buffer"
+	range 0 1000
+	default 50
 	help
-	  The maximum metadata length support by the BASS server.
-
-config BT_BAP_SCAN_DELEGATOR_MAX_SUBGROUPS
-	int "Scan Delegator Maximum Number of Subgroups support"
-	default 1
-	range 0 31
-	help
-	  The maximum number of BIS subgroups supported.
+	  The maximum number of milliseconds that the scan delegator implementation will wait
+	  before rejecting a read or dropping a notification if the scan delegator state is
+	  being accessed by another thread.
 
 endif # BT_BAP_SCAN_DELEGATOR
 
@@ -270,6 +281,18 @@ config BT_BAP_STREAM
 	bool
 	default y if BT_ASCS || BT_BAP_UNICAST_CLIENT || \
 			BT_BAP_BROADCAST_SOURCE || BT_BAP_BROADCAST_SINK
+
+config BT_BAP_DEBUG_STREAM_SEQ_NUM
+	bool "Bluetooth Audio Stream sequence number debug"
+	depends on BT_BAP_STREAM_LOG_LEVEL >= BT_BAP_STREAM_LOG_LEVEL_WRN
+	default y
+	help
+	  Use this option to enable Bluetooth Audio Stream sequence number debugging logs for
+	  the Bluetooth Audio functionality. This will provide a warning if the application
+	  provides unexpected sequence numbers.
+
+config BT_BAP_BASE
+	def_bool BT_BAP_BROADCAST_SINK || BT_BAP_BROADCAST_ASSISTANT || BT_BAP_SCAN_DELEGATOR
 
 rsource "Kconfig.pacs"
 rsource "Kconfig.ascs"

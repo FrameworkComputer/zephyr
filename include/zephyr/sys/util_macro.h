@@ -224,6 +224,30 @@ extern "C" {
 	COND_CODE_1(_flag, _code, ())
 
 /**
+ * @brief Insert code if @p _flag is not defined as 1.
+ *
+ * This expands to nothing if @p _flag is defined and equal to 1;
+ * it expands to @p _code otherwise.
+ *
+ * Example:
+ *
+ *     IF_DISABLED(CONFIG_FLAG, (uint32_t foo;))
+ *
+ * If @p CONFIG_FLAG isn't defined or different than 1, this expands to:
+ *
+ *     uint32_t foo;
+ *
+ * and to nothing otherwise.
+ *
+ * IF_DISABLED does the opposite of IF_ENABLED.
+ *
+ * @param _flag evaluated flag
+ * @param _code result if @p _flag does not expand to 1; must be in parentheses
+ */
+#define IF_DISABLED(_flag, _code) \
+	COND_CODE_1(_flag, (), _code)
+
+/**
  * @brief Check if a macro has a replacement expression
  *
  * If @p a is a macro defined to a nonempty value, this will return
@@ -256,7 +280,7 @@ extern "C" {
  * @brief Like <tt>a == b</tt>, but does evaluation and
  * short-circuiting at C preprocessor time.
  *
- * This however only works for integer literal from 0 to 255.
+ * This however only works for integer literal from 0 to 4095.
  *
  */
 #define IS_EQ(a, b) Z_IS_EQ(a, b)
@@ -367,19 +391,26 @@ extern "C" {
 #define UTIL_AND(a, b) COND_CODE_1(UTIL_BOOL(a), (b), (0))
 
 /**
- * @brief UTIL_INC(x) for an integer literal x from 0 to 255 expands to an
+ * @brief UTIL_INC(x) for an integer literal x from 0 to 4095 expands to an
  * integer literal whose value is x+1.
  *
- * Similarly, UTIL_DEC(x) is (x-1) as an integer literal.
+ * @see UTIL_DEC(x)
  */
-#define UTIL_INC(x) UTIL_PRIMITIVE_CAT(UTIL_INC_, x)
-#define UTIL_DEC(x) UTIL_PRIMITIVE_CAT(UTIL_DEC_, x)
+#define UTIL_INC(x) UTIL_PRIMITIVE_CAT(Z_UTIL_INC_, x)
 
 /**
- * @brief UTIL_X2(y) for an integer literal y from 0 to 255 expands to an
+ * @brief UTIL_DEC(x) for an integer literal x from 0 to 4095 expands to an
+ * integer literal whose value is x-1.
+ *
+ * @see UTIL_INC(x)
+ */
+#define UTIL_DEC(x) UTIL_PRIMITIVE_CAT(Z_UTIL_DEC_, x)
+
+/**
+ * @brief UTIL_X2(y) for an integer literal y from 0 to 4095 expands to an
  * integer literal whose value is 2y.
  */
-#define UTIL_X2(y) UTIL_PRIMITIVE_CAT(UTIL_X2_, y)
+#define UTIL_X2(y) UTIL_PRIMITIVE_CAT(Z_UTIL_X2_, y)
 
 
 /**
@@ -395,7 +426,7 @@ extern "C" {
  *    { MY_PWM0 , MY_PWM1 }
  *
  * @param LEN The length of the sequence. Must be an integer literal less
- *            than 255.
+ *            than 4095.
  * @param F A macro function that accepts at least two arguments:
  *          <tt>F(i, ...)</tt>. @p F is called repeatedly in the expansion.
  *          Its first argument @p i is the index in the sequence, and

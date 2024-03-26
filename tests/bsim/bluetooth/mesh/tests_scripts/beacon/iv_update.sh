@@ -8,7 +8,7 @@ RunTest mesh_beacon_on_iv_update \
 	beacon_tx_on_iv_update \
 	beacon_rx_on_iv_update
 
-conf=prj_mesh1d1_conf
-RunTest mesh_beacon_on_iv_update_1d1 \
+overlay=overlay_psa_conf
+RunTest mesh_beacon_on_iv_update_psa \
 	beacon_tx_on_iv_update \
 	beacon_rx_on_iv_update

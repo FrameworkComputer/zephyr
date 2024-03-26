@@ -7,14 +7,12 @@
 #include <zephyr/ztest.h>
 #include <zephyr/tc_util.h>
 #include <zephyr/sys/byteorder.h>
-#include <zephyr/random/rand32.h>
+#include <zephyr/random/random.h>
 
 #include <zephyr/drivers/pcie/pcie.h>
 #include <zephyr/drivers/smbus.h>
 
 #include "emul.h"
-
-#define CONFIG_SMBUS_LOG_LEVEL LOG_LEVEL_DBG
 
 #define PERIPH_ADDR	0x10
 
@@ -101,7 +99,7 @@ static struct pch_config pch_config_data = {
 };
 
 DEVICE_DEFINE(dummy_driver, SMBUS_EMUL, &pch_smbus_init,
-	      NULL, &smbus_data, &pch_config_data, APPLICATION,
+	      NULL, &smbus_data, &pch_config_data, POST_KERNEL,
 	      CONFIG_KERNEL_INIT_PRIORITY_DEFAULT, &funcs);
 
 ZTEST(test_smbus_emul, test_byte)
@@ -183,7 +181,7 @@ ZTEST(test_smbus_emul, test_proc_call)
 	zassert_ok(ret, "SMBus Proc Call failed");
 
 	/* Our emulated Proc Call swaps bytes */
-	zassert_equal(snd_word, __bswap_16(rcv_word), "Data mismatch");
+	zassert_equal(snd_word, BSWAP_16(rcv_word), "Data mismatch");
 }
 
 ZTEST(test_smbus_emul, test_block)

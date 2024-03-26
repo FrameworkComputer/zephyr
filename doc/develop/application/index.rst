@@ -45,6 +45,7 @@ Here are the files in a simple Zephyr application:
    ├── CMakeLists.txt
    ├── app.overlay
    ├── prj.conf
+   ├── VERSION
    └── src
        └── main.c
 
@@ -76,6 +77,12 @@ These contents are:
   Kconfig fragments, and other default files are also searched for.
 
   See :ref:`application-kconfig` below for more information.
+
+* **VERSION**: A text file that contains several version information fields.
+  These fields let you manage the lifecycle of the application and automate
+  providing the application version when signing application images.
+
+  See :ref:`app-version-details` for more information about this file and how to use it.
 
 * **main.c**: A source code file. Applications typically contain source files
   written in C, C++, or assembly language. The Zephyr convention is to place
@@ -190,11 +197,17 @@ following example, ``app`` is a Zephyr freestanding application:
         └── src/
             └── main.c
 
+.. _zephyr-creating-app:
+
 Creating an Application
 ***********************
 
-example-application
-===================
+In Zephyr, you can either use a reference workspace application or create your application by hand.
+
+.. _zephyr-creating-app-from-example:
+
+Using a Reference Workspace Application
+=======================================
 
 The `example-application`_ Git repository contains a reference :ref:`workspace
 application <zephyr-workspace-app>`. It is recommended to use it as a reference
@@ -210,7 +223,7 @@ commonly-used features, such as:
 - A custom west :ref:`extension command <west-extensions>`
 
 Basic example-application Usage
-===============================
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The easiest way to get started with the example-application repository within
 an existing Zephyr workspace is to follow these steps:
@@ -226,7 +239,7 @@ you are using an existing Zephyr workspace, you can use ``west build`` or any
 other west commands to build, flash, and debug.
 
 Advanced example-application Usage
-==================================
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 You can also use the example-application repository as a starting point for
 building your own customized Zephyr-based software distribution. This lets you
@@ -282,6 +295,8 @@ then set up a matching workspace by running:
 From now on, you can collaborate on the shared software by pushing changes to
 the repositories you are using and updating :file:`my-manifest-repo/west.yml`
 as needed to add and remove repositories, or change their contents.
+
+.. _zephyr-creating-app-by-hand:
 
 Creating an Application by Hand
 ===============================
@@ -414,9 +429,14 @@ should know about.
   See :ref:`set-devicetree-overlays` for examples and :ref:`devicetree-intro`
   for information about devicetree and Zephyr.
 
+* :makevar:`EXTRA_DTC_OVERLAY_FILE`: Additional devicetree overlay files to use.
+  Multiple files can be separated with semicolons. This can be useful to leave
+  :makevar:`DTC_OVERLAY_FILE` at its default value, but "mix in" some additional
+  overlay files.
+
 * :makevar:`SHIELD`: see :ref:`shields`
 
-* :makevar:`ZEPHYR_MODULES`: A CMake list containing absolute paths of
+* :makevar:`ZEPHYR_MODULES`: A `CMake list`_ containing absolute paths of
   additional directories with source code, Kconfig, etc. that should be used in
   the application build. See :ref:`modules` for details. If you set this
   variable, it must be a complete list of all modules to use, as the build
@@ -425,10 +445,16 @@ should know about.
 * :makevar:`EXTRA_ZEPHYR_MODULES`: Like :makevar:`ZEPHYR_MODULES`, except these
   will be added to the list of modules found via west, instead of replacing it.
 
+* :makevar:`FILE_SUFFIX`: Optional suffix for filenames that will be added to Kconfig
+  fragments and devicetree overlays (if these files exists, otherwise will fallback to
+  the name without the prefix). See :ref:`application-file-suffixes` for details.
+
 .. note::
 
    You can use a :ref:`cmake_build_config_package` to share common settings for
    these variables.
+
+.. _zephyr-app-cmakelists:
 
 Application CMakeLists.txt
 **************************
@@ -504,6 +530,7 @@ Make sure to follow these steps in order.
    Structure your :file:`Kconfig` file like this:
 
    .. literalinclude:: application-kconfig.include
+      :language: kconfig
 
    .. note::
 
@@ -563,6 +590,8 @@ For example:
       ${app_bootloader_hex}
       ${PROJECT_BINARY_DIR}/${KERNEL_HEX_NAME}
       ${app_provision_hex})
+
+.. _zephyr-app-cmakecache:
 
 CMakeCache.txt
 **************
@@ -656,6 +685,51 @@ Devicetree Overlays
 
 See :ref:`set-devicetree-overlays`.
 
+.. _application-file-suffixes:
+
+File Suffixes
+=============
+
+Zephyr applications might want to have a single code base with multiple configurations for
+different build/product variants which would necessitate different Kconfig options and devicetree
+configuration. In order to better configure this, Zephyr provides a :makevar:`FILE_SUFFIX` option
+when configuring applications that can be automatically appended to filenames. This is applied to
+Kconfig fragments and board overlays but with a fallback so that if such files do not exist, the
+files without these suffixes will be used instead.
+
+Given the following example project layout:
+
+.. code-block:: none
+
+   <app>
+   ├── CMakeLists.txt
+   ├── prj.conf
+   ├── prj_mouse.conf
+   ├── boards
+   │   ├── native_posix.overlay
+   │   └── qemu_cortex_m3_mouse.overlay
+   └── src
+       └── main.c
+
+* If this is built normally without ``FILE_SUFFIX`` being defined for ``native_posix`` then
+  ``prj.conf`` and ``boards/native_posix.overlay`` will be used.
+
+* If this is build normally without ``FILE_SUFFIX`` being defined for ``qemu_cortex_m3`` then
+  ``prj.conf`` will be used, no application devicetree overlay will be used.
+
+* If this is built with ``FILE_SUFFIX`` set to ``mouse`` for ``native_posix`` then
+  ``prj_mouse.conf`` and ``boards/native_posix.overlay`` will be used (there is no
+  ``native_posix_mouse.overlay`` file so it falls back to ``native_posix.overlay``).
+
+* If this is build with ``FILE_SUFFIX`` set to ``mouse`` for ``qemu_cortex_m3`` then
+  ``prj_mouse.conf`` will be used and ``boards/qemu_cortex_m3_mouse.overlay`` will be used.
+
+.. note::
+
+   When ``CONF_FILE`` is set in the form of ``prj_X.conf`` then the ``X`` will be used as the
+   build type. If this is combined with ``FILE_SUFFIX`` then the file suffix option will take
+   priority over the build type.
+
 Application-Specific Code
 *************************
 
@@ -682,7 +756,7 @@ be useful for glue code to have access to Zephyr kernel header files.
 To make it easier to integrate third-party components, the Zephyr
 build system has defined CMake functions that give application build
 scripts access to the zephyr compiler options. The functions are
-documented and defined in :zephyr_file:`cmake/extensions.cmake`
+documented and defined in :zephyr_file:`cmake/modules/extensions.cmake`
 and follow the naming convention ``zephyr_get_<type>_<format>``.
 
 The following variables will often need to be exported to the
@@ -986,10 +1060,13 @@ for additional information on how to flash your board.
 Running in an Emulator
 ======================
 
-The kernel has built-in emulator support for QEMU (on Linux/macOS only, this
-is not yet supported on Windows). It allows you to run and test an application
-virtually, before (or in lieu of) loading and running it on actual target
-hardware. Follow these instructions to run an application via QEMU:
+Zephyr has built-in emulator support for QEMU.
+It allows you to run and test an application virtually, before
+(or in lieu of) loading and running it on actual target hardware.
+
+Check out :ref:`beyond-GSG` for additional steps needed on Windows.
+
+Follow these instructions to run an application via QEMU:
 
 #. Build your application for one of the QEMU boards, as described in
    :ref:`build_an_application`.
@@ -1034,169 +1111,6 @@ again.
    You can choose a specific emulator by appending ``_<emulator>`` to your
    target name, for example ``west build -t run_qemu`` or ``ninja run_qemu``
    for QEMU.
-
-.. _application_debugging:
-
-Application Debugging
-*********************
-
-This section is a quick hands-on reference to start debugging your
-application with QEMU. Most content in this section is already covered in
-`QEMU`_ and `GNU_Debugger`_ reference manuals.
-
-.. _QEMU: http://wiki.qemu.org/Main_Page
-
-.. _GNU_Debugger: http://www.gnu.org/software/gdb
-
-In this quick reference, you'll find shortcuts, specific environmental
-variables, and parameters that can help you to quickly set up your debugging
-environment.
-
-The simplest way to debug an application running in QEMU is using the GNU
-Debugger and setting a local GDB server in your development system through QEMU.
-
-You will need an :abbr:`ELF (Executable and Linkable Format)` binary image for
-debugging purposes.  The build system generates the image in the build
-directory.  By default, the kernel binary name is :file:`zephyr.elf`. The name
-can be changed using :kconfig:option:`CONFIG_KERNEL_BIN_NAME`.
-
-GDB server
-==========
-
-We will use the standard 1234 TCP port to open a :abbr:`GDB (GNU Debugger)`
-server instance. This port number can be changed for a port that best suits the
-development environment. There are multiple ways to do this. Each way starts a
-QEMU instance with the processor halted at startup and with a GDB server
-instance listening for a connection.
-
-Running QEMU directly
-~~~~~~~~~~~~~~~~~~~~~
-
-You can run QEMU to listen for a "gdb connection" before it starts executing any
-code to debug it.
-
-.. code-block:: bash
-
-   qemu -s -S <image>
-
-will setup Qemu to listen on port 1234 and wait for a GDB connection to it.
-
-The options used above have the following meaning:
-
-* ``-S`` Do not start CPU at startup; rather, you must type 'c' in the
-  monitor.
-* ``-s`` Shorthand for :literal:`-gdb tcp::1234`: open a GDB server on
-  TCP port 1234.
-
-
-Running QEMU via :command:`ninja`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Run the following inside the build directory of an application:
-
-.. code-block:: console
-
-   ninja debugserver
-
-QEMU will write the console output to the path specified in
-:makevar:`${QEMU_PIPE}` via CMake, typically :file:`qemu-fifo` within the build
-directory. You may monitor this file during the run with :command:`tail -f
-qemu-fifo`.
-
-Running QEMU via :command:`west`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Run the following from your project root:
-
-.. code-block:: console
-
-   west build -t debugserver_qemu
-
-QEMU will write the console output to the terminal from which you invoked
-:command:`west`.
-
-Configuring the :command:`gdbserver` listening device
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-The Kconfig option :kconfig:option:`CONFIG_QEMU_GDBSERVER_LISTEN_DEV` controls
-the listening device, which can be a TCP port number or a path to a character
-device. GDB releases 9.0 and newer also support Unix domain sockets.
-
-If the option is unset, then the QEMU invocation will lack a ``-s`` or a
-``-gdb`` parameter. You can then use the :envvar:`QEMU_EXTRA_FLAGS` shell
-environment variable to pass in your own listen device configuration.
-
-GDB client
-==========
-
-Connect to the server by running :command:`gdb` and giving these commands:
-
-.. code-block:: bash
-
-   $ path/to/gdb path/to/zephyr.elf
-   (gdb) target remote localhost:1234
-   (gdb) dir ZEPHYR_BASE
-
-.. note::
-
-   Substitute the correct :ref:`ZEPHYR_BASE <important-build-vars>` for your
-   system.
-
-You can use a local GDB configuration :file:`.gdbinit` to initialize your GDB
-instance on every run. Your home directory is a typical location for
-:file:`.gdbinit`, but you can configure GDB to load from other locations,
-including the directory from which you invoked :command:`gdb`. This example
-file performs the same configuration as above:
-
-.. code-block:: none
-
-   target remote localhost:1234
-   dir ZEPHYR_BASE
-
-Alternate interfaces
-~~~~~~~~~~~~~~~~~~~~
-
-GDB provides a curses-based interface that runs in the terminal. Pass the ``--tui``
-option when invoking :command:`gdb` or give the ``tui enable`` command within
-:command:`gdb`.
-
-.. note::
-
-   The GDB version on your development system might not support the ``--tui``
-   option. Please make sure you use the GDB binary from the SDK which
-   corresponds to the toolchain that has been used to build the binary.
-
-Finally, the command below connects to the GDB server using the :abbr:`DDD
-(Data Display Debugger)`, a graphical frontend for GDB. The following command
-loads the symbol table from the ELF binary file, in this instance,
-:file:`zephyr.elf`.
-
-.. code-block:: bash
-
-   ddd --gdb --debugger "gdb zephyr.elf"
-
-Both commands execute :command:`gdb`. The command name might
-change depending on the toolchain you are using and your cross-development
-tools.
-
-:command:`ddd` may not be installed in your
-development system by default. Follow your system instructions to install
-it. For example, use :command:`sudo apt-get install ddd` on an Ubuntu system.
-
-Debugging
-=========
-
-As configured above, when you connect the GDB client, the application will be
-stopped at system startup. You may set breakpoints, step through code, etc. as
-when running the application directly within :command:`gdb`.
-
-.. note::
-
-   :command:`gdb` will not print the system console output as the application runs,
-   unlike when you run a native application in GDB directly. If you just
-   :command:`continue` after connecting the client, the application will run,
-   but nothing will appear to happen. Check the console output as described
-   above.
 
 .. _custom_board_definition:
 
@@ -1430,136 +1344,7 @@ Cache variable:
    :goals: build
    :compact:
 
-
-
-Debug with Eclipse
-******************
-
-Overview
-========
-
-CMake supports generating a project description file that can be imported into
-the Eclipse Integrated Development Environment (IDE) and used for graphical
-debugging.
-
-The `GNU MCU Eclipse plug-ins`_ provide a mechanism to debug ARM projects in
-Eclipse with pyOCD, Segger J-Link, and OpenOCD debugging tools.
-
-The following tutorial demonstrates how to debug a Zephyr application in
-Eclipse with pyOCD in Windows. It assumes you have already installed the GCC
-ARM Embedded toolchain and pyOCD.
-
-Set Up the Eclipse Development Environment
-==========================================
-
-#. Download and install `Eclipse IDE for C/C++ Developers`_.
-
-#. In Eclipse, install the GNU MCU Eclipse plug-ins by opening the menu
-   ``Window->Eclipse Marketplace...``, searching for ``GNU MCU Eclipse``, and
-   clicking ``Install`` on the matching result.
-
-#. Configure the path to the pyOCD GDB server by opening the menu
-   ``Window->Preferences``, navigating to ``MCU``, and setting the ``Global
-   pyOCD Path``.
-
-Generate and Import an Eclipse Project
-======================================
-
-#. Set up a GNU Arm Embedded toolchain as described in
-   :ref:`toolchain_gnuarmemb`.
-
-#. Navigate to a folder outside of the Zephyr tree to build your application.
-
-   .. code-block:: console
-
-      # On Windows
-      cd %userprofile%
-
-   .. note::
-      If the build directory is a subdirectory of the source directory, as is
-      usually done in Zephyr, CMake will warn:
-
-      "The build directory is a subdirectory of the source directory.
-
-      This is not supported well by Eclipse.  It is strongly recommended to use
-      a build directory which is a sibling of the source directory."
-
-#. Configure your application with CMake and build it with ninja. Note the
-   different CMake generator specified by the ``-G"Eclipse CDT4 - Ninja"``
-   argument. This will generate an Eclipse project description file,
-   :file:`.project`, in addition to the usual ninja build files.
-
-   .. zephyr-app-commands::
-      :tool: all
-      :app: %ZEPHYR_BASE%\samples\synchronization
-      :host-os: win
-      :board: frdm_k64f
-      :gen-args: -G"Eclipse CDT4 - Ninja"
-      :goals: build
-      :compact:
-
-#. In Eclipse, import your generated project by opening the menu
-   ``File->Import...`` and selecting the option ``Existing Projects into
-   Workspace``. Browse to your application build directory in the choice,
-   ``Select root directory:``. Check the box for your project in the list of
-   projects found and click the ``Finish`` button.
-
-Create a Debugger Configuration
-===============================
-
-#. Open the menu ``Run->Debug Configurations...``.
-
-#. Select ``GDB PyOCD Debugging``, click the ``New`` button, and configure the
-   following options:
-
-   - In the Main tab:
-
-     - Project: ``my_zephyr_app@build``
-     - C/C++ Application: :file:`zephyr/zephyr.elf`
-
-   - In the Debugger tab:
-
-     - pyOCD Setup
-
-       - Executable path: :file:`${pyocd_path}\\${pyocd_executable}`
-       - Uncheck "Allocate console for semihosting"
-
-     - Board Setup
-
-       - Bus speed: 8000000 Hz
-       - Uncheck "Enable semihosting"
-
-     - GDB Client Setup
-
-       - Executable path example (use your ``GNUARMEMB_TOOLCHAIN_PATH``):
-         :file:`C:\\gcc-arm-none-eabi-6_2017-q2-update\\bin\\arm-none-eabi-gdb.exe`
-
-   - In the SVD Path tab:
-
-     - File path: :file:`<workspace
-       top>\\modules\\hal\\nxp\\mcux\\devices\\MK64F12\\MK64F12.xml`
-
-     .. note::
-	This is optional. It provides the SoC's memory-mapped register
-	addresses and bitfields to the debugger.
-
-#. Click the ``Debug`` button to start debugging.
-
-RTOS Awareness
-==============
-
-Support for Zephyr RTOS awareness is implemented in `pyOCD v0.11.0`_ and later.
-It is compatible with GDB PyOCD Debugging in Eclipse, but you must enable
-CONFIG_DEBUG_THREAD_INFO=y in your application.
-
-
-
 .. _CMake: https://www.cmake.org
 .. _CMake introduction: https://cmake.org/cmake/help/latest/manual/cmake.1.html#description
-.. _Eclipse IDE for C/C++ Developers: https://www.eclipse.org/downloads/packages/eclipse-ide-cc-developers/oxygen2
-.. _GNU MCU Eclipse plug-ins: https://gnu-mcu-eclipse.github.io/plugins/install/
-.. _pyOCD v0.11.0: https://github.com/mbedmicro/pyOCD/releases/tag/v0.11.0
 .. _CMake list: https://cmake.org/cmake/help/latest/manual/cmake-language.7.html#lists
-.. _add_subdirectory(): https://cmake.org/cmake/help/latest/command/add_subdirectory.html
-.. _using Chocolatey: https://chocolatey.org/packages/RapidEE
 .. _example-application: https://github.com/zephyrproject-rtos/example-application

@@ -23,6 +23,7 @@ class Platform:
         """
 
         self.name = ""
+        self.normalized_name = ""
         self.twister = True
         # if no RAM size is specified by the board, take a default of 128K
         self.ram = 128
@@ -36,6 +37,8 @@ class Platform:
         self.supported = set()
 
         self.arch = ""
+        self.vendor = ""
+        self.tier = -1
         self.type = "na"
         self.simulation = "na"
         self.simulation_exec = None
@@ -50,6 +53,7 @@ class Platform:
         data = scp.data
 
         self.name = data['identifier']
+        self.normalized_name = self.name.replace("/", "_")
         self.twister = data.get("twister", True)
         # if no RAM size is specified by the board, take a default of 128K
         self.ram = data.get("ram", 128)
@@ -67,6 +71,8 @@ class Platform:
                 self.supported.add(item)
 
         self.arch = data['arch']
+        self.vendor = data.get('vendor', '')
+        self.tier = data.get("tier", -1)
         self.type = data.get('type', "na")
         self.simulation = data.get('simulation', "na")
         self.simulation_exec = data.get('simulation_exec')
@@ -75,13 +81,16 @@ class Platform:
             self.supported_toolchains = []
 
         support_toolchain_variants = {
-          "arc": ["zephyr", "cross-compile", "xtools", "arcmwdt"],
+          # we don't provide defaults for 'arc' intentionally: some targets can't be built with GNU
+          # toolchain ("zephyr", "cross-compile", "xtools" options) and for some targets we haven't
+          # provided MWDT compiler / linker options in corresponding SoC file in Zephyr, so these
+          # targets can't be built with ARC MWDT toolchain ("arcmwdt" option) by Zephyr build system
+          # Instead for 'arc' we rely on 'toolchain' option in board yaml configuration.
           "arm": ["zephyr", "gnuarmemb", "xtools", "armclang", "llvm"],
           "arm64": ["zephyr", "cross-compile"],
           "mips": ["zephyr", "xtools"],
           "nios2": ["zephyr", "xtools"],
-          "riscv32": ["zephyr", "cross-compile", "xtools"],
-          "riscv64": ["zephyr"],
+          "riscv": ["zephyr", "cross-compile"],
           "posix": ["host", "llvm"],
           "sparc": ["zephyr", "xtools"],
           "x86": ["zephyr", "xtools", "llvm"],

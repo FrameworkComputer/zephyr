@@ -7,7 +7,6 @@
 #include <zephyr/device.h>
 #include <zephyr/kernel.h>
 #include <zephyr/kernel_structs.h>
-#include <zephyr/timeout_q.h>
 #include <zephyr/init.h>
 #include <string.h>
 #include <zephyr/drivers/timer/system_timer.h>
@@ -22,9 +21,6 @@
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(pm, CONFIG_PM_LOG_LEVEL);
-
-#define CURRENT_CPU \
-	(COND_CODE_1(CONFIG_SMP, (arch_curr_cpu()->id), (_current_cpu->id)))
 
 static ATOMIC_DEFINE(z_post_ops_required, CONFIG_MP_MAX_NUM_CPUS);
 static sys_slist_t pm_notifiers = SYS_SLIST_STATIC_INIT(&pm_notifiers);
@@ -107,35 +103,6 @@ static void pm_resume_devices(void)
 #endif  /* !CONFIG_PM_DEVICE_RUNTIME_EXCLUSIVE */
 #endif	/* CONFIG_PM_DEVICE */
 
-static inline void pm_exit_pos_ops(struct pm_state_info *info)
-{
-	extern __weak void
-		pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id);
-
-	if (pm_state_exit_post_ops != NULL) {
-		pm_state_exit_post_ops(info->state, info->substate_id);
-	} else {
-		/*
-		 * This function is supposed to be overridden to do SoC or
-		 * architecture specific post ops after sleep state exits.
-		 *
-		 * The kernel expects that irqs are unlocked after this.
-		 */
-
-		irq_unlock(0);
-	}
-}
-
-static inline void state_set(struct pm_state_info *info)
-{
-	extern __weak void
-		pm_state_set(enum pm_state state, uint8_t substate_id);
-
-	if (pm_state_set != NULL) {
-		pm_state_set(info->state, info->substate_id);
-	}
-}
-
 /*
  * Function called to notify when the system is entering / exiting a
  * power state
@@ -163,7 +130,7 @@ static inline void pm_state_notify(bool entering_state)
 
 void pm_system_resume(void)
 {
-	uint8_t id = CURRENT_CPU;
+	uint8_t id = _current_cpu->id;
 
 	/*
 	 * This notification is called from the ISR of the event
@@ -178,7 +145,7 @@ void pm_system_resume(void)
 	 * and it may schedule another thread.
 	 */
 	if (atomic_test_and_clear_bit(z_post_ops_required, id)) {
-		pm_exit_pos_ops(&z_cpus_pm_state[id]);
+		pm_state_exit_post_ops(z_cpus_pm_state[id].state, z_cpus_pm_state[id].substate_id);
 		pm_state_notify(false);
 		z_cpus_pm_state[id] = (struct pm_state_info){PM_STATE_ACTIVE,
 			0, 0};
@@ -201,7 +168,7 @@ bool pm_state_force(uint8_t cpu, const struct pm_state_info *info)
 
 bool pm_system_suspend(int32_t ticks)
 {
-	uint8_t id = CURRENT_CPU;
+	uint8_t id = _current_cpu->id;
 	k_spinlock_key_t key;
 
 	SYS_PORT_TRACING_FUNC_ENTER(pm, system_suspend, ticks);
@@ -227,17 +194,6 @@ bool pm_system_suspend(int32_t ticks)
 		return false;
 	}
 
-	if (ticks != K_TICKS_FOREVER) {
-		/*
-		 * We need to set the timer to interrupt a little bit early to
-		 * accommodate the time required by the CPU to fully wake up.
-		 */
-		sys_clock_set_timeout(ticks -
-		     k_us_to_ticks_ceil32(
-			     z_cpus_pm_state[id].exit_latency_us),
-				     true);
-	}
-
 #if defined(CONFIG_PM_DEVICE) && !defined(CONFIG_PM_DEVICE_RUNTIME_EXCLUSIVE)
 	if (atomic_sub(&_cpus_active, 1) == 1) {
 		if (z_cpus_pm_state[id].state != PM_STATE_RUNTIME_IDLE) {
@@ -252,6 +208,18 @@ bool pm_system_suspend(int32_t ticks)
 		}
 	}
 #endif
+
+	if (ticks != K_TICKS_FOREVER) {
+		/*
+		 * We need to set the timer to interrupt a little bit early to
+		 * accommodate the time required by the CPU to fully wake up.
+		 */
+		sys_clock_set_timeout(ticks -
+		     k_us_to_ticks_ceil32(
+			     z_cpus_pm_state[id].exit_latency_us),
+				     true);
+	}
+
 	/*
 	 * This function runs with interruptions locked but it is
 	 * expected the SoC to unlock them in
@@ -266,7 +234,7 @@ bool pm_system_suspend(int32_t ticks)
 	/* Enter power state */
 	pm_state_notify(true);
 	atomic_set_bit(z_post_ops_required, id);
-	state_set(&z_cpus_pm_state[id]);
+	pm_state_set(z_cpus_pm_state[id].state, z_cpus_pm_state[id].substate_id);
 	pm_stats_stop();
 
 	/* Wake up sequence starts here */

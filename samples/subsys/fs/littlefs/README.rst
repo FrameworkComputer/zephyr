@@ -1,7 +1,8 @@
-.. _littlefs-sample:
+.. zephyr:code-sample:: littlefs
+   :name: LittleFS filesystem
+   :relevant-api: file_system_api flash_area_api
 
-littlefs File System Sample Application
-#######################################
+   Use file system API over LittleFS.
 
 Overview
 ********
@@ -111,7 +112,7 @@ On this device the file system will be placed in the SOC flash.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/subsys/fs/littlefs
-   :board: nrf52840dk_nrf52840
+   :board: nrf52840dk/nrf52840
    :goals: build
    :compact:
 

@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2018, Nordic Semiconductor ASA
+ * Copyright 2024 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -19,8 +20,8 @@ static void top_handler(const struct device *dev, void *user_data);
 
 void *exp_user_data = (void *)199;
 
-struct counter_alarm_cfg alarm_cfg;
-struct counter_alarm_cfg alarm_cfg2;
+struct counter_alarm_cfg cntr_alarm_cfg;
+struct counter_alarm_cfg cntr_alarm_cfg2;
 
 #define DEVICE_DT_GET_AND_COMMA(node_id) DEVICE_DT_GET(node_id),
 /* Generate a list of devices for all instances of the "compat" */
@@ -45,6 +46,9 @@ static const struct device *const devices[] = {
 #ifdef CONFIG_COUNTER_NATIVE_POSIX
 	DEVICE_DT_GET(DT_NODELABEL(counter0)),
 #endif
+#ifdef CONFIG_COUNTER_INFINEON_CAT1
+	DEVICE_DT_GET(DT_NODELABEL(counter0_0)),
+#endif
 	/* NOTE: there is no trailing comma, as the DEVS_FOR_DT_COMPAT
 	 * handles it.
 	 */
@@ -53,6 +57,7 @@ static const struct device *const devices[] = {
 	DEVS_FOR_DT_COMPAT(microchip_xec_timer)
 	DEVS_FOR_DT_COMPAT(nxp_imx_epit)
 	DEVS_FOR_DT_COMPAT(nxp_imx_gpt)
+	DEVS_FOR_DT_COMPAT(renesas_smartbond_timer)
 #ifdef CONFIG_COUNTER_MCUX_CTIMER
 	DEVS_FOR_DT_COMPAT(nxp_lpc_ctimer)
 #endif
@@ -62,8 +67,14 @@ static const struct device *const devices[] = {
 #ifdef CONFIG_COUNTER_MCUX_QTMR
 	DEVS_FOR_DT_COMPAT(nxp_imx_tmr)
 #endif
-#ifdef CONFIG_COUNTER_MCUX_LPC_RTC
+#ifdef CONFIG_COUNTER_NXP_MRT
+	DEVS_FOR_DT_COMPAT(nxp_mrt_channel)
+#endif
+#ifdef CONFIG_COUNTER_MCUX_LPC_RTC_1HZ
 	DEVS_FOR_DT_COMPAT(nxp_lpc_rtc)
+#endif
+#ifdef CONFIG_COUNTER_MCUX_LPC_RTC_HIGHRES
+	DEVS_FOR_DT_COMPAT(nxp_lpc_rtc_highres)
 #endif
 #ifdef CONFIG_COUNTER_GECKO_RTCC
 	DEVS_FOR_DT_COMPAT(silabs_gecko_rtcc)
@@ -74,8 +85,8 @@ static const struct device *const devices[] = {
 #ifdef CONFIG_COUNTER_GECKO_STIMER
 	DEVS_FOR_DT_COMPAT(silabs_gecko_stimer)
 #endif
-#ifdef CONFIG_COUNTER_MCUX_PIT
-	DEVS_FOR_DT_COMPAT(nxp_kinetis_pit)
+#ifdef CONFIG_COUNTER_NXP_PIT
+	DEVS_FOR_DT_COMPAT(nxp_pit_channel)
 #endif
 #ifdef CONFIG_COUNTER_XLNX_AXI_TIMER
 	DEVS_FOR_DT_COMPAT(xlnx_xps_timer_1_00_a)
@@ -88,6 +99,12 @@ static const struct device *const devices[] = {
 #endif
 #ifdef CONFIG_COUNTER_TIMER_GD32
 	DEVS_FOR_DT_COMPAT(gd_gd32_timer)
+#endif
+#ifdef CONFIG_COUNTER_TIMER_RPI_PICO
+	DEVS_FOR_DT_COMPAT(raspberrypi_pico_timer)
+#endif
+#ifdef CONFIG_COUNTER_AMBIQ
+	DEVS_FOR_DT_COMPAT(ambiq_counter)
 #endif
 };
 
@@ -336,7 +353,7 @@ static void alarm_handler(const struct device *dev, uint8_t chan_id,
 			counter, now, top, processing_limit_us);
 
 	if (user_data) {
-		zassert_true(&alarm_cfg == user_data,
+		zassert_true(&cntr_alarm_cfg == user_data,
 			"%s: Unexpected callback", dev->name);
 	}
 
@@ -365,9 +382,9 @@ static void test_single_shot_alarm_instance(const struct device *dev, bool set_t
 	ticks = counter_us_to_ticks(dev, counter_period_us);
 	top_cfg.ticks = ticks;
 
-	alarm_cfg.flags = 0;
-	alarm_cfg.callback = alarm_handler;
-	alarm_cfg.user_data = &alarm_cfg;
+	cntr_alarm_cfg.flags = 0;
+	cntr_alarm_cfg.callback = alarm_handler;
+	cntr_alarm_cfg.user_data = &cntr_alarm_cfg;
 
 	k_sem_reset(&alarm_cnt_sem);
 	alarm_cnt = 0;
@@ -386,16 +403,16 @@ static void test_single_shot_alarm_instance(const struct device *dev, bool set_t
 		zassert_equal(0, err,
 			     "%s: Counter failed to set top value", dev->name);
 
-		alarm_cfg.ticks = ticks + 1;
-		err = counter_set_channel_alarm(dev, 0, &alarm_cfg);
+		cntr_alarm_cfg.ticks = ticks + 1;
+		err = counter_set_channel_alarm(dev, 0, &cntr_alarm_cfg);
 		zassert_equal(-EINVAL, err,
 			      "%s: Counter should return error because ticks"
 			      " exceeded the limit set alarm", dev->name);
-		alarm_cfg.ticks = ticks - 1;
+		cntr_alarm_cfg.ticks = ticks - 1;
 	}
 
-	alarm_cfg.ticks = ticks;
-	err = counter_set_channel_alarm(dev, 0, &alarm_cfg);
+	cntr_alarm_cfg.ticks = ticks;
+	err = counter_set_channel_alarm(dev, 0, &cntr_alarm_cfg);
 	zassert_equal(0, err, "%s: Counter set alarm failed (err: %d)",
 			dev->name, err);
 
@@ -505,15 +522,15 @@ static void test_multiple_alarms_instance(const struct device *dev)
 	zassert_equal(0, err, "%s: Counter get value failed", dev->name);
 	top_cfg.ticks += ticks;
 
-	alarm_cfg.flags = COUNTER_ALARM_CFG_ABSOLUTE;
-	alarm_cfg.ticks = counter_us_to_ticks(dev, 2000);
-	alarm_cfg.callback = alarm_handler2;
-	alarm_cfg.user_data = &alarm_cfg;
+	cntr_alarm_cfg.flags = COUNTER_ALARM_CFG_ABSOLUTE;
+	cntr_alarm_cfg.ticks = counter_us_to_ticks(dev, 2000);
+	cntr_alarm_cfg.callback = alarm_handler2;
+	cntr_alarm_cfg.user_data = &cntr_alarm_cfg;
 
-	alarm_cfg2.flags = 0;
-	alarm_cfg2.ticks = counter_us_to_ticks(dev, 2000);
-	alarm_cfg2.callback = alarm_handler2;
-	alarm_cfg2.user_data = &alarm_cfg2;
+	cntr_alarm_cfg2.flags = 0;
+	cntr_alarm_cfg2.ticks = counter_us_to_ticks(dev, 2000);
+	cntr_alarm_cfg2.callback = alarm_handler2;
+	cntr_alarm_cfg2.user_data = &cntr_alarm_cfg2;
 
 	k_sem_reset(&alarm_cnt_sem);
 	alarm_cnt = 0;
@@ -537,12 +554,12 @@ static void test_multiple_alarms_instance(const struct device *dev)
 		return;
 	}
 
-	k_busy_wait(3*(uint32_t)counter_ticks_to_us(dev, alarm_cfg.ticks));
+	k_busy_wait(3*(uint32_t)counter_ticks_to_us(dev, cntr_alarm_cfg.ticks));
 
-	err = counter_set_channel_alarm(dev, 0, &alarm_cfg);
+	err = counter_set_channel_alarm(dev, 0, &cntr_alarm_cfg);
 	zassert_equal(0, err, "%s: Counter set alarm failed", dev->name);
 
-	err = counter_set_channel_alarm(dev, 1, &alarm_cfg2);
+	err = counter_set_channel_alarm(dev, 1, &cntr_alarm_cfg2);
 	zassert_equal(0, err, "%s: Counter set alarm failed", dev->name);
 
 	k_busy_wait(1.2 * counter_ticks_to_us(dev, ticks * 2U));
@@ -553,10 +570,10 @@ static void test_multiple_alarms_instance(const struct device *dev)
 			"%s: Invalid number of callbacks %d (expected: %d)",
 			dev->name, cnt, 2);
 
-	zassert_equal(&alarm_cfg2, clbk_data[0],
+	zassert_equal(&cntr_alarm_cfg2, clbk_data[0],
 			"%s: Expected different order or callbacks",
 			dev->name);
-	zassert_equal(&alarm_cfg, clbk_data[1],
+	zassert_equal(&cntr_alarm_cfg, clbk_data[1],
 			"%s: Expected different order or callbacks",
 			dev->name);
 

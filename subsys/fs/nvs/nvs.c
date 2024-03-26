@@ -23,21 +23,17 @@ static int nvs_ate_valid(struct nvs_fs *fs, const struct nvs_ate *entry);
 
 static inline size_t nvs_lookup_cache_pos(uint16_t id)
 {
-	size_t pos;
+	uint16_t hash;
 
-#if CONFIG_NVS_LOOKUP_CACHE_SIZE <= (UINT8_MAX + 1)
-	/*
-	 * CRC8-CCITT is used for ATE checksums and it also acts well as a hash
-	 * function, so it can be a good choice from the code size perspective.
-	 * However, other hash functions can be used as well if proved better
-	 * performance.
-	 */
-	pos = crc8_ccitt(CRC8_CCITT_INITIAL_VALUE, &id, sizeof(id));
-#else
-	pos = crc16_ccitt(0xffff, (const uint8_t *)&id, sizeof(id));
-#endif
+	/* 16-bit integer hash function found by https://github.com/skeeto/hash-prospector. */
+	hash = id;
+	hash ^= hash >> 8;
+	hash *= 0x88b5U;
+	hash ^= hash >> 7;
+	hash *= 0xdb2dU;
+	hash ^= hash >> 9;
 
-	return pos % CONFIG_NVS_LOOKUP_CACHE_SIZE;
+	return hash % CONFIG_NVS_LOOKUP_CACHE_SIZE;
 }
 
 static int nvs_lookup_cache_rebuild(struct nvs_fs *fs)
@@ -241,18 +237,24 @@ static int nvs_flash_cmp_const(struct nvs_fs *fs, uint32_t addr, uint8_t value,
 {
 	int rc;
 	size_t bytes_to_cmp, block_size;
-	uint8_t cmp[NVS_BLOCK_SIZE];
+	uint8_t buf[NVS_BLOCK_SIZE];
 
 	block_size =
 		NVS_BLOCK_SIZE & ~(fs->flash_parameters->write_block_size - 1U);
 
-	(void)memset(cmp, value, block_size);
 	while (len) {
 		bytes_to_cmp = MIN(block_size, len);
-		rc = nvs_flash_block_cmp(fs, addr, cmp, bytes_to_cmp);
+		rc = nvs_flash_rd(fs, addr, buf, bytes_to_cmp);
 		if (rc) {
 			return rc;
 		}
+
+		for (size_t i = 0; i < bytes_to_cmp; i++) {
+			if (buf[i] != value) {
+				return 1;
+			}
+		}
+
 		len -= bytes_to_cmp;
 		addr += bytes_to_cmp;
 	}
@@ -539,7 +541,6 @@ static void nvs_sector_advance(struct nvs_fs *fs, uint32_t *addr)
  */
 static int nvs_sector_close(struct nvs_fs *fs)
 {
-	int rc;
 	struct nvs_ate close_ate;
 	size_t ate_size;
 
@@ -555,7 +556,7 @@ static int nvs_sector_close(struct nvs_fs *fs)
 
 	nvs_ate_crc8_update(&close_ate);
 
-	rc = nvs_flash_ate_wrt(fs, &close_ate);
+	(void)nvs_flash_ate_wrt(fs, &close_ate);
 
 	nvs_sector_advance(fs, &fs->ate_wra);
 
@@ -870,7 +871,7 @@ static int nvs_startup(struct nvs_fs *fs)
 		 * So, temporarily, we set the lookup cache to the end of the fs.
 		 * The cache will be rebuilt afterwards
 		 **/
-		for (int i = 0; i < CONFIG_NVS_LOOKUP_CACHE_SIZE; i++) {
+		for (i = 0; i < CONFIG_NVS_LOOKUP_CACHE_SIZE; i++) {
 			fs->lookup_cache[i] = fs->ate_wra;
 		}
 #endif

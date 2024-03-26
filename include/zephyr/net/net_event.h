@@ -13,6 +13,7 @@
 #define ZEPHYR_INCLUDE_NET_NET_EVENT_H_
 
 #include <zephyr/net/net_ip.h>
+#include <zephyr/net/hostname.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -38,7 +39,6 @@ enum net_event_if_cmd {
 	NET_EVENT_IF_CMD_UP,
 	NET_EVENT_IF_CMD_ADMIN_DOWN,
 	NET_EVENT_IF_CMD_ADMIN_UP,
-
 };
 
 #define NET_EVENT_IF_DOWN				\
@@ -52,7 +52,6 @@ enum net_event_if_cmd {
 
 #define NET_EVENT_IF_ADMIN_UP				\
 	(_NET_EVENT_IF_BASE | NET_EVENT_IF_CMD_ADMIN_UP)
-
 
 /* IPv6 Events */
 #define _NET_IPV6_LAYER		NET_MGMT_LAYER_L3
@@ -79,6 +78,9 @@ enum net_event_ipv6_cmd {
 	NET_EVENT_IPV6_CMD_DAD_FAILED,
 	NET_EVENT_IPV6_CMD_NBR_ADD,
 	NET_EVENT_IPV6_CMD_NBR_DEL,
+	NET_EVENT_IPV6_CMD_DHCP_START,
+	NET_EVENT_IPV6_CMD_DHCP_BOUND,
+	NET_EVENT_IPV6_CMD_DHCP_STOP,
 };
 
 #define NET_EVENT_IPV6_ADDR_ADD					\
@@ -128,6 +130,15 @@ enum net_event_ipv6_cmd {
 
 #define NET_EVENT_IPV6_NBR_DEL					\
 	(_NET_EVENT_IPV6_BASE | NET_EVENT_IPV6_CMD_NBR_DEL)
+
+#define NET_EVENT_IPV6_DHCP_START				\
+	(_NET_EVENT_IPV6_BASE |	NET_EVENT_IPV6_CMD_DHCP_START)
+
+#define NET_EVENT_IPV6_DHCP_BOUND				\
+	(_NET_EVENT_IPV6_BASE |	NET_EVENT_IPV6_CMD_DHCP_BOUND)
+
+#define NET_EVENT_IPV6_DHCP_STOP				\
+	(_NET_EVENT_IPV6_BASE |	NET_EVENT_IPV6_CMD_DHCP_STOP)
 
 /* IPv4 Events*/
 #define _NET_IPV4_LAYER		NET_MGMT_LAYER_L3
@@ -198,6 +209,7 @@ enum net_event_l4_cmd {
 	NET_EVENT_L4_CMD_DISCONNECTED,
 	NET_EVENT_L4_CMD_DNS_SERVER_ADD,
 	NET_EVENT_L4_CMD_DNS_SERVER_DEL,
+	NET_EVENT_L4_CMD_HOSTNAME_CHANGED,
 };
 
 #define NET_EVENT_L4_CONNECTED				\
@@ -212,9 +224,11 @@ enum net_event_l4_cmd {
 #define NET_EVENT_DNS_SERVER_DEL			\
 	(_NET_EVENT_L4_BASE | NET_EVENT_L4_CMD_DNS_SERVER_DEL)
 
+#define NET_EVENT_HOSTNAME_CHANGED			\
+	(_NET_EVENT_L4_BASE | NET_EVENT_L4_CMD_HOSTNAME_CHANGED)
+
 /** @endcond */
 
-#ifdef CONFIG_NET_MGMT_EVENT_INFO
 /**
  * @brief Network Management event information structure
  * Used to pass information on network events like
@@ -236,7 +250,7 @@ struct net_event_ipv6_addr {
  *   NET_EVENT_IPV6_NBR_DEL
  * when CONFIG_NET_MGMT_EVENT_INFO enabled and event generator pass the
  * information.
- * @Note: idx will be '-1' in case of NET_EVENT_IPV6_NBR_DEL event.
+ * @note: idx will be '-1' in case of NET_EVENT_IPV6_NBR_DEL event.
  */
 struct net_event_ipv6_nbr {
 	struct in6_addr addr;
@@ -257,7 +271,29 @@ struct net_event_ipv6_route {
 	uint8_t prefix_len;
 };
 
-#endif /* CONFIG_NET_MGMT_EVENT_INFO */
+/**
+ * @brief Network Management event information structure
+ * Used to pass information on network events like
+ *   NET_EVENT_IPV6_PREFIX_ADD and
+ *   NET_EVENT_IPV6_PREFIX_DEL
+ * when CONFIG_NET_MGMT_EVENT_INFO is enabled and event generator pass the
+ * information.
+ */
+struct net_event_ipv6_prefix {
+	struct in6_addr addr; /* prefix */
+	uint8_t len;
+	uint32_t lifetime;
+};
+
+/**
+ * @brief Network Management event information structure
+ * Used to pass information on NET_EVENT_HOSTNAME_CHANGED event when
+ * CONFIG_NET_MGMT_EVENT_INFO is enabled and event generator pass the
+ * information.
+ */
+struct net_event_l4_hostname {
+	char hostname[NET_HOSTNAME_SIZE];
+};
 
 #ifdef __cplusplus
 }

@@ -9,19 +9,19 @@
 
 /* Include esp-idf headers first to avoid redefining BIT() macro */
 /* TODO: include w/o prefix */
-#ifdef CONFIG_SOC_ESP32
+#ifdef CONFIG_SOC_SERIES_ESP32
 #include <esp32/rom/ets_sys.h>
 #include <esp32/rom/gpio.h>
 #include <soc/dport_reg.h>
-#elif defined(CONFIG_SOC_ESP32S2)
+#elif defined(CONFIG_SOC_SERIES_ESP32S2)
 #include <esp32s2/rom/ets_sys.h>
 #include <esp32s2/rom/gpio.h>
 #include <soc/dport_reg.h>
-#elif defined(CONFIG_SOC_ESP32S3)
+#elif defined(CONFIG_SOC_SERIES_ESP32S3)
 #include <esp32s3/rom/ets_sys.h>
 #include <esp32s3/rom/gpio.h>
 #include <zephyr/dt-bindings/clock/esp32s3_clock.h>
-#elif defined(CONFIG_SOC_ESP32C3)
+#elif defined(CONFIG_SOC_SERIES_ESP32C3)
 #include <esp32c3/rom/ets_sys.h>
 #include <esp32c3/rom/gpio.h>
 #include <zephyr/dt-bindings/clock/esp32c3_clock.h>
@@ -43,7 +43,7 @@
 #include <soc.h>
 #include <zephyr/drivers/uart.h>
 
-#ifndef CONFIG_SOC_ESP32C3
+#ifndef CONFIG_SOC_SERIES_ESP32C3
 #include <zephyr/drivers/interrupt_controller/intc_esp32.h>
 #else
 #include <zephyr/drivers/interrupt_controller/intc_esp32c3.h>
@@ -55,7 +55,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(uart_esp32, CONFIG_UART_LOG_LEVEL);
 
-#ifdef CONFIG_SOC_ESP32C3
+#ifdef CONFIG_SOC_SERIES_ESP32C3
 #define ISR_HANDLER isr_handler_t
 #else
 #define ISR_HANDLER intr_handler_t
@@ -71,7 +71,6 @@ struct uart_esp32_config {
 	const struct device *dma_dev;
 	uint8_t tx_dma_channel;
 	uint8_t rx_dma_channel;
-	bool uart_id;
 #endif
 };
 
@@ -435,6 +434,11 @@ static void uart_esp32_irq_callback_set(const struct device *dev, uart_irq_callb
 
 	data->irq_cb = cb;
 	data->irq_cb_data = cb_data;
+
+#if defined(CONFIG_UART_EXCLUSIVE_API_CALLBACKS)
+	data->async.cb = NULL;
+	data->async.user_data = NULL;
+#endif
 }
 
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
@@ -598,7 +602,7 @@ static int uart_esp32_async_tx_abort(const struct device *dev)
 
 	err = dma_stop(config->dma_dev, config->tx_dma_channel);
 	if (err) {
-		LOG_ERR("Error stoping Tx DMA (%d)", err);
+		LOG_ERR("Error stopping Tx DMA (%d)", err);
 		goto unlock;
 	}
 
@@ -661,6 +665,11 @@ static int uart_esp32_async_callback_set(const struct device *dev, uart_callback
 
 	data->async.cb = callback;
 	data->async.user_data = user_data;
+
+#if defined(CONFIG_UART_EXCLUSIVE_API_CALLBACKS)
+	data->irq_cb = NULL;
+	data->irq_cb_data = NULL;
+#endif
 
 	return 0;
 }
@@ -828,7 +837,7 @@ static int uart_esp32_async_rx_disable(const struct device *dev)
 
 	err = dma_stop(config->dma_dev, config->rx_dma_channel);
 	if (err) {
-		LOG_ERR("Error stoping Rx DMA (%d)", err);
+		LOG_ERR("Error stopping Rx DMA (%d)", err);
 		goto unlock;
 	}
 
@@ -913,7 +922,7 @@ static int uart_esp32_init(const struct device *dev)
 		clock_control_on(config->clock_dev, (clock_control_subsys_t)ESP32_UHCI0_MODULE);
 		uhci_ll_init(data->uhci_dev);
 		uhci_ll_set_eof_mode(data->uhci_dev, UHCI_RX_IDLE_EOF | UHCI_RX_LEN_EOF);
-		uhci_ll_attach_uart_port(data->uhci_dev, config->uart_id);
+		uhci_ll_attach_uart_port(data->uhci_dev, uart_hal_get_port_num(&data->hal));
 		data->uart_dev = dev;
 
 		k_work_init_delayable(&data->async.tx_timeout_work, uart_esp32_async_tx_timeout);
@@ -961,8 +970,7 @@ static const DRAM_ATTR struct uart_driver_api uart_esp32_api = {
 #define ESP_UART_DMA_INIT(n)                                                                       \
 	.dma_dev = ESP32_DT_INST_DMA_CTLR(n, tx),                                                  \
 	.tx_dma_channel = ESP32_DT_INST_DMA_CELL(n, tx, channel),                                  \
-	.rx_dma_channel = ESP32_DT_INST_DMA_CELL(n, rx, channel),                                  \
-	.uart_id = (DEVICE_DT_GET(DT_NODELABEL(uart0)) != DEVICE_DT_INST_GET(n)),
+	.rx_dma_channel = ESP32_DT_INST_DMA_CELL(n, rx, channel)
 
 #define ESP_UART_UHCI_INIT(n)                                                                      \
 	.uhci_dev = COND_CODE_1(DT_INST_NODE_HAS_PROP(n, dmas), (&UHCI0), (NULL))
@@ -989,9 +997,11 @@ static const DRAM_ATTR struct uart_driver_api uart_esp32_api = {
                                                                                                    \
 	static struct uart_esp32_data uart_esp32_data_##idx = {                                    \
 		.uart_config = {.baudrate = DT_INST_PROP(idx, current_speed),                      \
-				.parity = UART_CFG_PARITY_NONE,                                    \
-				.stop_bits = UART_CFG_STOP_BITS_1,                                 \
-				.data_bits = UART_CFG_DATA_BITS_8,                                 \
+				.parity = DT_INST_ENUM_IDX_OR(idx, parity, UART_CFG_PARITY_NONE),  \
+				.stop_bits = DT_INST_ENUM_IDX_OR(idx, stop_bits,                   \
+								 UART_CFG_STOP_BITS_1),            \
+				.data_bits = DT_INST_ENUM_IDX_OR(idx, data_bits,                   \
+								 UART_CFG_DATA_BITS_8),            \
 				.flow_ctrl = MAX(COND_CODE_1(DT_INST_PROP(idx, hw_rs485_hd_mode),  \
 							     (UART_CFG_FLOW_CTRL_RS485),           \
 							     (UART_CFG_FLOW_CTRL_NONE)),           \

@@ -3,11 +3,17 @@
 Releases
 ########
 
-Zephyr project is provided as source code and build scripts for different
-target architectures and configurations, and not as a binary image. Updated
-versions of the Zephyr project are released approximately every four months.
+Zephyr project is provided as source code and build scripts for different target
+architectures and configurations, and not as a binary image. Updated versions of
+the Zephyr project are released approximately every four months.
 
-All Zephyr project source code is maintained in a `GitHub repository`_.
+All Zephyr project source code is maintained in a `GitHub repository`_. In order
+to use a released version of the Zephyr project, it is recommended that you use
+:ref:`west` to :ref:`get_the_code` of the release you are interested in.
+
+The technical documentation for current and past releases is available at
+https://docs.zephyrproject.org/ (use the version selector to select your release
+of interest).
 
 Release Life Cycle and Maintenance
 **********************************
@@ -50,51 +56,62 @@ Supported Releases
 +-----------------+----------------+---------------+
 | Release         | Release date   | EOL           |
 +=================+================+===============+
-| `Zephyr 2.7.5`_ | 2023-06-01     | 2024-08-31    |
+| `Zephyr 2.7.6`_ | 2024-03-01     | 2025-01-26    |
 +-----------------+----------------+---------------+
-| `Zephyr 3.4.0`_ | 2023-06-16     | 2024-02-29    |
+| `Zephyr 3.6.0`_ | 2024-02-23     | 2024-11-29    |
 +-----------------+----------------+---------------+
-| `Zephyr 3.3.0`_ | 2023-02-19     | 2023-10-31    |
+| `Zephyr 3.5.0`_ | 2023-10-20     | 2024-07-26    |
 +-----------------+----------------+---------------+
-| `Zephyr 3.2.0`_ | 2022-09-30     | 2023-06-30    |
-+-----------------+----------------+---------------+
-
 
 As of 2022-01-01, LTS1 (1.14.x) is not supported and has reached end of life (EOL).
 
 Release Notes
 *************
 
-For Zephyr versions up to 1.13, you can either download source as a tar.gz file
-(see the bottom of the `GitHub tagged releases`_ page corresponding to each
-release), or clone the GitHub repository.
-
-With the introduction of the :ref:`west` tool after the release of Zephyr 1.13,
-it is no longer recommended to download or clone the source code manually.
-Instead we recommend you follow the instructions in :ref:`get_the_code` to do
-so with the help of west.
-
-The project's technical documentation is also tagged to correspond with a
-specific release and can be found at https://docs.zephyrproject.org/.
-
-.. comment We need to split the globbing of release notes to get the
-   single-digit and double-digit subversions sorted correctly.  Specify
-   names in normal order and use the :reversed: option to reverse it.
-   This will get us through 10 subversions (0-9) before we need to
-   update this list for two-digit subversions again.
+Release notes contain a list of changes that have been made to the different
+areas of the project during the development cycle of the release.
+Changes that require the user to modify their own application to support the new
+release may be mentioned in the release notes, but the details regarding `what`
+needs to be changed are to be detailed in the release's migration guide.
 
 .. toctree::
    :maxdepth: 1
    :glob:
    :reversed:
 
-   release-notes-1.?
-   release-notes-1.*
-   release-notes-*
+   eol_releases
+   release-notes-2.7
+   release-notes-3.[5-7]
+
+Migration Guides
+****************
+
+Zephyr provides migration guides for all major releases, in order to assist
+users transition from the previous release.
+
+As mentioned in the previous section, changes in the code that require an action
+(i.e. a modification of the source code or configuration files) on the part of
+the user in order to keep the existing behavior of their application belong in
+in the migration guide. This includes:
+
+- Breaking API changes
+- Deprecations
+- Devicetree or Kconfig changes that affect the user (changes to defaults,
+  renames, etc)
+- Treewide changes that have an effect (e.g. changing the include path or
+  defaulting to a different C standard library)
+- Anything else that can affect the compilation or runtime behavior of an
+  existing application
+
+.. toctree::
+   :maxdepth: 1
+   :glob:
+   :reversed:
+
+   migration-guide-*
 
 .. _`GitHub repository`: https://github.com/zephyrproject-rtos/zephyr
 .. _`GitHub tagged releases`: https://github.com/zephyrproject-rtos/zephyr/tags
-.. _`Zephyr 2.7.5`: https://docs.zephyrproject.org/2.7.5/
-.. _`Zephyr 3.2.0`: https://docs.zephyrproject.org/3.2.0/
-.. _`Zephyr 3.3.0`: https://docs.zephyrproject.org/3.3.0/
-.. _`Zephyr 3.4.0`: https://docs.zephyrproject.org/3.4.0/
+.. _`Zephyr 2.7.6`: https://docs.zephyrproject.org/2.7.6/
+.. _`Zephyr 3.5.0`: https://docs.zephyrproject.org/3.5.0/
+.. _`Zephyr 3.6.0`: https://docs.zephyrproject.org/3.6.0/

@@ -62,9 +62,6 @@ for  data copy operations from ROM to required memory type.
   .. note::
 
      function zephyr_code_relocate() can be called  as many times as required.
-     This step has to be performed before calling find_package(Zephyr ...)
-     in the application's CMakeLists.txt.
-
 
 Additional Configurations
 =========================
@@ -99,6 +96,22 @@ This section shows additional configuration options that can be set in
      file(GLOB sources "file*.c")
      zephyr_code_relocate(FILES ${sources} LOCATION SRAM)
      zephyr_code_relocate(FILES $<TARGET_PROPERTY:my_tgt,SOURCES> LOCATION SRAM)
+
+NOKEEP flag
+===========
+
+By default, all relocated functions and variables will be marked with ``KEEP()``
+when generating ``linker_relocate.ld``.  Therefore, if any input file happens to
+contain unused symbols, then they will not be discarded by the linker, even when
+it is invoked with ``--gc-sections``. If you'd like to override this behavior,
+you can pass ``NOKEEP`` to your ``zephyr_code_relocate()`` call.
+
+  .. code-block:: none
+
+     zephyr_code_relocate(FILES src/file1.c LOCATION SRAM2_TEXT NOKEEP)
+
+The example above will help ensure that any unused code found in the .text
+sections of ``file1.c`` will not stick to SRAM2.
 
 NOCOPY flag
 ===========
@@ -138,7 +151,7 @@ A test showcasing this feature is provided at
 This test shows how the code relocation feature is used.
 
 This test will place .text, .data, .bss from 3 files to various parts in the SRAM
-using a custom linker file derived from ``include/arch/arm/aarch32/cortex_m/scripts/linker.ld``
+using a custom linker file derived from ``include/zephyr/arch/arm/cortex_m/scripts/linker.ld``
 
 A sample showcasing the NOCOPY flag is provided at
 ``$ZEPHYR_BASE/samples/application_development/code_relocation_nocopy/``

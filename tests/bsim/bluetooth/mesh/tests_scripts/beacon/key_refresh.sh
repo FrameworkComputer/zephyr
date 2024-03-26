@@ -8,7 +8,7 @@ RunTest mesh_beacon_on_key_refresh \
 	beacon_tx_on_key_refresh \
 	beacon_rx_on_key_refresh
 
-conf=prj_mesh1d1_conf
-RunTest mesh_beacon_on_key_refresh_1d1 \
+overlay=overlay_psa_conf
+RunTest mesh_beacon_on_key_refresh_psa \
 	beacon_tx_on_key_refresh \
 	beacon_rx_on_key_refresh

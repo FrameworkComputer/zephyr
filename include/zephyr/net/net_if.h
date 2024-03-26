@@ -33,6 +33,9 @@
 #if defined(CONFIG_NET_DHCPV4) && defined(CONFIG_NET_NATIVE_IPV4)
 #include <zephyr/net/dhcpv4.h>
 #endif
+#if defined(CONFIG_NET_DHCPV6) && defined(CONFIG_NET_NATIVE_IPV6)
+#include <zephyr/net/dhcpv6.h>
+#endif
 #if defined(CONFIG_NET_IPV4_AUTO) && defined(CONFIG_NET_NATIVE_IPV4)
 #include <zephyr/net/ipv4_autoconf.h>
 #endif
@@ -91,6 +94,17 @@ struct net_if_mcast_addr {
 	/** IP address */
 	struct net_addr address;
 
+#if defined(CONFIG_NET_IPV4_IGMPV3)
+	/** Sources to filter on */
+	struct net_addr sources[CONFIG_NET_IF_MCAST_IPV4_SOURCE_COUNT];
+
+	/** Number of sources to be used by the filter */
+	uint16_t sources_len;
+
+	/** Filter mode (used in IGMPV3) */
+	uint8_t record_type;
+#endif
+
 	/** Is this multicast IP address used or not */
 	uint8_t is_used : 1;
 
@@ -103,7 +117,7 @@ struct net_if_mcast_addr {
 /**
  * @brief Network Interface IPv6 prefixes
  *
- * Stores the multicast IP addresses assigned to this network interface.
+ * Stores the IPV6 prefixes assigned to this network interface.
  */
 struct net_if_ipv6_prefix {
 	/** Prefix lifetime */
@@ -209,6 +223,9 @@ enum net_if_flag {
 	/** IPv6 Multicast Listener Discovery disabled. */
 	NET_IF_IPV6_NO_MLD,
 
+	/** Mutex locking on TX data path disabled on the interface. */
+	NET_IF_NO_TX_LOCK,
+
 /** @cond INTERNAL_HIDDEN */
 	/* Total number of flags - must be at the end of the enum */
 	NET_IF_NUM_FLAGS
@@ -273,7 +290,73 @@ struct net_if_ipv6 {
 
 	/** IPv6 hop limit */
 	uint8_t hop_limit;
+
+	/** IPv6 multicast hop limit */
+	uint8_t mcast_hop_limit;
 };
+
+#if defined(CONFIG_NET_DHCPV6) && defined(CONFIG_NET_NATIVE_IPV6)
+struct net_if_dhcpv6 {
+	/** Used for timer list. */
+	sys_snode_t node;
+
+	/** Generated Client ID. */
+	struct net_dhcpv6_duid_storage clientid;
+
+	/** Server ID of the selected server. */
+	struct net_dhcpv6_duid_storage serverid;
+
+	/** DHCPv6 client state. */
+	enum net_dhcpv6_state state;
+
+	/** DHCPv6 client configuration parameters. */
+	struct net_dhcpv6_params params;
+
+	/** Timeout for the next event, absolute time, milliseconds. */
+	uint64_t timeout;
+
+	/** Time of the current exchange start, absolute time, milliseconds */
+	uint64_t exchange_start;
+
+	/** Renewal time, absolute time, milliseconds. */
+	uint64_t t1;
+
+	/** Rebinding time, absolute time, milliseconds. */
+	uint64_t t2;
+
+	/** The time when the last lease expires (terminates rebinding,
+	 *  DHCPv6 RFC8415, ch. 18.2.5). Absolute time, milliseconds.
+	 */
+	uint64_t expire;
+
+	/** Generated IAID for IA_NA. */
+	uint32_t addr_iaid;
+
+	/** Generated IAID for IA_PD. */
+	uint32_t prefix_iaid;
+
+	/** Retransmit timeout for the current message, milliseconds. */
+	uint32_t retransmit_timeout;
+
+	/** Current best server preference received. */
+	int16_t server_preference;
+
+	/** Retransmission counter. */
+	uint8_t retransmissions;
+
+	/** Transaction ID for current exchange. */
+	uint8_t tid[DHCPV6_TID_SIZE];
+
+	/** Prefix length. */
+	uint8_t prefix_len;
+
+	/** Assigned IPv6 prefix. */
+	struct in6_addr prefix;
+
+	/** Assigned IPv6 address. */
+	struct in6_addr addr;
+};
+#endif /* defined(CONFIG_NET_DHCPV6) && defined(CONFIG_NET_NATIVE_IPV6) */
 
 /** @cond INTERNAL_HIDDEN */
 #if defined(CONFIG_NET_NATIVE_IPV4)
@@ -285,9 +368,21 @@ struct net_if_ipv6 {
 #endif
 /** @endcond */
 
+/**
+ * @brief Network Interface unicast IPv4 address and netmask
+ *
+ * Stores the unicast IPv4 address and related netmask.
+ */
+struct net_if_addr_ipv4 {
+	/** IPv4 address */
+	struct net_if_addr ipv4;
+	/** Netmask */
+	struct in_addr netmask;
+};
+
 struct net_if_ipv4 {
 	/** Unicast IP addresses */
-	struct net_if_addr unicast[NET_IF_MAX_IPV4_ADDR];
+	struct net_if_addr_ipv4 unicast[NET_IF_MAX_IPV4_ADDR];
 
 	/** Multicast IP addresses */
 	struct net_if_mcast_addr mcast[NET_IF_MAX_IPV4_MADDR];
@@ -295,11 +390,11 @@ struct net_if_ipv4 {
 	/** Gateway */
 	struct in_addr gw;
 
-	/** Netmask */
-	struct in_addr netmask;
-
 	/** IPv4 time-to-live */
 	uint8_t ttl;
+
+	/** IPv4 time-to-live for multicast packets */
+	uint8_t mcast_ttl;
 };
 
 #if defined(CONFIG_NET_DHCPV4) && defined(CONFIG_NET_NATIVE_IPV4)
@@ -330,6 +425,9 @@ struct net_if_dhcpv4 {
 	/** Requested IP addr */
 	struct in_addr requested_ip;
 
+	/** Received netmask from the server */
+	struct in_addr netmask;
+
 	/**
 	 *  DHCPv4 client state in the process of network
 	 *  address allocation.
@@ -344,6 +442,11 @@ struct net_if_dhcpv4 {
 
 	/** The source address of a received DHCP message */
 	struct in_addr response_src_addr;
+
+#ifdef CONFIG_NET_DHCPV4_OPTION_NTP_SERVER
+	/** NTP server address */
+	struct in_addr ntp_addr;
+#endif
 };
 #endif /* CONFIG_NET_DHCPV4 */
 
@@ -413,6 +516,10 @@ struct net_if_config {
 	struct net_if_dhcpv4 dhcpv4;
 #endif /* CONFIG_NET_DHCPV4 */
 
+#if defined(CONFIG_NET_DHCPV6) && defined(CONFIG_NET_NATIVE_IPV6)
+	struct net_if_dhcpv6 dhcpv6;
+#endif /* CONFIG_NET_DHCPV6 */
+
 #if defined(CONFIG_NET_IPV4_AUTO) && defined(CONFIG_NET_NATIVE_IPV4)
 	struct net_if_ipv4_autoconf ipv4auto;
 #endif /* CONFIG_NET_IPV4_AUTO */
@@ -424,6 +531,14 @@ struct net_if_config {
 	 */
 	sys_slist_t virtual_interfaces;
 #endif /* CONFIG_NET_L2_VIRTUAL */
+
+#if defined(CONFIG_NET_INTERFACE_NAME)
+	/**
+	 * Network interface can have a name and it is possible
+	 * to search a network interface using this name.
+	 */
+	char name[CONFIG_NET_INTERFACE_NAME_LEN + 1];
+#endif
 };
 
 /**
@@ -465,7 +580,8 @@ typedef int (*net_socket_create_t)(int, int, int);
  * and the network device.
  *
  * Because of the strong relationship between a device driver and such
- * network interface, each net_if_dev should be instantiated by
+ * network interface, each net_if_dev should be instantiated by one of the
+ * network device init macros found in net_if.h.
  */
 struct net_if_dev {
 	/** The actually device driver instance the net_if is related to */
@@ -534,6 +650,7 @@ struct net_if {
 #endif
 
 	struct k_mutex lock;
+	struct k_mutex tx_lock;
 };
 
 static inline void net_if_lock(struct net_if *iface)
@@ -548,6 +665,31 @@ static inline void net_if_unlock(struct net_if *iface)
 	NET_ASSERT(iface);
 
 	k_mutex_unlock(&iface->lock);
+}
+
+static inline bool net_if_flag_is_set(struct net_if *iface,
+				      enum net_if_flag value);
+
+static inline void net_if_tx_lock(struct net_if *iface)
+{
+	NET_ASSERT(iface);
+
+	if (net_if_flag_is_set(iface, NET_IF_NO_TX_LOCK)) {
+		return;
+	}
+
+	(void)k_mutex_lock(&iface->tx_lock, K_FOREVER);
+}
+
+static inline void net_if_tx_unlock(struct net_if *iface)
+{
+	NET_ASSERT(iface);
+
+	if (net_if_flag_is_set(iface, NET_IF_NO_TX_LOCK)) {
+		return;
+	}
+
+	k_mutex_unlock(&iface->tx_lock);
 }
 
 /**
@@ -755,16 +897,23 @@ void net_if_queue_tx(struct net_if *iface, struct net_pkt *pkt);
 static inline bool net_if_is_ip_offloaded(struct net_if *iface)
 {
 #if defined(CONFIG_NET_OFFLOAD)
-	NET_ASSERT(iface);
-	NET_ASSERT(iface->if_dev);
-
-	return (iface->if_dev->offload != NULL);
+	return (iface != NULL && iface->if_dev != NULL &&
+		iface->if_dev->offload != NULL);
 #else
 	ARG_UNUSED(iface);
 
 	return false;
 #endif
 }
+
+/**
+ * @brief Return offload status of a given network interface.
+ *
+ * @param iface Network interface
+ *
+ * @return True if IP or socket offloading is active, false otherwise.
+ */
+bool net_if_is_offloaded(struct net_if *iface);
 
 /**
  * @brief Return the IP offload plugin
@@ -913,6 +1062,29 @@ static inline void net_if_stop_rs(struct net_if *iface)
 	ARG_UNUSED(iface);
 }
 #endif /* CONFIG_NET_IPV6_ND */
+
+/**
+ * @brief Provide a reachability hint for IPv6 Neighbor Discovery.
+ *
+ * This function is intended for upper-layer protocols to inform the IPv6
+ * Neighbor Discovery process about an active link to a specific neighbor.
+ * By signaling a recent "forward progress" event, such as the reception of
+ * an ACK, this function can help reduce unnecessary ND traffic as per the
+ * guidelines in RFC 4861 (section 7.3).
+ *
+ * @param iface A pointer to the network interface.
+ * @param ipv6_addr Pointer to the IPv6 address of the neighbor node.
+ */
+#if defined(CONFIG_NET_IPV6_ND) && defined(CONFIG_NET_NATIVE_IPV6)
+void net_if_nbr_reachability_hint(struct net_if *iface, const struct in6_addr *ipv6_addr);
+#else
+static inline void net_if_nbr_reachability_hint(struct net_if *iface,
+						const struct in6_addr *ipv6_addr)
+{
+	ARG_UNUSED(iface);
+	ARG_UNUSED(ipv6_addr);
+}
+#endif
 
 /** @cond INTERNAL_HIDDEN */
 
@@ -1209,6 +1381,29 @@ __syscall bool net_if_ipv6_addr_rm_by_index(int index,
 					    const struct in6_addr *addr);
 
 /**
+ * @typedef net_if_ip_addr_cb_t
+ * @brief Callback used while iterating over network interface IP addresses
+ *
+ * @param iface Pointer to the network interface the address belongs to
+ * @param addr Pointer to current IP address
+ * @param user_data A valid pointer to user data or NULL
+ */
+typedef void (*net_if_ip_addr_cb_t)(struct net_if *iface,
+				    struct net_if_addr *addr,
+				    void *user_data);
+
+/**
+ * @brief Go through all IPv6 addresses on a network interface and call callback
+ * for each used address.
+ *
+ * @param iface Pointer to the network interface
+ * @param cb User-supplied callback function to call
+ * @param user_data User specified data
+ */
+void net_if_ipv6_addr_foreach(struct net_if *iface, net_if_ip_addr_cb_t cb,
+			      void *user_data);
+
+/**
  * @brief Add a IPv6 multicast address to an interface
  *
  * @param iface Network interface
@@ -1230,6 +1425,29 @@ struct net_if_mcast_addr *net_if_ipv6_maddr_add(struct net_if *iface,
 bool net_if_ipv6_maddr_rm(struct net_if *iface, const struct in6_addr *addr);
 
 /**
+ * @typedef net_if_ip_maddr_cb_t
+ * @brief Callback used while iterating over network interface multicast IP addresses
+ *
+ * @param iface Pointer to the network interface the address belongs to
+ * @param maddr Pointer to current multicast IP address
+ * @param user_data A valid pointer to user data or NULL
+ */
+typedef void (*net_if_ip_maddr_cb_t)(struct net_if *iface,
+				     struct net_if_mcast_addr *maddr,
+				     void *user_data);
+
+/**
+ * @brief Go through all IPv6 multicast addresses on a network interface and call
+ * callback for each used address.
+ *
+ * @param iface Pointer to the network interface
+ * @param cb User-supplied callback function to call
+ * @param user_data User specified data
+ */
+void net_if_ipv6_maddr_foreach(struct net_if *iface, net_if_ip_maddr_cb_t cb,
+			       void *user_data);
+
+/**
  * @brief Check if this IPv6 multicast address belongs to a specific interface
  * or one of the interfaces.
  *
@@ -1245,13 +1463,12 @@ struct net_if_mcast_addr *net_if_ipv6_maddr_lookup(const struct in6_addr *addr,
 /**
  * @typedef net_if_mcast_callback_t
 
- * @brief Define callback that is called whenever IPv6 multicast address group
- * is joined or left.
-
+ * @brief Define a callback that is called whenever a IPv6 or IPv4 multicast
+ *        address group is joined or left.
  * @param iface A pointer to a struct net_if to which the multicast address is
  *        attached.
  * @param addr IP multicast address.
- * @param is_joined True if the address is joined, false if left.
+ * @param is_joined True if the multicast group is joined, false if group is left.
  */
 typedef void (*net_if_mcast_callback_t)(struct net_if *iface,
 					const struct net_addr *addr,
@@ -1281,7 +1498,7 @@ struct net_if_mcast_monitor {
  *
  * @param mon Monitor handle. This is a pointer to a monitor storage structure
  * which should be allocated by caller, but does not need to be initialized.
- * @param iface Network interface
+ * @param iface Network interface or NULL for all interfaces
  * @param cb Monitor callback
  */
 void net_if_mcast_mon_register(struct net_if_mcast_monitor *mon,
@@ -1300,7 +1517,7 @@ void net_if_mcast_mon_unregister(struct net_if_mcast_monitor *mon);
  *
  * @param iface Network interface
  * @param addr Multicast address
- * @param is_joined Is this multicast address joined (true) or not (false)
+ * @param is_joined Is this multicast address group joined (true) or not (false)
  */
 void net_if_mcast_monitor(struct net_if *iface, const struct net_addr *addr,
 			  bool is_joined);
@@ -1523,7 +1740,36 @@ uint8_t net_if_ipv6_get_hop_limit(struct net_if *iface);
  * @param iface Network interface
  * @param hop_limit New hop limit
  */
-void net_ipv6_set_hop_limit(struct net_if *iface, uint8_t hop_limit);
+void net_if_ipv6_set_hop_limit(struct net_if *iface, uint8_t hop_limit);
+
+/* The old hop limit setter function is deprecated because the naming
+ * of it was incorrect. The API name was missing "_if_" so this function
+ * should not be used.
+ */
+__deprecated
+static inline void net_ipv6_set_hop_limit(struct net_if *iface,
+					  uint8_t hop_limit)
+{
+	net_if_ipv6_set_hop_limit(iface, hop_limit);
+}
+
+/**
+ * @brief Get IPv6 multicast hop limit specified for a given interface. This is the
+ * default value but can be overridden by the user.
+ *
+ * @param iface Network interface
+ *
+ * @return Hop limit
+ */
+uint8_t net_if_ipv6_get_mcast_hop_limit(struct net_if *iface);
+
+/**
+ * @brief Set the default IPv6 multicast hop limit of a given interface.
+ *
+ * @param iface Network interface
+ * @param hop_limit New hop limit
+ */
+void net_if_ipv6_set_mcast_hop_limit(struct net_if *iface, uint8_t hop_limit);
 
 /**
  * @brief Set IPv6 reachable time for a given interface
@@ -1768,6 +2014,23 @@ uint8_t net_if_ipv4_get_ttl(struct net_if *iface);
 void net_if_ipv4_set_ttl(struct net_if *iface, uint8_t ttl);
 
 /**
+ * @brief Get IPv4 multicast time-to-live value specified for a given interface
+ *
+ * @param iface Network interface
+ *
+ * @return Time-to-live
+ */
+uint8_t net_if_ipv4_get_mcast_ttl(struct net_if *iface);
+
+/**
+ * @brief Set IPv4 multicast time-to-live value specified to a given interface
+ *
+ * @param iface Network interface
+ * @param ttl Time-to-live value
+ */
+void net_if_ipv4_set_mcast_ttl(struct net_if *iface, uint8_t ttl);
+
+/**
  * @brief Check if this IPv4 address belongs to one of the interfaces.
  *
  * @param addr IPv4 address
@@ -1840,6 +2103,17 @@ __syscall bool net_if_ipv4_addr_rm_by_index(int index,
 					    const struct in_addr *addr);
 
 /**
+ * @brief Go through all IPv4 addresses on a network interface and call callback
+ * for each used address.
+ *
+ * @param iface Pointer to the network interface
+ * @param cb User-supplied callback function to call
+ * @param user_data User specified data
+ */
+void net_if_ipv4_addr_foreach(struct net_if *iface, net_if_ip_addr_cb_t cb,
+			      void *user_data);
+
+/**
  * @brief Add a IPv4 multicast address to an interface
  *
  * @param iface Network interface
@@ -1859,6 +2133,17 @@ struct net_if_mcast_addr *net_if_ipv4_maddr_add(struct net_if *iface,
  * @return True if successfully removed, false otherwise
  */
 bool net_if_ipv4_maddr_rm(struct net_if *iface, const struct in_addr *addr);
+
+/**
+ * @brief Go through all IPv4 multicast addresses on a network interface and call
+ * callback for each used address.
+ *
+ * @param iface Pointer to the network interface
+ * @param cb User-supplied callback function to call
+ * @param user_data User specified data
+ */
+void net_if_ipv4_maddr_foreach(struct net_if *iface, net_if_ip_maddr_cb_t cb,
+			       void *user_data);
 
 /**
  * @brief Check if this IPv4 multicast address belongs to a specific interface
@@ -2069,24 +2354,77 @@ struct in_addr *net_if_ipv4_get_global_addr(struct net_if *iface,
 					    enum net_addr_state addr_state);
 
 /**
+ * @brief Get IPv4 netmask related to an address of an interface.
+ *
+ * @param iface Interface to use.
+ * @param addr IPv4 address to check.
+ *
+ * @return The netmask set on the interface related to the give address,
+ *         unspecified address if not found.
+ */
+struct in_addr net_if_ipv4_get_netmask_by_addr(struct net_if *iface,
+					       const struct in_addr *addr);
+
+/**
+ * @brief Get IPv4 netmask of an interface.
+ *
+ * @deprecated Use net_if_ipv4_get_netmask_by_addr() instead.
+ *
+ * @param iface Interface to use.
+ *
+ * @return The netmask set on the interface, unspecified address if not found.
+ */
+__deprecated struct in_addr net_if_ipv4_get_netmask(struct net_if *iface);
+
+/**
  * @brief Set IPv4 netmask for an interface.
+ *
+ * @deprecated Use net_if_ipv4_set_netmask_by_addr() instead.
  *
  * @param iface Interface to use.
  * @param netmask IPv4 netmask
  */
-void net_if_ipv4_set_netmask(struct net_if *iface,
-			     const struct in_addr *netmask);
+__deprecated void net_if_ipv4_set_netmask(struct net_if *iface,
+					  const struct in_addr *netmask);
 
 /**
  * @brief Set IPv4 netmask for an interface index.
+ *
+ * @deprecated Use net_if_ipv4_set_netmask_by_addr() instead.
  *
  * @param index Network interface index
  * @param netmask IPv4 netmask
  *
  * @return True if netmask was added, false otherwise.
  */
-__syscall bool net_if_ipv4_set_netmask_by_index(int index,
-						const struct in_addr *netmask);
+__deprecated __syscall bool net_if_ipv4_set_netmask_by_index(int index,
+							     const struct in_addr *netmask);
+
+/**
+ * @brief Set IPv4 netmask for an interface index for a given address.
+ *
+ * @param index Network interface index
+ * @param addr IPv4 address related to this netmask
+ * @param netmask IPv4 netmask
+ *
+ * @return True if netmask was added, false otherwise.
+ */
+__syscall bool net_if_ipv4_set_netmask_by_addr_by_index(int index,
+							const struct in_addr *addr,
+							const struct in_addr *netmask);
+
+/**
+ * @brief Set IPv4 netmask for an interface index for a given address.
+ *
+ * @param iface Network interface
+ * @param addr IPv4 address related to this netmask
+ * @param netmask IPv4 netmask
+ *
+ * @return True if netmask was added, false otherwise.
+ */
+bool net_if_ipv4_set_netmask_by_addr(struct net_if *iface,
+				     const struct in_addr *addr,
+				     const struct in_addr *netmask);
 
 /**
  * @brief Set IPv4 gateway for an interface.
@@ -2526,27 +2864,83 @@ int net_if_resume(struct net_if *iface);
 bool net_if_is_suspended(struct net_if *iface);
 #endif /* CONFIG_NET_POWER_MANAGEMENT */
 
+/**
+ * @brief Check if the network interface supports Wi-Fi.
+ *
+ * @param iface Pointer to network interface
+ *
+ * @return True if interface supports Wi-Fi, False otherwise.
+ */
+bool net_if_is_wifi(struct net_if *iface);
+
+/**
+ * @brief Get first Wi-Fi network interface.
+ *
+ * @return Pointer to network interface, NULL if not found.
+ */
+struct net_if *net_if_get_first_wifi(void);
+
+/**
+ * @brief Get network interface name.
+ *
+ * @details If interface name support is not enabled, empty string is returned.
+ *
+ * @param iface Pointer to network interface
+ * @param buf User supplied buffer
+ * @param len Length of the user supplied buffer
+ *
+ * @return Length of the interface name copied to buf,
+ *         -EINVAL if invalid parameters,
+ *         -ERANGE if name cannot be copied to the user supplied buffer,
+ *         -ENOTSUP if interface name support is disabled,
+ */
+int net_if_get_name(struct net_if *iface, char *buf, int len);
+
+/**
+ * @brief Set network interface name.
+ *
+ * @details Normally this function is not needed to call as the system
+ *          will automatically assign a name to the network interface.
+ *
+ * @param iface Pointer to network interface
+ * @param buf User supplied name
+ *
+ * @return 0 name is set correctly
+ *         -ENOTSUP interface name support is disabled
+ *         -EINVAL if invalid parameters are given,
+ *         -ENAMETOOLONG if name is too long
+ */
+int net_if_set_name(struct net_if *iface, const char *buf);
+
+/**
+ * @brief Get interface index according to its name
+ *
+ * @param name Name of the network interface
+ *
+ * @return Interface index
+ */
+int net_if_get_by_name(const char *name);
+
 /** @cond INTERNAL_HIDDEN */
 struct net_if_api {
 	void (*init)(struct net_if *iface);
 };
 
-#if defined(CONFIG_NET_IP)
-#define NET_IF_IP_INIT .ip = {},
-#else
-#define NET_IF_IP_INIT
-#endif
+#define NET_IF_DHCPV4_INIT						\
+	IF_ENABLED(UTIL_AND(IS_ENABLED(CONFIG_NET_DHCPV4),		\
+			    IS_ENABLED(CONFIG_NET_NATIVE_IPV4)),	\
+		   (.dhcpv4.state = NET_DHCPV4_DISABLED,))
 
-#if defined(CONFIG_NET_DHCPV4) && defined(CONFIG_NET_NATIVE_IPV4)
-#define NET_IF_DHCPV4_INIT .dhcpv4.state = NET_DHCPV4_DISABLED,
-#else
-#define NET_IF_DHCPV4_INIT
-#endif
+#define NET_IF_DHCPV6_INIT						\
+	IF_ENABLED(UTIL_AND(IS_ENABLED(CONFIG_NET_DHCPV6),		\
+			    IS_ENABLED(CONFIG_NET_NATIVE_IPV6)),	\
+		   (.dhcpv6.state = NET_DHCPV6_DISABLED,))
 
 #define NET_IF_CONFIG_INIT				\
 	.config = {					\
-		NET_IF_IP_INIT				\
+		IF_ENABLED(CONFIG_NET_IP, (.ip = {},))  \
 		NET_IF_DHCPV4_INIT			\
+		NET_IF_DHCPV6_INIT			\
 	}
 
 #define NET_IF_GET_NAME(dev_id, sfx) __net_if_##dev_id##_##sfx
@@ -2815,6 +3209,20 @@ struct net_if_api {
  */
 #define NET_DEVICE_DT_INST_OFFLOAD_DEFINE(inst, ...) \
 	NET_DEVICE_DT_OFFLOAD_DEFINE(DT_DRV_INST(inst), __VA_ARGS__)
+
+/**
+ * @brief Count the number of network interfaces.
+ *
+ * @param[out] _dst Pointer to location where result is written.
+ */
+#define NET_IFACE_COUNT(_dst) \
+		do {							\
+			extern struct net_if _net_if_list_start[];	\
+			extern struct net_if _net_if_list_end[];	\
+			*(_dst) = ((uintptr_t)_net_if_list_end -	\
+				   (uintptr_t)_net_if_list_start) /	\
+				sizeof(struct net_if);			\
+		} while (0)
 
 #ifdef __cplusplus
 }

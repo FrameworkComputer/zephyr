@@ -42,12 +42,8 @@ static void(*const set_timer_compare[TIMER_MAX_CH])(TIM_TypeDef *,
 };
 
 /** Channel to compare get function mapping. */
-#if !defined(CONFIG_SOC_SERIES_STM32C0X) && \
-	!defined(CONFIG_SOC_SERIES_STM32F1X) && \
-	!defined(CONFIG_SOC_SERIES_STM32F2X) && \
-	!defined(CONFIG_SOC_SERIES_STM32F4X) && \
+#if !defined(CONFIG_SOC_SERIES_STM32F4X) && \
 	!defined(CONFIG_SOC_SERIES_STM32G4X) && \
-	!defined(CONFIG_SOC_SERIES_STM32L1X) && \
 	!defined(CONFIG_SOC_SERIES_STM32MP1X)
 static uint32_t(*const get_timer_compare[TIMER_MAX_CH])(const TIM_TypeDef *) = {
 	LL_TIM_OC_GetCompareCH1, LL_TIM_OC_GetCompareCH2,
@@ -73,12 +69,8 @@ static void(*const disable_it[TIMER_MAX_CH])(TIM_TypeDef *) = {
 
 #ifdef CONFIG_ASSERT
 /** Channel to interrupt enable check function mapping. */
-#if !defined(CONFIG_SOC_SERIES_STM32C0X) && \
-	!defined(CONFIG_SOC_SERIES_STM32F1X) && \
-	!defined(CONFIG_SOC_SERIES_STM32F2X) && \
-	!defined(CONFIG_SOC_SERIES_STM32F4X) && \
+#if !defined(CONFIG_SOC_SERIES_STM32F4X) && \
 	!defined(CONFIG_SOC_SERIES_STM32G4X) && \
-	!defined(CONFIG_SOC_SERIES_STM32L1X) && \
 	!defined(CONFIG_SOC_SERIES_STM32MP1X)
 static uint32_t(*const check_it_enabled[TIMER_MAX_CH])(const TIM_TypeDef *) = {
 	LL_TIM_IsEnabledIT_CC1, LL_TIM_IsEnabledIT_CC2,
@@ -104,8 +96,6 @@ struct counter_stm32_data {
 	uint32_t guard_period;
 	atomic_t cc_int_pending;
 	uint32_t freq;
-	/* Reset controller device configuration */
-	const struct reset_dt_spec reset;
 };
 
 struct counter_stm32_ch_data {
@@ -121,6 +111,8 @@ struct counter_stm32_config {
 	struct stm32_pclken pclken;
 	void (*irq_config_func)(const struct device *dev);
 	uint32_t irqn;
+	/* Reset controller device configuration */
+	const struct reset_dt_spec reset;
 
 	LOG_INSTANCE_PTR_DECLARE(log);
 };
@@ -403,11 +395,19 @@ static int counter_stm32_get_tim_clk(const struct stm32_pclken *pclken, uint32_t
 	}
 #else
 	if (pclken->bus == STM32_CLOCK_BUS_APB1) {
+#if defined(CONFIG_SOC_SERIES_STM32MP1X)
+		apb_psc = (uint32_t)(READ_BIT(RCC->APB1DIVR, RCC_APB1DIVR_APB1DIV));
+#else
 		apb_psc = STM32_APB1_PRESCALER;
+#endif
 	}
 #if !defined(CONFIG_SOC_SERIES_STM32F0X) && !defined(CONFIG_SOC_SERIES_STM32G0X)
 	else {
+#if defined(CONFIG_SOC_SERIES_STM32MP1X)
+		apb_psc = (uint32_t)(READ_BIT(RCC->APB2DIVR, RCC_APB2DIVR_APB2DIV));
+#else
 		apb_psc = STM32_APB2_PRESCALER;
+#endif
 	}
 #endif
 #endif
@@ -487,13 +487,13 @@ static int counter_stm32_init_timer(const struct device *dev)
 	}
 	data->freq = tim_clk / (cfg->prescaler + 1U);
 
-	if (!device_is_ready(data->reset.dev)) {
+	if (!device_is_ready(cfg->reset.dev)) {
 		LOG_ERR("reset controller not ready");
 		return -ENODEV;
 	}
 
 	/* Reset timer to default state using RCC */
-	reset_line_toggle_dt(&data->reset);
+	(void)reset_line_toggle_dt(&cfg->reset);
 
 	/* config/enable IRQ */
 	cfg->irq_config_func(dev);
@@ -639,9 +639,7 @@ void counter_stm32_irq_handler(const struct device *dev)
 	BUILD_ASSERT(NUM_CH(TIM(idx)) <= TIMER_MAX_CH,				  \
 		     "TIMER too many channels");				  \
 										  \
-	static struct counter_stm32_data counter##idx##_data = {		  \
-		.reset = RESET_DT_SPEC_GET(TIMER(idx)),				  \
-	};									  \
+	static struct counter_stm32_data counter##idx##_data;			  \
 	static struct counter_stm32_ch_data counter##idx##_ch_data[TIMER_MAX_CH]; \
 										  \
 	static void counter_##idx##_stm32_irq_config(const struct device *dev)	  \
@@ -671,6 +669,7 @@ void counter_stm32_irq_handler(const struct device *dev)
 		},								  \
 		.irq_config_func = counter_##idx##_stm32_irq_config,		  \
 		.irqn = DT_IRQN(TIMER(idx)),					  \
+		.reset = RESET_DT_SPEC_GET(TIMER(idx)),				  \
 	};									  \
 										  \
 	DEVICE_DT_INST_DEFINE(idx,						  \

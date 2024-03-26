@@ -28,7 +28,8 @@
 #define ARCH_X86_MEMORY_LD
 
 #include <zephyr/devicetree.h>
-#include <zephyr/sys/mem_manage.h>
+#include <zephyr/linker/devicetree_regions.h>
+#include <zephyr/kernel/mm.h>
 
 /* Bounds of physical RAM from DTS */
 #define PHYS_RAM_ADDR		DT_REG_ADDR(DT_CHOSEN(zephyr_sram))
@@ -49,12 +50,18 @@
 
 /* "kernel RAM" for linker VMA allocations starts at the offset */
 
+#if defined(CONFIG_ROM_END_OFFSET)
+#define ROM_END_OFFSET CONFIG_ROM_END_OFFSET
+#else
+#define ROM_END_OFFSET 0
+#endif
+
 #ifdef CONFIG_XIP
   /* "ROM" is flash, we leave rodata and text there and just copy in data.
    * Board-level DTS must specify a flash region that doesn't overlap with
    * sram0, so that DT_PHYS_LOAD_ADDR is set.
    */
-  #define FLASH_ROM_SIZE      DT_REG_SIZE(DT_CHOSEN(zephyr_flash))
+  #define FLASH_ROM_SIZE      (DT_REG_SIZE(DT_CHOSEN(zephyr_flash)) - ROM_END_OFFSET)
   #define PHYS_LOAD_ADDR      DT_REG_ADDR(DT_CHOSEN(zephyr_flash))
 #else
   /* Physical RAM location where the kernel image is loaded */
@@ -88,6 +95,7 @@ MEMORY
      * physical ROM locations
      */
     RAM (wx)        : ORIGIN = KERNEL_BASE_ADDR, LENGTH = KERNEL_RAM_SIZE
+    LINKER_DT_REGIONS()
 
 #ifdef CONFIG_X86_64
     /* Special low-memory area for bootstrapping other CPUs from real mode */

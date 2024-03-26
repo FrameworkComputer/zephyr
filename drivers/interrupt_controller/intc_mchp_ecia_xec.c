@@ -13,7 +13,7 @@
 #define DT_DRV_COMPAT microchip_xec_ecia
 
 #include <zephyr/arch/cpu.h>
-#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
+#include <cmsis_core.h>
 #include <zephyr/device.h>
 #include <soc.h>
 #include <zephyr/sys/__assert.h>
@@ -476,6 +476,10 @@ static void xec_girq_isr(const struct device *dev_girq)
 	for (int i = 0; result && i < 32; i++) {
 		uint8_t bitpos = 31 - (__builtin_clz(result) & 0x1f);
 
+		/* clear GIRQ latched status */
+		girq->SRC = BIT(bitpos);
+		result &= ~BIT(bitpos);
+
 		/* is it an implemented source? */
 		if (cfg->sources[bitpos] & BIT(7)) {
 			/* yes, get the index by removing bit[7] flag */
@@ -489,10 +493,6 @@ static void xec_girq_isr(const struct device *dev_girq)
 		} else { /* paranoia, we should not get here... */
 			girq->EN_CLR = BIT(bitpos);
 		}
-
-		/* clear GIRQ latched status */
-		girq->SRC = BIT(bitpos);
-		result &= ~BIT(bitpos);
 	}
 }
 #endif

@@ -1,5 +1,5 @@
 /** @file
- *  @brief Common functionality for Bluetooth mesh BabbleSim tests.
+ *  @brief Common functionality for Bluetooth Mesh BabbleSim tests.
  */
 
 /*
@@ -23,6 +23,7 @@
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/mesh.h>
+#include <mesh/adv.h>
 
 #define TEST_MOD_ID 0x8888
 #define TEST_MSG_OP_1  BT_MESH_MODEL_OP_1(0x0f)
@@ -31,7 +32,7 @@
 #define TEST_VND_COMPANY_ID 0x1234
 #define TEST_VND_MOD_ID   0x5678
 
-#define MODEL_LIST(...) ((struct bt_mesh_model[]){ __VA_ARGS__ })
+#define MODEL_LIST(...) ((const struct bt_mesh_model[]){ __VA_ARGS__ })
 
 #define FAIL(msg, ...)                                                         \
 	do {                                                                   \
@@ -66,21 +67,40 @@
 		}                                                              \
 	} while (0)
 
-#define ASSERT_TRUE(cond, ...)                                                 \
+#define ASSERT_TRUE(cond)                                                      \
 	do {                                                                   \
 		if (!(cond)) {                                                 \
 			bst_result = Failed;                                   \
 			bs_trace_error_time_line(                              \
-				#cond " is false.", ##__VA_ARGS__);             \
+				#cond " is false.\n");                         \
 		}                                                              \
 	} while (0)
 
-#define ASSERT_FALSE(cond, ...)                                                \
+#define ASSERT_TRUE_MSG(cond, fmt, ...)                                        \
+	do {                                                                   \
+		if (!(cond)) {                                                 \
+			bst_result = Failed;                                   \
+			bs_trace_error_time_line(                              \
+				#cond " is false. " fmt, ##__VA_ARGS__);       \
+		}                                                              \
+	} while (0)
+
+
+#define ASSERT_FALSE(cond)                                                     \
 	do {                                                                   \
 		if (cond) {                                                    \
 			bst_result = Failed;                                   \
 			bs_trace_error_time_line(                              \
-				#cond " is true.", ##__VA_ARGS__);             \
+				#cond " is true.\n");                          \
+		}                                                              \
+	} while (0)
+
+#define ASSERT_FALSE_MSG(cond, fmt, ...)                                       \
+	do {                                                                   \
+		if (cond) {                                                    \
+			bst_result = Failed;                                   \
+			bs_trace_error_time_line(                              \
+				#cond " is true. " fmt, ##__VA_ARGS__);        \
 		}                                                              \
 	} while (0)
 
@@ -94,6 +114,31 @@
 		}                                                              \
 	} while (0)
 
+#define ASSERT_IN_RANGE(got, min, max)                                                             \
+	do {                                                                                       \
+		if (!IN_RANGE(got, min, max)) {                                            \
+			bst_result = Failed;                                                       \
+			bs_trace_error_time_line(#got " not in range %d <-> %d, " #got " = %d\n",  \
+						 (min), (max), (got));                             \
+		}                                                                                  \
+	} while (0)
+
+#define WAIT_FOR_COND(cond, wait)                                                                  \
+	do {                                                                                       \
+		bool _err = false;                                                                 \
+		for (uint8_t sec = (wait); !(cond); sec--) {                                       \
+			if (!sec) {                                                                \
+				_err = true;                                                       \
+				break;                                                             \
+			}                                                                          \
+			k_sleep(K_SECONDS(1));                                                     \
+		}                                                                                  \
+                                                                                                   \
+		if (_err) {                                                                        \
+			bst_result = Failed;                                                       \
+			bs_trace_error_time_line("Waiting for " #cond " timed out\n");             \
+		}                                                                                  \
+	} while (0)
 
 struct bt_mesh_test_cfg {
 	uint16_t addr;
@@ -127,8 +172,8 @@ struct bt_mesh_test_sync_ctx {
 
 extern enum bst_result_t bst_result;
 extern const struct bt_mesh_test_cfg *cfg;
-extern struct bt_mesh_model *test_model;
-extern struct bt_mesh_model *test_vnd_model;
+extern const struct bt_mesh_model *test_model;
+extern const struct bt_mesh_model *test_vnd_model;
 extern const uint8_t test_net_key[16];
 extern const uint8_t test_app_key[16];
 extern const uint8_t test_va_uuid[16];
@@ -158,10 +203,15 @@ void bt_mesh_test_ra_cb_setup(void (*cb)(uint8_t *, size_t));
 
 uint16_t bt_mesh_test_own_addr_get(uint16_t start_addr);
 
+void bt_mesh_test_send_over_adv(void *data, size_t len);
+/* Wait for a packet (i. e. an advertisement or a GATT frame) sent by a device.
+ * `scan_cb` is triggered if the packet is received, and must release `observer_sem` when finished.
+ */
+int bt_mesh_test_wait_for_packet(bt_le_scan_cb_t scan_cb, struct k_sem *observer_sem,
+				 uint16_t wait);
+
 #if defined(CONFIG_BT_MESH_SAR_CFG)
 void bt_mesh_test_sar_conf_set(struct bt_mesh_sar_tx *tx_set, struct bt_mesh_sar_rx *rx_set);
 #endif
-
-void bt_mesh_test_host_files_remove(void);
 
 #endif /* ZEPHYR_TESTS_BLUETOOTH_BSIM_BT_BSIM_TEST_MESH_MESH_TEST_H_ */

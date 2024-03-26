@@ -6,7 +6,6 @@
 
 #include <zephyr/kernel.h>
 #include <kernel_internal.h>
-#include <zephyr/arch/x86/acpi.h>
 #include <zephyr/arch/x86/multiboot.h>
 #include <zephyr/arch/x86/efi.h>
 #include <x86_mmu.h>
@@ -22,7 +21,7 @@ __pinned_data x86_boot_arg_t x86_cpu_boot_arg;
  * CPU for SMP systems.
  */
 __boot_func
-FUNC_NORETURN void z_x86_prep_c(void *arg)
+FUNC_NORETURN void z_prep_c(void *arg)
 {
 	x86_boot_arg_t *cpu_arg = arg;
 
@@ -75,8 +74,9 @@ FUNC_NORETURN void z_x86_prep_c(void *arg)
 #endif
 
 #if defined(CONFIG_SMP)
-	z_x86_ipi_setup();
+	arch_smp_init();
 #endif
 
 	z_cstart();
+	CODE_UNREACHABLE;
 }

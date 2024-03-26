@@ -18,7 +18,7 @@ LOG_MODULE_REGISTER(net_ipv4_autoconf, CONFIG_NET_IPV4_AUTO_LOG_LEVEL);
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/net_core.h>
 #include <zephyr/net/net_if.h>
-#include <zephyr/random/rand32.h>
+#include <zephyr/random/random.h>
 
 #include "ipv4_autoconf_internal.h"
 
@@ -182,7 +182,9 @@ static inline void ipv4_autoconf_addr_set(struct net_if_ipv4_autoconf *ipv4auto)
 		return;
 	}
 
-	net_if_ipv4_set_netmask(ipv4auto->iface, &netmask);
+	net_if_ipv4_set_netmask_by_addr(ipv4auto->iface,
+					&ipv4auto->requested_ip,
+					&netmask);
 
 	ipv4auto->state = NET_IPV4_AUTOCONF_ASSIGNED;
 }

@@ -162,10 +162,10 @@ schema = yaml.safe_load(METADATA_SCHEMA)
 def validate_setting(setting, module_path, filename=None):
     if setting is not None:
         if filename is not None:
-            checkfile = os.path.join(module_path, setting, filename)
+            checkfile = Path(module_path) / setting / filename
         else:
-            checkfile = os.path.join(module_path, setting)
-        if not os.path.isfile(checkfile):
+            checkfile = Path(module_path) / setting
+        if not checkfile.resolve().is_file():
             return False
     return True
 
@@ -350,7 +350,10 @@ def process_kconfig(module, meta):
         return kconfig_snippet(meta, module_path, Path(kconfig_file),
                                blobs=taint_blobs)
     else:
-        return ""
+        name_sanitized = meta['name-sanitized']
+        return (f'config ZEPHYR_{name_sanitized.upper()}_MODULE\n'
+                f'   bool\n'
+                f'   default y\n')
 
 
 def process_sysbuildkconfig(module, meta):

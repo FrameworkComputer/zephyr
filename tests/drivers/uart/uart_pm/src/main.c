@@ -112,8 +112,8 @@ static void communication_verify(const struct device *dev, bool active)
 
 #define state_verify(dev, exp_state) do {\
 	enum pm_device_state power_state; \
-	int err = pm_device_state_get(dev, &power_state); \
-	zassert_equal(err, 0, "Unexpected err: %d", err); \
+	int error = pm_device_state_get(dev, &power_state); \
+	zassert_equal(error, 0, "Unexpected err: %d", error); \
 	zassert_equal(power_state, exp_state); \
 } while (0)
 
@@ -169,6 +169,9 @@ ZTEST(uart_pm, test_uart_pm_in_idle)
 
 	action_run(dev, PM_DEVICE_ACTION_RESUME, 0);
 	communication_verify(dev, true);
+
+	/* Let's give enough time for the last byte to be transmitted out */
+	k_busy_wait(500);
 }
 
 ZTEST(uart_pm, test_uart_pm_poll_tx)

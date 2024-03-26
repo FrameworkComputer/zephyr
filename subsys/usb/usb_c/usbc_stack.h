@@ -101,11 +101,16 @@ struct usbc_port_data {
 	const struct device *tcpc;
 	/** VBUS Measurement and control device on this port */
 	const struct device *vbus;
+	/** Power Path Controller device on this port */
+	const struct device *ppc;
 
 	/** Device Policy Manager Request FIFO */
 	struct k_fifo request_fifo;
 	/** Device Policy manager Request */
 	struct request_value request;
+
+	/** Bypass next sleep and request one more iteration of the USB-C state machines */
+	bool bypass_next_sleep;
 
 	/* USB-C Callbacks */
 

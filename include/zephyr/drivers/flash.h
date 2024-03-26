@@ -45,6 +45,8 @@ struct flash_pages_layout {
 /**
  * @brief FLASH Interface
  * @defgroup flash_interface FLASH Interface
+ * @since 1.2
+ * @version 1.0.0
  * @ingroup io_interfaces
  * @{
  */
@@ -470,6 +472,16 @@ __syscall int flash_ex_op(const struct device *dev, uint16_t code,
  */
 #define FLASH_EX_OP_VENDOR_BASE 0x8000
 #define FLASH_EX_OP_IS_VENDOR(c) ((c) & FLASH_EX_OP_VENDOR_BASE)
+
+/**
+ *  @brief Enumeration for extra flash operations
+ */
+enum flash_ex_op_types {
+	/*
+	 * Reset flash device.
+	 */
+	FLASH_EX_OP_RESET = 0,
+};
 
 static inline int z_impl_flash_ex_op(const struct device *dev, uint16_t code,
 				     const uintptr_t in, void *out)

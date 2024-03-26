@@ -240,6 +240,7 @@ struct eth_context {
 	ROUND_UP(ENET_FRAME_MAX_FRAMELEN, ENET_BUFF_ALIGNMENT)
 #endif /* CONFIG_NET_VLAN */
 
+#ifdef CONFIG_SOC_FAMILY_KINETIS
 #if defined(CONFIG_NET_POWER_MANAGEMENT)
 static void eth_mcux_phy_enter_reset(struct eth_context *context);
 void eth_mcux_phy_stop(struct eth_context *context);
@@ -292,6 +293,7 @@ out:
 	return ret;
 }
 #endif /* CONFIG_NET_POWER_MANAGEMENT */
+#endif /* CONFIG_SOC_FAMILY_KINETIS */
 
 #if ETH_MCUX_FIXED_LINK
 static void eth_mcux_get_phy_params(phy_duplex_t *p_phy_duplex,
@@ -394,7 +396,7 @@ static void eth_mcux_phy_start(struct eth_context *context)
 		k_work_submit(&context->phy_work);
 		break;
 #endif
-#if defined(CONFIG_SOC_SERIES_IMX_RT)
+#if defined(CONFIG_SOC_SERIES_IMXRT10XX) || defined(CONFIG_SOC_SERIES_IMXRT11XX)
 		context->phy_state = eth_mcux_phy_state_initial;
 #else
 		context->phy_state = eth_mcux_phy_state_reset;
@@ -451,7 +453,7 @@ static void eth_mcux_phy_event(struct eth_context *context)
 	uint32_t status;
 #endif
 	bool link_up;
-#if defined(CONFIG_SOC_SERIES_IMX_RT)
+#if defined(CONFIG_SOC_SERIES_IMXRT10XX) || defined(CONFIG_SOC_SERIES_IMXRT11XX)
 	status_t res;
 	uint16_t ctrl2;
 #endif
@@ -464,7 +466,7 @@ static void eth_mcux_phy_event(struct eth_context *context)
 #endif
 	switch (context->phy_state) {
 	case eth_mcux_phy_state_initial:
-#if defined(CONFIG_SOC_SERIES_IMX_RT)
+#if defined(CONFIG_SOC_SERIES_IMXRT10XX) || defined(CONFIG_SOC_SERIES_IMXRT11XX)
 		ENET_DisableInterrupts(context->base, ENET_EIR_MII_MASK);
 		res = PHY_Read(context->phy_handle, PHY_CONTROL2_REG, &ctrl2);
 		ENET_EnableInterrupts(context->base, ENET_EIR_MII_MASK);
@@ -479,7 +481,7 @@ static void eth_mcux_phy_event(struct eth_context *context)
 					   ctrl2);
 		}
 		context->phy_state = eth_mcux_phy_state_reset;
-#endif /* CONFIG_SOC_SERIES_IMX_RT */
+#endif
 #if defined(CONFIG_ETH_MCUX_NO_PHY_SMI)
 		/*
 		 * When the iface is available proceed with the eth link setup,
@@ -622,15 +624,16 @@ static void eth_mcux_phy_work(struct k_work *item)
 
 static void eth_mcux_delayed_phy_work(struct k_work *item)
 {
+	struct k_work_delayable *dwork = k_work_delayable_from_work(item);
 	struct eth_context *context =
-		CONTAINER_OF(item, struct eth_context, delayed_phy_work);
+		CONTAINER_OF(dwork, struct eth_context, delayed_phy_work);
 
 	eth_mcux_phy_event(context);
 }
 
 static void eth_mcux_phy_setup(struct eth_context *context)
 {
-#if defined(CONFIG_SOC_SERIES_IMX_RT)
+#if defined(CONFIG_SOC_SERIES_IMXRT10XX) || defined(CONFIG_SOC_SERIES_IMXRT11XX)
 	status_t res;
 	uint16_t oms_override;
 
@@ -860,7 +863,7 @@ static int eth_rx(struct eth_context *context)
 			ptpTimeData.second--;
 		}
 
-		pkt->timestamp.nanosecond = ptpTimeData.nanosecond;
+		pkt->timestamp.nanosecond = ts;
 		pkt->timestamp.second = ptpTimeData.second;
 	} else {
 		/* Invalid value. */
@@ -1021,14 +1024,14 @@ static void eth_mcux_init(const struct device *dev)
 	context->phy_state = eth_mcux_phy_state_initial;
 	context->phy_handle->ops = &phyksz8081_ops;
 
-#if defined(CONFIG_SOC_SERIES_IMX_RT10XX)
+#if defined(CONFIG_SOC_SERIES_IMXRT10XX)
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(enet), okay)
 	sys_clock = CLOCK_GetFreq(kCLOCK_IpgClk);
 #endif
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(enet2), okay)
 	sys_clock = CLOCK_GetFreq(kCLOCK_EnetPll1Clk);
 #endif
-#elif defined(CONFIG_SOC_SERIES_IMX_RT11XX)
+#elif defined(CONFIG_SOC_SERIES_IMXRT11XX)
 	sys_clock = CLOCK_GetRootClockFreq(kCLOCK_Root_Bus);
 #else
 	sys_clock = CLOCK_GetFreq(kCLOCK_CoreSysClk);
@@ -1041,6 +1044,8 @@ static void eth_mcux_init(const struct device *dev)
 	enet_config.interrupt |= kENET_MiiInterrupt;
 #endif
 	enet_config.miiMode = kENET_RmiiMode;
+	enet_config.callback = eth_callback;
+	enet_config.userData = context;
 
 	if (IS_ENABLED(CONFIG_ETH_MCUX_PROMISCUOUS_MODE)) {
 		enet_config.macSpecialConfig |= kENET_ControlPromiscuousEnable;
@@ -1097,7 +1102,6 @@ static void eth_mcux_init(const struct device *dev)
 	/* Enable reclaim of tx descriptors that will have the tx timestamp */
 	ENET_SetTxReclaim(&context->enet_handle, true, 0);
 #endif
-	ENET_SetCallback(&context->enet_handle, eth_callback, context);
 
 	eth_mcux_phy_start(context);
 }
@@ -1161,39 +1165,10 @@ static int eth_init(const struct device *dev)
 	return 0;
 }
 
-#if defined(CONFIG_NET_IPV6)
-static void net_if_mcast_cb(struct net_if *iface,
-			    const struct net_addr *addr,
-			    bool is_joined)
-{
-	const struct device *dev = net_if_get_device(iface);
-	struct eth_context *context = dev->data;
-	struct net_eth_addr mac_addr;
-
-	if (addr->family != AF_INET6) {
-		return;
-	}
-
-	net_eth_ipv6_mcast_to_mac_addr(&addr->in6_addr, &mac_addr);
-
-	if (is_joined) {
-		ENET_AddMulticastGroup(context->base, mac_addr.addr);
-	} else {
-		ENET_LeaveMulticastGroup(context->base, mac_addr.addr);
-	}
-}
-#endif /* CONFIG_NET_IPV6 */
-
 static void eth_iface_init(struct net_if *iface)
 {
 	const struct device *dev = net_if_get_device(iface);
 	struct eth_context *context = dev->data;
-
-#if defined(CONFIG_NET_IPV6)
-	static struct net_if_mcast_monitor mon;
-
-	net_if_mcast_mon_register(&mon, iface, net_if_mcast_cb);
-#endif /* CONFIG_NET_IPV6 */
 
 	net_if_set_link_addr(iface, context->mac_addr,
 			     sizeof(context->mac_addr),
@@ -1221,6 +1196,7 @@ static enum ethernet_hw_caps eth_mcux_get_capabilities(const struct device *dev)
 	ARG_UNUSED(dev);
 
 	return ETHERNET_HW_VLAN | ETHERNET_LINK_10BASE_T |
+		ETHERNET_HW_FILTERING |
 #if defined(CONFIG_PTP_CLOCK_MCUX)
 		ETHERNET_PTP |
 #endif
@@ -1255,6 +1231,16 @@ static int eth_mcux_set_config(const struct device *dev,
 			context->mac_addr[0], context->mac_addr[1],
 			context->mac_addr[2], context->mac_addr[3],
 			context->mac_addr[4], context->mac_addr[5]);
+		return 0;
+	case ETHERNET_CONFIG_TYPE_FILTER:
+		/* The ENET driver does not modify the address buffer but the API is not const */
+		if (config->filter.set) {
+			ENET_AddMulticastGroup(context->base,
+					       (uint8_t *)config->filter.mac_address.addr);
+		} else {
+			ENET_LeaveMulticastGroup(context->base,
+						 (uint8_t *)config->filter.mac_address.addr);
+		}
 		return 0;
 	default:
 		break;
@@ -1385,9 +1371,9 @@ static void eth_mcux_err_isr(const struct device *dev)
 }
 #endif
 
-#if defined(CONFIG_SOC_SERIES_IMX_RT10XX)
+#if defined(CONFIG_SOC_SERIES_IMXRT10XX)
 #define ETH_MCUX_UNIQUE_ID	(OCOTP->CFG1 ^ OCOTP->CFG2)
-#elif defined(CONFIG_SOC_SERIES_IMX_RT11XX)
+#elif defined(CONFIG_SOC_SERIES_IMXRT11XX)
 #define ETH_MCUX_UNIQUE_ID	(OCOTP->FUSEN[40].FUSE)
 #elif defined(CONFIG_SOC_SERIES_KINETIS_K6X)
 #define ETH_MCUX_UNIQUE_ID	(SIM->UIDH ^ SIM->UIDMH ^ SIM->UIDML ^ SIM->UIDL)
@@ -1487,6 +1473,7 @@ static void eth_mcux_err_isr(const struct device *dev)
 		    (ETH_MCUX_MAC_ADDR_LOCAL(n)),			\
 		    (ETH_MCUX_MAC_ADDR_GENERATE(n)))
 
+#ifdef CONFIG_SOC_FAMILY_KINETIS
 #define ETH_MCUX_POWER_INIT(n)						\
 	.clock_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(n)),		\
 
@@ -1494,6 +1481,15 @@ static void eth_mcux_err_isr(const struct device *dev)
 	COND_CODE_1(CONFIG_NET_POWER_MANAGEMENT,			\
 		    (ETH_MCUX_POWER_INIT(n)),				\
 		    (ETH_MCUX_NONE))
+#define ETH_MCUX_PM_DEVICE_INIT(n)					\
+	PM_DEVICE_DT_INST_DEFINE(n, eth_mcux_device_pm_action);
+#define ETH_MCUX_PM_DEVICE_GET(n) PM_DEVICE_DT_INST_GET(n)
+#else
+#define ETH_MCUX_POWER(n)
+#define ETH_MCUX_PM_DEVICE_INIT(n)
+#define ETH_MCUX_PM_DEVICE_GET(n) NULL
+#endif /* CONFIG_SOC_FAMILY_KINETIS */
+
 #define ETH_MCUX_GEN_MAC(n)                                             \
 	COND_CODE_0(ETH_MCUX_MAC_ADDR_TO_BOOL(n),                       \
 		    (ETH_MCUX_GENERATE_MAC(n)),                         \
@@ -1625,11 +1621,11 @@ static void eth_mcux_err_isr(const struct device *dev)
 		ETH_MCUX_PTP_FRAMEINFO(n)				\
 	};								\
 									\
-	PM_DEVICE_DT_INST_DEFINE(n, eth_mcux_device_pm_action);		\
+	ETH_MCUX_PM_DEVICE_INIT(n)					\
 									\
 	ETH_NET_DEVICE_DT_INST_DEFINE(n,				\
 			    eth_init,					\
-			    PM_DEVICE_DT_INST_GET(n),			\
+			    ETH_MCUX_PM_DEVICE_GET(n),			\
 			    &eth##n##_context,				\
 			    &eth##n##_buffer_config,			\
 			    CONFIG_ETH_INIT_PRIORITY,			\

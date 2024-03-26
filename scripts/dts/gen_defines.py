@@ -436,8 +436,7 @@ def write_interrupts(node):
     # interrupts property: we have some hard-coded logic for interrupt
     # mapping here.
     #
-    # TODO: can we push map_arm_gic_irq_type() and
-    # encode_zephyr_multi_level_irq() out of Python and into C with
+    # TODO: can we push map_arm_gic_irq_type() out of Python and into C with
     # macro magic in devicetree.h?
 
     def map_arm_gic_irq_type(irq, irq_num):
@@ -453,21 +452,6 @@ def write_interrupts(node):
             return irq_num + 16
         err(f"Invalid interrupt type specified for {irq!r}")
 
-    def encode_zephyr_multi_level_irq(irq, irq_num):
-        # See doc/reference/kernel/other/interrupts.rst for details
-        # on how this encoding works
-
-        irq_ctrl = irq.controller
-        # Look for interrupt controller parent until we have none
-        while irq_ctrl.interrupts:
-            irq_num = (irq_num + 1) << 8
-            if "irq" not in irq_ctrl.interrupts[0].data:
-                err(f"Expected binding for {irq_ctrl!r} to have 'irq' in "
-                    "interrupt-cells")
-            irq_num |= irq_ctrl.interrupts[0].data["irq"]
-            irq_ctrl = irq_ctrl.interrupts[0].controller
-        return irq_num
-
     idx_vals = []
     name_vals = []
     path_id = node.z_path_id
@@ -482,7 +466,6 @@ def write_interrupts(node):
             if cell_name == "irq":
                 if "arm,gic" in irq.controller.compats:
                     cell_value = map_arm_gic_irq_type(irq, cell_value)
-                cell_value = encode_zephyr_multi_level_irq(irq, cell_value)
 
             idx_vals.append((f"{path_id}_IRQ_IDX_{i}_EXISTS", 1))
             idx_macro = f"{path_id}_IRQ_IDX_{i}_VAL_{name}"
@@ -493,6 +476,23 @@ def write_interrupts(node):
                     f"{path_id}_IRQ_NAME_{str2ident(irq.name)}_VAL_{name}"
                 name_vals.append((name_macro, f"DT_{idx_macro}"))
                 name_vals.append((name_macro + "_EXISTS", 1))
+
+        idx_controller_macro = f"{path_id}_IRQ_IDX_{i}_CONTROLLER"
+        idx_controller_path = f"DT_{irq.controller.z_path_id}"
+        idx_vals.append((idx_controller_macro, idx_controller_path))
+        if irq.name:
+            name_controller_macro = f"{path_id}_IRQ_NAME_{str2ident(irq.name)}_CONTROLLER"
+            name_vals.append((name_controller_macro, f"DT_{idx_controller_macro}"))
+
+    # Interrupt controller info
+    irqs = []
+    while node.interrupts is not None and len(node.interrupts) > 0:
+        irq = node.interrupts[0]
+        irqs.append(irq)
+        if node == irq.controller:
+            break
+        node = irq.controller
+    idx_vals.append((f"{path_id}_IRQ_LEVEL", len(irqs)))
 
     for macro, val in idx_vals:
         out_dt_define(macro, val)
@@ -747,6 +747,7 @@ def write_dep_info(node):
 
     out_comment("Node's dependency ordinal:")
     out_dt_define(f"{node.z_path_id}_ORD", node.dep_ordinal)
+    out_dt_define(f"{node.z_path_id}_ORD_STR_SORTABLE", f"{node.dep_ordinal:0>5}")
 
     out_comment("Ordinals for what this node depends on directly:")
     out_dt_define(f"{node.z_path_id}_REQUIRES_ORDS",
@@ -920,6 +921,11 @@ def write_global_macros(edt):
                   " ".join(f"fn(DT_{node.z_path_id})" for node in edt.nodes))
     out_dt_define("FOREACH_OKAY_HELPER(fn)",
                   " ".join(f"fn(DT_{node.z_path_id})" for node in edt.nodes
+                           if node.status == "okay"))
+    out_dt_define("FOREACH_VARGS_HELPER(fn, ...)",
+                  " ".join(f"fn(DT_{node.z_path_id}, __VA_ARGS__)" for node in edt.nodes))
+    out_dt_define("FOREACH_OKAY_VARGS_HELPER(fn, ...)",
+                  " ".join(f"fn(DT_{node.z_path_id}, __VA_ARGS__)" for node in edt.nodes
                            if node.status == "okay"))
 
     n_okay_macros = {}

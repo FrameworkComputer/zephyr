@@ -14,7 +14,7 @@
 #include <zephyr/kernel.h>
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/usb/usb_device.h>
-#include <zephyr/device.h>
+#include <zephyr/init.h>
 
 #define LOG_LEVEL CONFIG_USB_DRIVER_LOG_LEVEL
 #include <zephyr/logging/log.h>
@@ -354,7 +354,7 @@ int usb_dc_ep_configure(const struct usb_dc_ep_cfg_data * const cfg)
 	(void)memset(&bdt[idx_even], 0, sizeof(struct buf_descriptor));
 	(void)memset(&bdt[idx_odd], 0, sizeof(struct buf_descriptor));
 
-	block->data = k_heap_alloc(&ep_buf_pool, cfg->ep_mps * 2U, K_MSEC(10));
+	block->data = k_heap_alloc(&ep_buf_pool, cfg->ep_mps * 2U, K_NO_WAIT);
 	if (block->data != NULL) {
 		(void)memset(block->data, 0, cfg->ep_mps * 2U);
 	} else {
@@ -878,7 +878,7 @@ static void usb_kinetis_isr_handler(void)
 		/*
 		 * Device reset is not possible because the stack does not
 		 * configure the endpoints after the USB_DC_RESET event,
-		 * therefore, we must reenable the default control 0 endpoint
+		 * therefore, we must re-enable the default control 0 endpoint
 		 * after a reset event
 		 */
 		USB0->CTL |= USB_CTL_ODDRST_MASK;

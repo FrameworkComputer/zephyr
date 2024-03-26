@@ -171,8 +171,8 @@ pressure_sensor_create(uint16_t obj_inst_id)
 	INIT_OBJ_RES(SENSOR_VALUE_RID, res[index], i, res_inst[index], j, 1,
 		     false, true, &sensor_value[index], sizeof(*sensor_value),
 		     NULL, NULL, NULL, sensor_value_write_cb, NULL);
-	INIT_OBJ_RES_DATA(SENSOR_UNITS_RID, res[index], i, res_inst[index], j,
-			  units[index], UNIT_STR_MAX_SIZE);
+	INIT_OBJ_RES_DATA_LEN(SENSOR_UNITS_RID, res[index], i, res_inst[index], j,
+			  units[index], UNIT_STR_MAX_SIZE, 0);
 	INIT_OBJ_RES_DATA(MIN_MEASURED_VALUE_RID, res[index], i,
 			  res_inst[index], j, &min_measured_value[index],
 			  sizeof(*min_measured_value));
@@ -221,5 +221,4 @@ static int ipso_pressure_sensor_init(void)
 	return 0;
 }
 
-SYS_INIT(ipso_pressure_sensor_init, APPLICATION,
-	 CONFIG_KERNEL_INIT_PRIORITY_DEFAULT);
+LWM2M_OBJ_INIT(ipso_pressure_sensor_init);

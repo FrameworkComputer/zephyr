@@ -12,8 +12,8 @@
 #define ZEPHYR_INCLUDE_BLUETOOTH_ISO_H_
 
 /**
- * @brief ISO
- * @defgroup bt_iso ISO
+ * @brief Isochronous channels (ISO)
+ * @defgroup bt_iso Isochronous channels (ISO)
  * @ingroup bluetooth
  * @{
  */
@@ -49,6 +49,10 @@ extern "C" {
 #define BT_ISO_SDU_INTERVAL_MIN     0x0000FFU
 /** Maximum interval value in microseconds */
 #define BT_ISO_SDU_INTERVAL_MAX     0x0FFFFFU
+/** Minimum ISO interval (N * 1.25 ms) */
+#define BT_ISO_ISO_INTERVAL_MIN     0x0004U
+/** Maximum ISO interval (N * 1.25 ms) */
+#define BT_ISO_ISO_INTERVAL_MAX     0x0C80U
 /** Minimum latency value in milliseconds */
 #define BT_ISO_LATENCY_MIN          0x0005
 /** Maximum latency value in milliseconds */
@@ -63,8 +67,28 @@ extern "C" {
 #define BT_ISO_FRAMING_FRAMED       0x01
 /** Maximum number of isochronous channels in a single group */
 #define BT_ISO_MAX_GROUP_ISO_COUNT  0x1F
+/** Minimum SDU size */
+#define BT_ISO_MIN_SDU              0x0001
 /** Maximum SDU size */
 #define BT_ISO_MAX_SDU              0x0FFF
+/** Minimum PDU size */
+#define BT_ISO_CONNECTED_PDU_MIN    0x0000U
+/** Minimum PDU size */
+#define BT_ISO_BROADCAST_PDU_MIN    0x0001U
+/** Maximum PDU size */
+#define BT_ISO_PDU_MAX              0x00FBU
+/** Minimum burst number */
+#define BT_ISO_BN_MIN               0x01U
+/** Maximum burst number */
+#define BT_ISO_BN_MAX               0x0FU
+/** Minimum flush timeout */
+#define BT_ISO_FT_MIN               0x01U
+/** Maximum flush timeout */
+#define BT_ISO_FT_MAX               0xFFU
+/** Minimum number of subevents */
+#define BT_ISO_NSE_MIN              0x01U
+/** Maximum number of subevents */
+#define BT_ISO_NSE_MAX              0x1FU
 /** Minimum BIG sync timeout value (N * 10 ms) */
 #define BT_ISO_SYNC_TIMEOUT_MIN     0x000A
 /** Maximum BIG sync timeout value (N * 10 ms) */
@@ -85,12 +109,14 @@ extern "C" {
 #define BT_ISO_BIS_INDEX_MIN        0x01
 /** Highest BIS index */
 #define BT_ISO_BIS_INDEX_MAX        0x1F
-/** Omit time stamp when sending to controller
- *
- * Using this value will enqueue the ISO SDU in a FIFO manner, instead of
- * transmitting it at a specified timestamp.
- */
-#define BT_ISO_TIMESTAMP_NONE 0U
+/** Minimum Immediate Repetition Count */
+#define BT_ISO_IRC_MIN              0x01U
+/** Maximum Immediate Repetition Count */
+#define BT_ISO_IRC_MAX              0x0FU
+/** Minimum pre-transmission offset */
+#define BT_ISO_PTO_MIN              0x00U
+/** Maximum pre-transmission offset */
+#define BT_ISO_PTO_MAX              0x0FU
 
 /** @brief Life-span states of ISO channel. Used only by internal APIs
  *  dealing with setting channel to proper state depending on operational
@@ -110,11 +136,14 @@ enum bt_iso_state {
 };
 
 
+/**
+ * @brief ISO Channel Type.
+ */
 enum bt_iso_chan_type {
-	BT_ISO_CHAN_TYPE_NONE,
-	BT_ISO_CHAN_TYPE_CONNECTED,
-	BT_ISO_CHAN_TYPE_BROADCASTER,
-	BT_ISO_CHAN_TYPE_SYNC_RECEIVER
+	BT_ISO_CHAN_TYPE_NONE,		/**< No channel type */
+	BT_ISO_CHAN_TYPE_CONNECTED,	/**< Connected */
+	BT_ISO_CHAN_TYPE_BROADCASTER,	/**< Isochronous broadcaster */
+	BT_ISO_CHAN_TYPE_SYNC_RECEIVER	/**< Synchronized receiver */
 };
 
 /** @brief ISO Channel structure. */
@@ -125,14 +154,17 @@ struct bt_iso_chan {
 	struct bt_iso_chan_ops		*ops;
 	/** Channel QoS reference */
 	struct bt_iso_chan_qos		*qos;
+	/** Channel state */
 	enum bt_iso_state		state;
-#if defined(CONFIG_BT_SMP)
+#if defined(CONFIG_BT_SMP) || defined(__DOXYGEN__)
 	/** @brief The required security level of the channel
 	 *
 	 * This value can be set as the central before connecting a CIS
 	 * with bt_iso_chan_connect().
 	 * The value is overwritten to @ref bt_iso_server::sec_level for the
 	 * peripheral once a channel has been accepted.
+	 *
+	 * Only available when @kconfig{CONFIG_BT_SMP} is enabled.
 	 */
 	bt_security_t			required_sec_level;
 #endif /* CONFIG_BT_SMP */
@@ -148,7 +180,10 @@ struct bt_iso_chan_io_qos {
 	 *  Setting BT_GAP_LE_PHY_NONE is invalid.
 	 */
 	uint8_t				phy;
-	/** Channel Retransmission Number. */
+	/** @brief Channel Retransmission Number.
+	 *
+	 * This value is ignored if any advanced ISO parameters are set.
+	 */
 	uint8_t				rtn;
 	/** @brief Channel data path reference
 	 *
@@ -156,6 +191,27 @@ struct bt_iso_chan_io_qos {
 	 *  to BT_ISO_DATA_PATH_HCI).
 	 */
 	struct bt_iso_chan_path		*path;
+
+#if defined(CONFIG_BT_ISO_TEST_PARAMS)
+	/** @brief Maximum PDU size
+	 *
+	 *  Maximum size, in octets, of the payload from link layer to link
+	 *  layer.
+	 *
+	 *  Value range @ref BT_ISO_CONNECTED_PDU_MIN to @ref BT_ISO_PDU_MAX for
+	 *  connected ISO.
+	 *
+	 *  Value range @ref BT_ISO_BROADCAST_PDU_MIN to @ref BT_ISO_PDU_MAX for
+	 *  broadcast ISO.
+	 */
+	uint16_t max_pdu;
+
+	/** @brief Burst number
+	 *
+	 *  Value range @ref BT_ISO_BN_MIN to @ref BT_ISO_BN_MAX.
+	 */
+	uint8_t burst_number;
+#endif /* CONFIG_BT_ISO_TEST_PARAMS */
 };
 
 /** @brief ISO Channel QoS structure. */
@@ -176,6 +232,16 @@ struct bt_iso_chan_qos {
 	 *  isochronous transmitter.
 	 */
 	struct bt_iso_chan_io_qos	*tx;
+
+#if defined(CONFIG_BT_ISO_TEST_PARAMS)
+	/** @brief Number of subevents
+	 *
+	 *  Maximum number of subevents in each CIS or BIS event.
+	 *
+	 *  Value range @ref BT_ISO_NSE_MIN to @ref BT_ISO_NSE_MAX.
+	 */
+	uint8_t num_subevents;
+#endif /* CONFIG_BT_ISO_TEST_PARAMS */
 };
 
 /** @brief ISO Channel Data Path structure. */
@@ -249,6 +315,7 @@ struct bt_iso_tx_info {
 /** Opaque type representing an Connected Isochronous Group (CIG). */
 struct bt_iso_cig;
 
+/** @brief Connected Isochronous Group (CIG) parameters */
 struct bt_iso_cig_param {
 	/** @brief Array of pointers to CIS channels */
 	struct bt_iso_chan **cis_channels;
@@ -260,17 +327,33 @@ struct bt_iso_cig_param {
 	 */
 	uint8_t num_cis;
 
-	/** @brief Channel interval in us.
+	/** @brief Channel interval in us for SDUs sent from Central to Peripheral.
 	 *
 	 *  Value range BT_ISO_SDU_INTERVAL_MIN - BT_ISO_SDU_INTERVAL_MAX.
 	 */
-	uint32_t interval;
+	uint32_t c_to_p_interval;
 
-	/** @brief Channel Latency in ms.
+	/** @brief Channel interval in us for SDUs sent from Peripheral to Central.
+	 *
+	 *  Value range BT_ISO_SDU_INTERVAL_MIN - BT_ISO_SDU_INTERVAL_MAX.
+	 */
+	uint32_t p_to_c_interval;
+
+	/** @brief Channel Latency in ms for SDUs sent from Central to Peripheral
 	 *
 	 *  Value range BT_ISO_LATENCY_MIN - BT_ISO_LATENCY_MAX.
+	 *
+	 *  This value is ignored if any advanced ISO parameters are set.
 	 */
-	uint16_t latency;
+	uint16_t c_to_p_latency;
+
+	/** @brief Channel Latency in ms for SDUs sent from Peripheral to Central
+	 *
+	 *  Value range BT_ISO_LATENCY_MIN - BT_ISO_LATENCY_MAX.
+	 *
+	 *  This value is ignored if any advanced ISO parameters are set.
+	 */
+	uint16_t p_to_c_latency;
 
 	/** @brief Channel peripherals sleep clock accuracy Only for CIS
 	 *
@@ -293,19 +376,50 @@ struct bt_iso_cig_param {
 	 * BT_ISO_FRAMING_FRAMED for framed.
 	 */
 	uint8_t framing;
+
+#if defined(CONFIG_BT_ISO_TEST_PARAMS)
+	/** @brief Central to Peripheral flush timeout
+	 *
+	 *  The flush timeout in multiples of ISO_Interval for each payload sent
+	 *  from the Central to Peripheral.
+	 *
+	 *  Value range from @ref BT_ISO_FT_MIN to @ref BT_ISO_FT_MAX
+	 */
+	uint8_t c_to_p_ft;
+
+	/** @brief Peripheral to Central flush timeout
+	 *
+	 *  The flush timeout in multiples of ISO_Interval for each payload sent
+	 *  from the Peripheral to Central.
+	 *
+	 *  Value range from @ref BT_ISO_FT_MIN to @ref BT_ISO_FT_MAX.
+	 */
+	uint8_t p_to_c_ft;
+
+	/** @brief ISO interval
+	 *
+	 *  Time between consecutive CIS anchor points.
+	 *
+	 *  Value range from @ref BT_ISO_ISO_INTERVAL_MIN to
+	 *  @ref BT_ISO_ISO_INTERVAL_MAX.
+	 */
+	uint16_t iso_interval;
+#endif /* CONFIG_BT_ISO_TEST_PARAMS */
 };
 
+/** ISO connection parameters structure */
 struct bt_iso_connect_param {
-	/* The ISO channel to connect */
+	/** The ISO channel to connect */
 	struct bt_iso_chan *iso_chan;
 
-	/* The ACL connection */
+	/** The ACL connection */
 	struct bt_conn *acl;
 };
 
-/** Opaque type representing an Broadcast Isochronous Group (BIG). */
+/** Opaque type representing a Broadcast Isochronous Group (BIG). */
 struct bt_iso_big;
 
+/** @brief Broadcast Isochronous Group (BIG) creation parameters */
 struct bt_iso_big_create_param {
 	/** Array of pointers to BIS channels */
 	struct bt_iso_chan **bis_channels;
@@ -326,6 +440,8 @@ struct bt_iso_big_create_param {
 	/** @brief Channel Latency in ms.
 	 *
 	 *  Value range BT_ISO_LATENCY_MIN - BT_ISO_LATENCY_MAX.
+	 *
+	 *  This value is ignored if any advanced ISO parameters are set.
 	 */
 	uint16_t latency;
 
@@ -358,8 +474,37 @@ struct bt_iso_big_create_param {
 	 *    [42 72 6F 61 64 63 61 73 74 20 43 6F 64 65 00 00]
 	 */
 	uint8_t bcode[BT_ISO_BROADCAST_CODE_SIZE];
+
+#if defined(CONFIG_BT_ISO_TEST_PARAMS)
+	/** @brief Immediate Repetition Count
+	 *
+	 *  The number of times the scheduled payloads are transmitted in a
+	 *  given event.
+	 *
+	 *  Value range from @ref BT_ISO_MIN_IRC to @ref BT_ISO_MAX_IRC.
+	 */
+	uint8_t irc;
+
+	/** @brief Pre-transmission offset
+	 *
+	 *  Offset used for pre-transmissions.
+	 *
+	 *  Value range from @ref BT_ISO_MIN_PTO to @ref BT_ISO_MAX_PTO.
+	 */
+	uint8_t pto;
+
+	/** @brief ISO interval
+	 *
+	 *  Time between consecutive BIS anchor points.
+	 *
+	 *  Value range from @ref BT_ISO_ISO_INTERVAL_MIN to
+	 *  @ref BT_ISO_ISO_INTERVAL_MAX.
+	 */
+	uint16_t iso_interval;
+#endif /* CONFIG_BT_ISO_TEST_PARAMS */
 };
 
+/** @brief Broadcast Isochronous Group (BIG) Sync Parameters */
 struct bt_iso_big_sync_param {
 	/** Array of pointers to BIS channels */
 	struct bt_iso_chan **bis_channels;
@@ -414,6 +559,7 @@ struct bt_iso_big_sync_param {
 	uint8_t bcode[BT_ISO_BROADCAST_CODE_SIZE];
 };
 
+/** @brief Broadcast Isochronous Group (BIG) information */
 struct bt_iso_biginfo {
 	/** Address of the advertiser */
 	const bt_addr_le_t *addr;
@@ -509,14 +655,17 @@ struct bt_iso_chan_ops {
 
 	/** @brief Channel sent callback
 	 *
-	 *  If this callback is provided it will be called whenever a SDU has
-	 *  been completely sent.
+	 *  This callback will be called once the controller marks the SDU
+	 *  as completed. When the controller does so is implementation
+	 *  dependent. It could be after the SDU is enqueued for transmission,
+	 *  or after it is sent on air or flushed.
 	 *
 	 *  @param chan The channel which has sent data.
 	 */
 	void (*sent)(struct bt_iso_chan *chan);
 };
 
+/** @brief ISO Accept Info Structure */
 struct bt_iso_accept_info {
 	/** The ACL connection that is requesting authorization */
 	struct bt_conn *acl;
@@ -536,8 +685,10 @@ struct bt_iso_accept_info {
 
 /** @brief ISO Server structure. */
 struct bt_iso_server {
-#if defined(CONFIG_BT_SMP)
-	/** Required minimum security level */
+#if defined(CONFIG_BT_SMP) || defined(__DOXYGEN__)
+	/** Required minimum security level.
+	 * Only available when @kconfig{CONFIG_BT_SMP} is enabled.
+	 */
 	bt_security_t		sec_level;
 #endif /* CONFIG_BT_SMP */
 
@@ -664,10 +815,17 @@ int bt_iso_cig_terminate(struct bt_iso_cig *cig);
  */
 int bt_iso_chan_connect(const struct bt_iso_connect_param *param, size_t count);
 
-/** @brief Disconnect ISO channel
+/** @brief Disconnect connected ISO channel
  *
- *  Disconnect ISO channel, if the connection is pending it will be
- *  canceled and as a result the channel disconnected() callback is called.
+ *  Disconnect connected ISO channel.
+ *
+ *  If the device is a central and the connection is pending it will be
+ *  canceled and as a result the channel bt_iso_chan_ops.disconnected() callback is called.
+ *
+ *  If the device is a peripheral and the connection is pending it will be rejected, as a peripheral
+ *  shall wait for a CIS Established event (which may trigger a bt_iso_chan_ops.disconnected()
+ *  callback in case of an error).
+ *
  *  Regarding to input parameter, to get details see reference description
  *  to bt_iso_chan_connect() API above.
  *
@@ -677,7 +835,27 @@ int bt_iso_chan_connect(const struct bt_iso_connect_param *param, size_t count);
  */
 int bt_iso_chan_disconnect(struct bt_iso_chan *chan);
 
-/** @brief Send data to ISO channel
+/** @brief Send data to ISO channel without timestamp
+ *
+ *  Send data from buffer to the channel. If credits are not available, buf will
+ *  be queued and sent as and when credits are received from peer.
+ *  Regarding to first input parameter, to get details see reference description
+ *  to bt_iso_chan_connect() API above.
+ *
+ *  @note Buffer ownership is transferred to the stack in case of success, in
+ *  case of an error the caller retains the ownership of the buffer.
+ *
+ *  @param chan     Channel object.
+ *  @param buf      Buffer containing data to be sent.
+ *  @param seq_num  Packet Sequence number. This value shall be incremented for
+ *                  each call to this function and at least once per SDU
+ *                  interval for a specific channel.
+ *
+ *  @return Bytes sent in case of success or negative value in case of error.
+ */
+int bt_iso_chan_send(struct bt_iso_chan *chan, struct net_buf *buf, uint16_t seq_num);
+
+/** @brief Send data to ISO channel with timestamp
  *
  *  Send data from buffer to the channel. If credits are not available, buf will
  *  be queued and sent as and when credits are received from peer.
@@ -694,15 +872,14 @@ int bt_iso_chan_disconnect(struct bt_iso_chan *chan);
  *                  interval for a specific channel.
  *  @param ts       Timestamp of the SDU in microseconds (us).
  *                  This value can be used to transmit multiple
- *                  SDUs in the same SDU interval in a CIG or BIG. Can be
- *                  omitted by using @ref BT_ISO_TIMESTAMP_NONE which will
- *                  simply enqueue the ISO SDU in a FIFO manner.
+ *                  SDUs in the same SDU interval in a CIG or BIG.
  *
  *  @return Bytes sent in case of success or negative value in case of error.
  */
-int bt_iso_chan_send(struct bt_iso_chan *chan, struct net_buf *buf,
-		     uint16_t seq_num, uint32_t ts);
+int bt_iso_chan_send_ts(struct bt_iso_chan *chan, struct net_buf *buf, uint16_t seq_num,
+			uint32_t ts);
 
+/** @brief ISO Unicast TX Info Structure */
 struct bt_iso_unicast_tx_info {
 	/** The transport latency in us */
 	uint32_t latency;
@@ -720,6 +897,7 @@ struct bt_iso_unicast_tx_info {
 	uint8_t  bn;
 };
 
+/** @brief ISO Unicast Info Structure */
 struct bt_iso_unicast_info {
 	/** The maximum time in us for all PDUs of all CIS in a CIG event */
 	uint32_t cig_sync_delay;
@@ -730,10 +908,11 @@ struct bt_iso_unicast_info {
 	/** @brief TX information for the central to peripheral data path */
 	struct bt_iso_unicast_tx_info central;
 
-	/** TX information for  the peripheral to central data */
+	/** TX information for the peripheral to central data */
 	struct bt_iso_unicast_tx_info peripheral;
 };
 
+/** @brief ISO Broadcaster Info Structure */
 struct bt_iso_broadcaster_info {
 	/** The maximum time in us for all PDUs of all BIS in a BIG event */
 	uint32_t sync_delay;
@@ -757,6 +936,7 @@ struct bt_iso_broadcaster_info {
 	uint8_t  irc;
 };
 
+/** @brief ISO Synchronized Receiver Info Structure */
 struct bt_iso_sync_receiver_info {
 	/** The transport latency in us */
 	uint32_t latency;
@@ -803,16 +983,22 @@ struct bt_iso_info {
 
 	/** Connection Type specific Info.*/
 	union {
-#if defined(CONFIG_BT_ISO_UNICAST)
-		/** Unicast specific Info. */
+#if defined(CONFIG_BT_ISO_UNICAST) || defined(__DOXYGEN__)
+		/** Unicast specific Info.
+		 * Only available when @kconfig{CONFIG_BT_ISO_UNICAST} is enabled.
+		 */
 		struct bt_iso_unicast_info unicast;
 #endif /* CONFIG_BT_ISO_UNICAST */
-#if defined(CONFIG_BT_ISO_BROADCASTER)
-		/** Broadcaster specific Info. */
+#if defined(CONFIG_BT_ISO_BROADCASTER) || defined(__DOXYGEN__)
+		/** Broadcaster specific Info.
+		 * Only available when @kconfig{CONFIG_BT_ISO_BROADCASTER} is enabled.
+		 */
 		struct bt_iso_broadcaster_info broadcaster;
 #endif /* CONFIG_BT_ISO_BROADCASTER */
-#if defined(CONFIG_BT_ISO_SYNC_RECEIVER)
-		/** Sync receiver specific Info. */
+#if defined(CONFIG_BT_ISO_SYNC_RECEIVER) || defined(__DOXYGEN__)
+		/** Sync receiver specific Info.
+		 * Only available when @kconfig{CONFIG_BT_ISO_SYNC_RECEIVER} is enabled.
+		 */
 		struct bt_iso_sync_receiver_info sync_receiver;
 #endif /* CONFIG_BT_ISO_SYNC_RECEIVER */
 	};
@@ -827,15 +1013,6 @@ struct bt_iso_info {
  */
 int bt_iso_chan_get_info(const struct bt_iso_chan *chan,
 			 struct bt_iso_info *info);
-
-/** @brief Get the type of an ISO channel
- *
- * @param chan Channel object.
- *
- * @return enum bt_iso_chan_type The type of the channel. If @p is NULL this
- *                               will be BT_ISO_CHAN_TYPE_NONE.
- */
-enum bt_iso_chan_type bt_iso_chan_get_type(const struct bt_iso_chan *chan);
 
 /** @brief Get ISO transmission timing info
  *

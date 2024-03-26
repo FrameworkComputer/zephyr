@@ -21,11 +21,19 @@
 #if defined(CONFIG_PINCTRL)
 #include <zephyr/drivers/pinctrl.h>
 #endif
+#if defined(CONFIG_RESET)
+#include <zephyr/drivers/reset.h>
+#endif
 
 #include <errno.h>
 #include <zephyr/sys/sys_io.h>
 
 #include <zephyr/sys/util.h>
+
+#if defined(CONFIG_I2C_DW_LPSS_DMA)
+#include <zephyr/drivers/dma.h>
+#include <zephyr/drivers/dma/dma_intel_lpss.h>
+#endif
 
 #ifdef CONFIG_IOAPIC
 #include <zephyr/drivers/interrupt_controller/ioapic.h>
@@ -45,14 +53,158 @@ static inline uint32_t get_regs(const struct device *dev)
 	return (uint32_t)DEVICE_MMIO_GET(dev);
 }
 
+#ifdef CONFIG_I2C_DW_LPSS_DMA
+void i2c_dw_enable_idma(const struct device *dev, bool enable)
+{
+	uint32_t reg;
+	uint32_t reg_base = get_regs(dev);
+
+	if (enable) {
+		write_dma_cr(DW_IC_DMA_ENABLE, reg_base);
+		reg = sys_read32(reg_base + DW_IC_REG_DMA_CR);
+	} else {
+		reg = read_dma_cr(reg_base);
+		reg &= ~DW_IC_DMA_ENABLE;
+		write_dma_cr(reg, reg_base);
+		reg = sys_read32(reg_base + DW_IC_REG_DMA_CR);
+	}
+}
+
+void cb_i2c_idma_transfer(const struct device *dma, void *user_data,
+			 uint32_t channel, int status)
+{
+	const struct device *dev = (const struct device *)user_data;
+	const struct i2c_dw_rom_config * const rom = dev->config;
+	struct i2c_dw_dev_config *const dw = dev->data;
+
+	dma_stop(rom->dma_dev, channel);
+	i2c_dw_enable_idma(dev, false);
+
+	if (status) {
+		dw->xfr_status = true;
+	} else {
+		dw->xfr_status = false;
+	}
+}
+
+void i2c_dw_set_fifo_th(const struct device *dev, uint8_t fifo_depth)
+{
+	uint32_t reg_base = get_regs(dev);
+
+	write_tdlr(fifo_depth, reg_base);
+	write_rdlr(fifo_depth - 1, reg_base);
+}
+
+inline void *i2c_dw_dr_phy_addr(const struct device *dev)
+{
+	struct i2c_dw_dev_config *const dw = dev->data;
+
+	return (void *) (dw->phy_addr + DW_IC_REG_DATA_CMD);
+}
+
+int32_t i2c_dw_idma_rx_transfer(const struct device *dev)
+{
+	struct i2c_dw_dev_config *const dw = dev->data;
+	const struct i2c_dw_rom_config * const rom = dev->config;
+
+	struct dma_config dma_cfg = { 0 };
+	struct dma_block_config dma_block_cfg = { 0 };
+
+	if (!device_is_ready(rom->dma_dev)) {
+		LOG_DBG("DMA device is not ready");
+		return  -ENODEV;
+	}
+
+	dma_cfg.dma_slot = 1U;
+	dma_cfg.channel_direction = PERIPHERAL_TO_MEMORY;
+	dma_cfg.source_data_size = 1U;
+	dma_cfg.dest_data_size = 1U;
+	dma_cfg.source_burst_length = 1U;
+	dma_cfg.dest_burst_length = 1U;
+	dma_cfg.dma_callback = cb_i2c_idma_transfer;
+	dma_cfg.user_data = (void *)dev;
+	dma_cfg.complete_callback_en = 0U;
+	dma_cfg.error_callback_en = 1U;
+	dma_cfg.block_count = 1U;
+	dma_cfg.head_block = &dma_block_cfg;
+
+	dma_block_cfg.block_size = dw->xfr_len;
+	dma_block_cfg.dest_address = (uint64_t)&dw->xfr_buf[0];
+	dma_block_cfg.source_address = (uint64_t)i2c_dw_dr_phy_addr(dev);
+	dw->xfr_status = false;
+
+	if (dma_config(rom->dma_dev, DMA_INTEL_LPSS_RX_CHAN, &dma_cfg)) {
+		LOG_DBG("Error transfer");
+		return  -EIO;
+	}
+
+	if (dma_start(rom->dma_dev, DMA_INTEL_LPSS_RX_CHAN)) {
+		LOG_DBG("Error transfer");
+		return  -EIO;
+	}
+
+	i2c_dw_enable_idma(dev, true);
+	i2c_dw_set_fifo_th(dev, 1);
+
+	return 0;
+}
+
+int32_t i2c_dw_idma_tx_transfer(const struct device *dev,
+				uint64_t data)
+{
+	const struct i2c_dw_rom_config * const rom = dev->config;
+	struct i2c_dw_dev_config *const dw = dev->data;
+
+	struct dma_config dma_cfg = { 0 };
+	struct dma_block_config dma_block_cfg = { 0 };
+
+	if (!device_is_ready(rom->dma_dev)) {
+		LOG_DBG("DMA device is not ready");
+		return  -ENODEV;
+	}
+
+	dma_cfg.dma_slot = 0U;
+	dma_cfg.channel_direction = MEMORY_TO_PERIPHERAL;
+	dma_cfg.source_data_size = 1U;
+	dma_cfg.dest_data_size = 1U;
+	dma_cfg.source_burst_length = 1U;
+	dma_cfg.dest_burst_length = 1U;
+	dma_cfg.dma_callback = cb_i2c_idma_transfer;
+	dma_cfg.user_data = (void *)dev;
+	dma_cfg.complete_callback_en = 0U;
+	dma_cfg.error_callback_en = 1U;
+	dma_cfg.block_count = 1U;
+	dma_cfg.head_block = &dma_block_cfg;
+
+	dma_block_cfg.block_size = 1;
+	dma_block_cfg.source_address = (uint64_t)&data;
+	dma_block_cfg.dest_address = (uint64_t)i2c_dw_dr_phy_addr(dev);
+	dw->xfr_status = false;
+
+	if (dma_config(rom->dma_dev, DMA_INTEL_LPSS_TX_CHAN, &dma_cfg)) {
+		LOG_DBG("Error transfer");
+		return  -EIO;
+	}
+
+	if (dma_start(rom->dma_dev, DMA_INTEL_LPSS_TX_CHAN)) {
+		LOG_DBG("Error transfer");
+		return  -EIO;
+	}
+	i2c_dw_enable_idma(dev, true);
+	i2c_dw_set_fifo_th(dev, 1);
+
+	return 0;
+}
+#endif
+
 static inline void i2c_dw_data_ask(const struct device *dev)
 {
 	struct i2c_dw_dev_config * const dw = dev->data;
 	uint32_t data;
-	uint8_t tx_empty;
-	int8_t rx_empty;
-	uint8_t cnt;
-	uint8_t rx_buffer_depth, tx_buffer_depth;
+	int tx_empty;
+	int rx_empty;
+	int cnt;
+	int rx_buffer_depth, tx_buffer_depth;
 	union ic_comp_param_1_register ic_comp_param_1;
 	uint32_t reg_base = get_regs(dev);
 
@@ -116,6 +268,13 @@ static void i2c_dw_data_read(const struct device *dev)
 	struct i2c_dw_dev_config * const dw = dev->data;
 	uint32_t reg_base = get_regs(dev);
 
+#ifdef CONFIG_I2C_DW_LPSS_DMA
+	if (test_bit_status_rfne(reg_base) && (dw->xfr_len > 0)) {
+		i2c_dw_idma_rx_transfer(dev);
+		dw->xfr_len = 0;
+		dw->rx_pending = 0;
+	}
+#else
 	while (test_bit_status_rfne(reg_base) && (dw->xfr_len > 0)) {
 		dw->xfr_buf[0] = (uint8_t)read_cmd_data(reg_base);
 
@@ -127,7 +286,7 @@ static void i2c_dw_data_read(const struct device *dev)
 			break;
 		}
 	}
-
+#endif
 	/* Nothing to receive anymore */
 	if (dw->xfr_len == 0U) {
 		dw->state &= ~I2C_DW_CMD_RECV;
@@ -166,8 +325,11 @@ static int i2c_dw_data_send(const struct device *dev)
 			data |= IC_DATA_CMD_STOP;
 		}
 
+#ifdef CONFIG_I2C_DW_LPSS_DMA
+		i2c_dw_idma_tx_transfer(dev, data);
+#else
 		write_cmd_data(data, reg_base);
-
+#endif
 		dw->xfr_len--;
 		dw->xfr_buf++;
 
@@ -227,6 +389,17 @@ static void i2c_dw_isr(const struct device *port)
 
 	/* Check if we are configured as a master device */
 	if (test_bit_con_master_mode(reg_base)) {
+#ifdef CONFIG_I2C_DW_LPSS_DMA
+		uint32_t stat = sys_read32(reg_base + IDMA_REG_INTR_STS);
+
+		if (stat & IDMA_TX_RX_CHAN_MASK) {
+			const struct i2c_dw_rom_config * const rom = port->config;
+			/* Handle the DMA interrupt */
+			dma_intel_lpss_isr(rom->dma_dev);
+
+		}
+#endif
+
 		/* Bail early if there is any error. */
 		if ((DW_INTR_STAT_TX_ABRT | DW_INTR_STAT_TX_OVER |
 		     DW_INTR_STAT_RX_OVER | DW_INTR_STAT_RX_UNDER) &
@@ -736,7 +909,7 @@ static int i2c_dw_set_slave_mode(const struct device *dev, uint8_t addr)
 	write_tx_tl(0, reg_base);
 	write_rx_tl(0, reg_base);
 
-	LOG_DBG("I2C: Host registed as Slave Device");
+	LOG_DBG("I2C: Host registered as Slave Device");
 
 	return 0;
 }
@@ -847,6 +1020,15 @@ static int i2c_dw_initialize(const struct device *dev)
 	union ic_con_register ic_con;
 	int ret = 0;
 
+#if defined(CONFIG_RESET)
+	if (rom->reset.dev) {
+		ret = reset_line_toggle_dt(&rom->reset);
+		if (ret) {
+			return ret;
+		}
+	}
+#endif
+
 #if defined(CONFIG_PINCTRL)
 	ret = pinctrl_apply_state(rom->pcfg, PINCTRL_STATE_DEFAULT);
 	if (ret) {
@@ -867,6 +1049,26 @@ static int i2c_dw_initialize(const struct device *dev)
 
 		device_map(DEVICE_MMIO_RAM_PTR(dev), mbar.phys_addr,
 			   mbar.size, K_MEM_CACHE_NONE);
+
+		pcie_set_cmd(rom->pcie->bdf, PCIE_CONF_CMDSTAT_MASTER, true);
+
+#ifdef CONFIG_I2C_DW_LPSS_DMA
+		uintptr_t base;
+
+		base = DEVICE_MMIO_GET(dev) + DMA_INTEL_LPSS_OFFSET;
+		dma_intel_lpss_set_base(rom->dma_dev, base);
+		dma_intel_lpss_setup(rom->dma_dev);
+
+		/* Assign physical & virtual address to dma instance */
+		dw->phy_addr = mbar.phys_addr;
+		dw->base_addr = (uint32_t)(DEVICE_MMIO_GET(dev) + DMA_INTEL_LPSS_OFFSET);
+		sys_write32((uint32_t)dw->phy_addr,
+			    DEVICE_MMIO_GET(dev) + DMA_INTEL_LPSS_REMAP_LOW);
+		sys_write32((uint32_t)(dw->phy_addr >> DMA_INTEL_LPSS_ADDR_RIGHT_SHIFT),
+			    DEVICE_MMIO_GET(dev) + DMA_INTEL_LPSS_REMAP_HI);
+		LOG_DBG("i2c instance physical addr: [0x%lx], virtual addr: [0x%lx]",
+			 dw->phy_addr, dw->base_addr);
+#endif
 	} else
 #endif
 	{
@@ -877,6 +1079,7 @@ static int i2c_dw_initialize(const struct device *dev)
 	k_mutex_init(&dw->bus_mutex);
 
 	uint32_t reg_base = get_regs(dev);
+
 	clear_bit_enable_en(reg_base);
 
 	/* verify that we have a valid DesignWare register first */
@@ -920,6 +1123,14 @@ static int i2c_dw_initialize(const struct device *dev)
 #else
 #define PINCTRL_DW_DEFINE(n)
 #define PINCTRL_DW_CONFIG(n)
+#endif
+
+#if defined(CONFIG_RESET)
+#define RESET_DW_CONFIG(n)                                                    \
+	IF_ENABLED(DT_INST_NODE_HAS_PROP(0, resets),                          \
+		   (.reset = RESET_DT_SPEC_INST_GET(n),))
+#else
+#define RESET_DW_CONFIG(n)
 #endif
 
 #define I2C_DW_INIT_PCIE0(n)
@@ -977,6 +1188,12 @@ static int i2c_dw_initialize(const struct device *dev)
 #define I2C_CONFIG_REG_INIT(n) \
 	_CONCAT(I2C_CONFIG_REG_INIT_PCIE, DT_INST_ON_BUS(n, pcie))(n)
 
+#define I2C_CONFIG_DMA_INIT(n)						\
+	COND_CODE_1(CONFIG_I2C_DW_LPSS_DMA,				\
+	(COND_CODE_1(DT_INST_NODE_HAS_PROP(n, dmas),			\
+	(.dma_dev = DEVICE_DT_GET(DT_INST_DMAS_CTLR_BY_IDX(n, 0)),),	\
+	())), ())
+
 #define I2C_DEVICE_INIT_DW(n)                                                 \
 	PINCTRL_DW_DEFINE(n);                                                 \
 	I2C_PCIE_DEFINE(n);                                                   \
@@ -985,8 +1202,10 @@ static int i2c_dw_initialize(const struct device *dev)
 		I2C_CONFIG_REG_INIT(n)                                        \
 		.config_func = i2c_config_##n,                                \
 		.bitrate = DT_INST_PROP(n, clock_frequency),                  \
+		RESET_DW_CONFIG(n)                                            \
 		PINCTRL_DW_CONFIG(n)                                          \
 		I2C_DW_INIT_PCIE(n)                                           \
+		I2C_CONFIG_DMA_INIT(n)					      \
 	};                                                                    \
 	static struct i2c_dw_dev_config i2c_##n##_runtime;                    \
 	I2C_DEVICE_DT_INST_DEFINE(n, i2c_dw_initialize, NULL,                 \

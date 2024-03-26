@@ -28,18 +28,19 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		cpu0: cpu@0 {
-			compatible = "ite,riscv-ite";
+			compatible = "ite,riscv-ite", "riscv";
+			riscv,isa = "rv32imafc_zifencei";
 			device_type = "cpu";
 			reg = <0>;
 			cpu-power-states = <&standby>;
 		};
-	};
 
-	power-states {
-		standby: standby {
-			compatible = "zephyr,power-state";
-			power-state-name = "standby";
-			min-residency-us = <500>;
+		power-states {
+			standby: standby {
+				compatible = "zephyr,power-state";
+				power-state-name = "standby";
+				min-residency-us = <500>;
+			};
 		};
 	};
 
@@ -106,7 +107,7 @@
 			reg = <0x00f02700 0x0020>;
 			status = "disabled";
 			current-speed = <115200>;
-			clock-frequency = <1804800>;
+			clock-frequency = <1843200>;
 			interrupts = <38 IRQ_TYPE_EDGE_RISING>;
 			interrupt-parent = <&intc>;
 			reg-shift = <0>;
@@ -116,7 +117,7 @@
 			reg = <0x00f02800 0x0020>;
 			status = "disabled";
 			current-speed = <460800>;
-			clock-frequency = <1804800>;
+			clock-frequency = <1843200>;
 			interrupts = <39 IRQ_TYPE_EDGE_RISING>;
 			interrupt-parent = <&intc>;
 			reg-shift = <0>;
@@ -690,8 +691,8 @@
 			status = "disabled";
 		};
 
-		kscan0: kscan@f01d00 {
-			compatible = "ite,it8xxx2-kscan";
+		kbd: kbd@f01d00 {
+			compatible = "ite,it8xxx2-kbd";
 			reg = <0x00f01d00 0x29>;
 			interrupt-parent = <&intc>;
 			interrupts = <IT8XXX2_IRQ_WKINTC IRQ_TYPE_LEVEL_HIGH>;
@@ -706,6 +707,12 @@
 				   &wuc_wu37>; /* KSI[7] */
 			kso16-gpios = <&gpioc 3 (GPIO_OPEN_DRAIN | GPIO_PULL_UP)>;
 			kso17-gpios = <&gpioc 5 (GPIO_OPEN_DRAIN | GPIO_PULL_UP)>;
+		};
+
+		sha0: sha@f0202d {
+			compatible = "ite,it8xxx2-sha";
+			reg = <0x00f0202d 0x3>;
+			status = "disabled";
 		};
 
 		usbpd0: usbpd@f03700 {

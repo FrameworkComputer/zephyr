@@ -95,8 +95,13 @@ static void hts221_drdy_callback(const struct device *dev,
 }
 
 #ifdef CONFIG_HTS221_TRIGGER_OWN_THREAD
-static void hts221_thread(struct hts221_data *data)
+static void hts221_thread(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
+	struct hts221_data *data = p1;
+
 	while (1) {
 		k_sem_take(&data->drdy_sem, K_FOREVER);
 		process_drdy(data->dev);
@@ -126,7 +131,7 @@ int hts221_init_interrupt(const struct device *dev)
 		return 0;
 	}
 
-	if (!device_is_ready(cfg->gpio_drdy.port)) {
+	if (!gpio_is_ready_dt(&cfg->gpio_drdy)) {
 		LOG_ERR("device %s is not ready", cfg->gpio_drdy.port->name);
 		return -ENODEV;
 	}
@@ -163,7 +168,7 @@ int hts221_init_interrupt(const struct device *dev)
 
 	k_thread_create(&data->thread, data->thread_stack,
 			CONFIG_HTS221_THREAD_STACK_SIZE,
-			(k_thread_entry_t)hts221_thread, data,
+			hts221_thread, data,
 			NULL, NULL, K_PRIO_COOP(CONFIG_HTS221_THREAD_PRIORITY),
 			0, K_NO_WAIT);
 #elif defined(CONFIG_HTS221_TRIGGER_GLOBAL_THREAD)

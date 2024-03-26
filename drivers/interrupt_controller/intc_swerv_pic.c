@@ -12,9 +12,10 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/arch/cpu.h>
-#include <zephyr/init.h>
+#include <zephyr/device.h>
 #include <zephyr/sw_isr_table.h>
 #include <zephyr/irq.h>
+#include <zephyr/arch/riscv/irq.h>
 
 #define SWERV_PIC_MAX_NUM	CONFIG_NUM_IRQS
 #define SWERV_PIC_MAX_ID	(SWERV_PIC_MAX_NUM + RISCV_MAX_GENERIC_IRQ)
@@ -143,7 +144,7 @@ static void swerv_pic_irq_handler(const void *arg)
 	swerv_pic_write(SWERV_PIC_meigwclr(irq), 0);
 }
 
-static int swerv_pic_init(void)
+static int swerv_pic_init(const struct device *dev)
 {
 	int i;
 
@@ -176,14 +177,14 @@ static int swerv_pic_init(void)
 	__asm__ swerv_pic_writecsr(meicurpl, 0);
 
 	/* Setup IRQ handler for SweRV PIC driver */
-	IRQ_CONNECT(RISCV_MACHINE_EXT_IRQ,
+	IRQ_CONNECT(RISCV_IRQ_MEXT,
 		    0,
 		    swerv_pic_irq_handler,
 		    NULL,
 		    0);
 
 	/* Enable IRQ for SweRV PIC driver */
-	irq_enable(RISCV_MACHINE_EXT_IRQ);
+	irq_enable(RISCV_IRQ_MEXT);
 
 	return 0;
 }
@@ -236,4 +237,5 @@ int arch_irq_is_enabled(unsigned int irq)
 	return !!(mie & (1 << irq));
 }
 
-SYS_INIT(swerv_pic_init, PRE_KERNEL_1, CONFIG_INTC_INIT_PRIORITY);
+DEVICE_DT_INST_DEFINE(0, swerv_pic_init, NULL,  NULL,  NULL,
+		      PRE_KERNEL_1, CONFIG_INTC_INIT_PRIORITY, NULL);

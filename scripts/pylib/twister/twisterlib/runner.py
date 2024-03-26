@@ -25,6 +25,7 @@ from colorama import Fore
 from domains import Domains
 from twisterlib.cmakecache import CMakeCache
 from twisterlib.environment import canonical_zephyr_base
+from twisterlib.error import BuildError, ConfigurationError
 
 import elftools
 from elftools.elf.elffile import ELFFile
@@ -39,6 +40,9 @@ if sys.platform == 'linux':
 
 from twisterlib.log_helper import log_command
 from twisterlib.testinstance import TestInstance
+from twisterlib.environment import TwisterEnv
+from twisterlib.testsuite import TestSuite
+from twisterlib.platform import Platform
 from twisterlib.testplan import change_skip_to_error_if_integration
 from twisterlib.harness import HarnessImporter, Pytest
 
@@ -219,7 +223,7 @@ class CMake:
     config_re = re.compile('(CONFIG_[A-Za-z0-9_]+)[=]\"?([^\"]*)\"?$')
     dt_re = re.compile('([A-Za-z0-9_]+)[=]\"?([^\"]*)\"?$')
 
-    def __init__(self, testsuite, platform, source_dir, build_dir, jobserver):
+    def __init__(self, testsuite: TestSuite, platform: Platform, source_dir, build_dir, jobserver):
 
         self.cwd = None
         self.capture_output = True
@@ -259,27 +263,31 @@ class CMake:
         if self.cwd:
             kwargs['cwd'] = self.cwd
 
+        start_time = time.time()
         if sys.platform == 'linux':
             p = self.jobserver.popen(cmd, **kwargs)
         else:
             p = subprocess.Popen(cmd, **kwargs)
+        logger.debug(f'Running {"".join(cmd)}')
 
         out, _ = p.communicate()
 
-        results = {}
+        ret = {}
+        duration = time.time() - start_time
+        self.instance.build_time += duration
         if p.returncode == 0:
-            msg = "Finished building %s for %s" % (self.source_dir, self.platform.name)
+            msg = f"Finished building {self.source_dir} for {self.platform.name} in {duration:.2f} seconds"
+            logger.debug(msg)
 
             self.instance.status = "passed"
             if not self.instance.run:
                 self.instance.add_missing_case_status("skipped", "Test was built only")
-            results = {'msg': msg, "returncode": p.returncode, "instance": self.instance}
+            ret = {"returncode": p.returncode}
 
             if out:
                 log_msg = out.decode(self.default_encoding)
                 with open(os.path.join(self.build_dir, self.log), "a", encoding=self.default_encoding) as log:
                     log.write(log_msg)
-
             else:
                 return None
         else:
@@ -306,12 +314,11 @@ class CMake:
                     self.instance.status = "error"
                     self.instance.reason = "Build failure"
 
-            results = {
-                "returncode": p.returncode,
-                "instance": self.instance,
+            ret = {
+                "returncode": p.returncode
             }
 
-        return results
+        return ret
 
     def run_cmake(self, args="", filter_stages=[]):
 
@@ -322,11 +329,15 @@ class CMake:
             warnings_as_errors = 'n'
             gen_defines_args = ""
 
+        warning_command = 'CONFIG_COMPILER_WARNINGS_AS_ERRORS'
+        if self.testsuite.sysbuild:
+            warning_command = 'SB_' + warning_command
+
         logger.debug("Running cmake on %s for %s" % (self.source_dir, self.platform.name))
         cmake_args = [
             f'-B{self.build_dir}',
             f'-DTC_RUNID={self.instance.run_id}',
-            f'-DCONFIG_COMPILER_WARNINGS_AS_ERRORS={warnings_as_errors}',
+            f'-D{warning_command}={warnings_as_errors}',
             f'-DEXTRA_GEN_DEFINES_ARGS={gen_defines_args}',
             f'-G{self.env.generator}'
         ]
@@ -358,6 +369,10 @@ class CMake:
         cmake_opts = ['-DBOARD={}'.format(self.platform.name)]
         cmake_args.extend(cmake_opts)
 
+        if self.instance.testsuite.required_snippets:
+            cmake_opts = ['-DSNIPPET={}'.format(';'.join(self.instance.testsuite.required_snippets))]
+            cmake_args.extend(cmake_opts)
+
         cmake = shutil.which('cmake')
         cmd = [cmake] + cmake_args
 
@@ -376,18 +391,24 @@ class CMake:
         if self.cwd:
             kwargs['cwd'] = self.cwd
 
+        start_time = time.time()
         if sys.platform == 'linux':
             p = self.jobserver.popen(cmd, **kwargs)
         else:
             p = subprocess.Popen(cmd, **kwargs)
         out, _ = p.communicate()
 
+        duration = time.time() - start_time
+        self.instance.build_time += duration
+
         if p.returncode == 0:
             filter_results = self.parse_generated(filter_stages)
-            msg = "Finished building %s for %s" % (self.source_dir, self.platform.name)
+            msg = f"Finished running cmake {self.source_dir} for {self.platform.name} in {duration:.2f} seconds"
             logger.debug(msg)
-            results = {'msg': msg, 'filter': filter_results}
-
+            ret = {
+                    'returncode': p.returncode,
+                    'filter': filter_results
+                    }
         else:
             self.instance.status = "error"
             self.instance.reason = "Cmake build failure"
@@ -396,7 +417,7 @@ class CMake:
                 tc.status = self.instance.status
 
             logger.error("Cmake build failure: %s for %s" % (self.source_dir, self.platform.name))
-            results = {"returncode": p.returncode}
+            ret = {"returncode": p.returncode}
 
         if out:
             os.makedirs(self.build_dir, exist_ok=True)
@@ -404,12 +425,12 @@ class CMake:
                 log_msg = out.decode(self.default_encoding)
                 log.write(log_msg)
 
-        return results
+        return ret
 
 
 class FilterBuilder(CMake):
 
-    def __init__(self, testsuite, platform, source_dir, build_dir, jobserver):
+    def __init__(self, testsuite: TestSuite, platform: Platform, source_dir, build_dir, jobserver):
         super().__init__(testsuite, platform, source_dir, build_dir, jobserver)
 
         self.log = "config-twister.log"
@@ -494,14 +515,14 @@ class FilterBuilder(CMake):
                         edt = pickle.load(f)
                 else:
                     edt = None
-                res = expr_parser.parse(self.testsuite.filter, filter_data, edt)
+                ret = expr_parser.parse(self.testsuite.filter, filter_data, edt)
 
             except (ValueError, SyntaxError) as se:
                 sys.stderr.write(
                     "Failed processing %s\n" % self.testsuite.yamlfile)
                 raise se
 
-            if not res:
+            if not ret:
                 return {os.path.join(self.platform.name, self.testsuite.name): True}
             else:
                 return {os.path.join(self.platform.name, self.testsuite.name): False}
@@ -512,7 +533,7 @@ class FilterBuilder(CMake):
 
 class ProjectBuilder(FilterBuilder):
 
-    def __init__(self, instance, env, jobserver, **kwargs):
+    def __init__(self, instance: TestInstance, env: TwisterEnv, jobserver, **kwargs):
         super().__init__(instance.testsuite, instance.platform, instance.testsuite.source_dir, instance.build_dir, jobserver)
 
         self.log = "build.log"
@@ -522,8 +543,7 @@ class ProjectBuilder(FilterBuilder):
         self.env = env
         self.duts = None
 
-    @staticmethod
-    def log_info(filename, inline_logs):
+    def log_info(self, filename, inline_logs, log_testcases=False):
         filename = os.path.abspath(os.path.realpath(filename))
         if inline_logs:
             logger.info("{:-^100}".format(filename))
@@ -537,6 +557,17 @@ class ProjectBuilder(FilterBuilder):
             logger.error(data)
 
             logger.info("{:-^100}".format(filename))
+
+            if log_testcases:
+                for tc in self.instance.testcases:
+                    if not tc.reason:
+                        continue
+                    logger.info(
+                        f"\n{str(tc.name).center(100, '_')}\n"
+                        f"{tc.reason}\n"
+                        f"{100*'_'}\n"
+                        f"{tc.output}"
+                    )
         else:
             logger.error("see: " + Fore.YELLOW + filename + Fore.RESET)
 
@@ -546,9 +577,12 @@ class ProjectBuilder(FilterBuilder):
         b_log = "{}/build.log".format(build_dir)
         v_log = "{}/valgrind.log".format(build_dir)
         d_log = "{}/device.log".format(build_dir)
+        pytest_log = "{}/twister_harness.log".format(build_dir)
 
         if os.path.exists(v_log) and "Valgrind" in self.instance.reason:
             self.log_info("{}".format(v_log), inline_logs)
+        elif os.path.exists(pytest_log) and os.path.getsize(pytest_log) > 0:
+            self.log_info("{}".format(pytest_log), inline_logs, log_testcases=True)
         elif os.path.exists(h_log) and os.path.getsize(h_log) > 0:
             self.log_info("{}".format(h_log), inline_logs)
         elif os.path.exists(d_log) and os.path.getsize(d_log) > 0:
@@ -563,12 +597,12 @@ class ProjectBuilder(FilterBuilder):
         self.instance.setup_handler(self.env)
 
         if op == "filter":
-            res = self.cmake(filter_stages=self.instance.filter_stages)
+            ret = self.cmake(filter_stages=self.instance.filter_stages)
             if self.instance.status in ["failed", "error"]:
                 pipeline.put({"op": "report", "test": self.instance})
             else:
                 # Here we check the dt/kconfig filter results coming from running cmake
-                if self.instance.name in res['filter'] and res['filter'][self.instance.name]:
+                if self.instance.name in ret['filter'] and ret['filter'][self.instance.name]:
                     logger.debug("filtering %s" % self.instance.name)
                     self.instance.status = "filtered"
                     self.instance.reason = "runtime filter"
@@ -579,8 +613,8 @@ class ProjectBuilder(FilterBuilder):
                     pipeline.put({"op": "cmake", "test": self.instance})
 
         # The build process, call cmake and build with configured generator
-        if op == "cmake":
-            res = self.cmake()
+        elif op == "cmake":
+            ret = self.cmake()
             if self.instance.status in ["failed", "error"]:
                 pipeline.put({"op": "report", "test": self.instance})
             elif self.options.cmake_only:
@@ -589,7 +623,7 @@ class ProjectBuilder(FilterBuilder):
                 pipeline.put({"op": "report", "test": self.instance})
             else:
                 # Here we check the runtime filter results coming from running cmake
-                if self.instance.name in res['filter'] and res['filter'][self.instance.name]:
+                if self.instance.name in ret['filter'] and ret['filter'][self.instance.name]:
                     logger.debug("filtering %s" % self.instance.name)
                     self.instance.status = "filtered"
                     self.instance.reason = "runtime filter"
@@ -601,8 +635,8 @@ class ProjectBuilder(FilterBuilder):
 
         elif op == "build":
             logger.debug("build test: %s" % self.instance.name)
-            res = self.build()
-            if not res:
+            ret = self.build()
+            if not ret:
                 self.instance.status = "error"
                 self.instance.reason = "Build Failure"
                 pipeline.put({"op": "report", "test": self.instance})
@@ -613,13 +647,19 @@ class ProjectBuilder(FilterBuilder):
                     results.skipped_runtime += 1
                     self.instance.add_missing_case_status("skipped", self.instance.reason)
 
-                if res.get('returncode', 1) > 0:
+                if ret.get('returncode', 1) > 0:
                     self.instance.add_missing_case_status("blocked", self.instance.reason)
                     pipeline.put({"op": "report", "test": self.instance})
                 else:
                     logger.debug(f"Determine test cases for test instance: {self.instance.name}")
-                    self.determine_testcases(results)
-                    pipeline.put({"op": "gather_metrics", "test": self.instance})
+                    try:
+                        self.determine_testcases(results)
+                        pipeline.put({"op": "gather_metrics", "test": self.instance})
+                    except BuildError as e:
+                        logger.error(str(e))
+                        self.instance.status = "error"
+                        self.instance.reason = str(e)
+                        pipeline.put({"op": "report", "test": self.instance})
 
         elif op == "gather_metrics":
             self.gather_metrics(self.instance)
@@ -673,10 +713,11 @@ class ProjectBuilder(FilterBuilder):
         yaml_testsuite_name = self.instance.testsuite.id
         logger.debug(f"Determine test cases for test suite: {yaml_testsuite_name}")
 
-        elf = ELFFile(open(self.instance.get_elf_file(), "rb"))
+        elf_file = self.instance.get_elf_file()
+        elf = ELFFile(open(elf_file, "rb"))
 
         logger.debug(f"Test instance {self.instance.name} already has {len(self.instance.testcases)} cases.")
-        new_ztest_unit_test_regex = re.compile(r"z_ztest_unit_test__([^\s]*)__([^\s]*)")
+        new_ztest_unit_test_regex = re.compile(r"z_ztest_unit_test__([^\s]+?)__([^\s]*)")
         detected_cases = []
         for section in elf.iter_sections():
             if isinstance(section, SymbolTableSection):
@@ -695,6 +736,7 @@ class ProjectBuilder(FilterBuilder):
                             detected_cases.append(testcase_id)
 
         if detected_cases:
+            logger.debug(f"{', '.join(detected_cases)} in {elf_file}")
             self.instance.testcases.clear()
             self.instance.testsuite.testcases.clear()
 
@@ -707,7 +749,7 @@ class ProjectBuilder(FilterBuilder):
                 self.instance.testsuite.add_testcase(name=testcase_id)
 
 
-    def cleanup_artifacts(self, additional_keep=[]):
+    def cleanup_artifacts(self, additional_keep: List[str] = []):
         logger.debug("Cleaning up {}".format(self.instance.build_dir))
         allow = [
             os.path.join('zephyr', '.config'),
@@ -748,9 +790,28 @@ class ProjectBuilder(FilterBuilder):
         files_to_keep = self._get_binaries()
         files_to_keep.append(os.path.join('zephyr', 'runners.yaml'))
 
+        if self.testsuite.sysbuild:
+            files_to_keep.append('domains.yaml')
+            for domain in self.instance.domains.get_domains():
+                files_to_keep += self._get_artifact_allow_list_for_domain(domain.name)
+
         self.cleanup_artifacts(files_to_keep)
 
         self._sanitize_files()
+
+    def _get_artifact_allow_list_for_domain(self, domain: str) -> List[str]:
+        """
+        Return a list of files needed to test a given domain.
+        """
+        allow = [
+            os.path.join(domain, 'build.ninja'),
+            os.path.join(domain, 'CMakeCache.txt'),
+            os.path.join(domain, 'CMakeFiles', 'rules.ninja'),
+            os.path.join(domain, 'Makefile'),
+            os.path.join(domain, 'zephyr', '.config'),
+            os.path.join(domain, 'zephyr', 'runners.yaml')
+            ]
+        return allow
 
     def _get_binaries(self) -> List[str]:
         """
@@ -766,7 +827,12 @@ class ProjectBuilder(FilterBuilder):
             for binary in platform.binaries:
                 binaries.append(os.path.join('zephyr', binary))
 
+        # Get binaries for a single-domain build
         binaries += self._get_binaries_from_runners()
+        # Get binaries in the case of a multiple-domain build
+        if self.testsuite.sysbuild:
+            for domain in self.instance.domains.get_domains():
+                binaries += self._get_binaries_from_runners(domain.name)
 
         # if binaries was not found in platform.binaries and runners.yaml take default ones
         if len(binaries) == 0:
@@ -778,12 +844,15 @@ class ProjectBuilder(FilterBuilder):
             ]
         return binaries
 
-    def _get_binaries_from_runners(self) -> List[str]:
+    def _get_binaries_from_runners(self, domain='') -> List[str]:
         """
         Get list of binaries paths (absolute or relative to the
-        self.instance.build_dir) from runners.yaml file.
+        self.instance.build_dir) from runners.yaml file. May be used for
+        multiple-domain builds by passing in one domain at a time.
         """
-        runners_file_path: str = os.path.join(self.instance.build_dir, 'zephyr', 'runners.yaml')
+
+        runners_file_path: str = os.path.join(self.instance.build_dir,
+                                              domain, 'zephyr', 'runners.yaml')
         if not os.path.exists(runners_file_path):
             return []
 
@@ -804,7 +873,7 @@ class ProjectBuilder(FilterBuilder):
             if os.path.isabs(binary_path):
                 binaries.append(binary_path)
             else:
-                binaries.append(os.path.join('zephyr', binary_path))
+                binaries.append(os.path.join(domain, 'zephyr', binary_path))
 
         return binaries
 
@@ -923,6 +992,8 @@ class ProjectBuilder(FilterBuilder):
                 if instance.handler.ready and instance.run:
                     more_info = instance.handler.type_str
                     htime = instance.execution_time
+                    if instance.dut:
+                        more_info += f": {instance.dut},"
                     if htime:
                         more_info += " {:.3f}s".format(htime)
                 else:
@@ -963,9 +1034,15 @@ class ProjectBuilder(FilterBuilder):
         sys.stdout.flush()
 
     @staticmethod
-    def cmake_assemble_args(args, handler, extra_conf_files, extra_overlay_confs,
+    def cmake_assemble_args(extra_args, handler, extra_conf_files, extra_overlay_confs,
                             extra_dtc_overlay_files, cmake_extra_args,
                             build_dir):
+        # Retain quotes around config options
+        config_options = [arg for arg in extra_args if arg.startswith("CONFIG_")]
+        args = [arg for arg in extra_args if not arg.startswith("CONFIG_")]
+
+        args_expanded = ["-D{}".format(a.replace('"', '\"')) for a in config_options]
+
         if handler.ready:
             args.extend(handler.args)
 
@@ -988,7 +1065,7 @@ class ProjectBuilder(FilterBuilder):
             args.append("OVERLAY_CONFIG=\"%s\"" % (" ".join(overlays)))
 
         # Build the final argument list
-        args_expanded = ["-D{}".format(a.replace('"', '\"')) for a in cmake_extra_args]
+        args_expanded.extend(["-D{}".format(a.replace('"', '\"')) for a in cmake_extra_args])
         args_expanded.extend(["-D{}".format(a.replace('"', '')) for a in args])
 
         return args_expanded
@@ -1003,23 +1080,34 @@ class ProjectBuilder(FilterBuilder):
             self.options.extra_args, # CMake extra args
             self.instance.build_dir,
         )
-
-        res = self.run_cmake(args,filter_stages)
-        return res
+        return self.run_cmake(args,filter_stages)
 
     def build(self):
-        res = self.run_build(['--build', self.build_dir])
-        return res
+        harness = HarnessImporter.get_harness(self.instance.testsuite.harness.capitalize())
+        build_result = self.run_build(['--build', self.build_dir])
+        try:
+            if harness:
+                harness.instance = self.instance
+                harness.build()
+        except ConfigurationError as error:
+            self.instance.status = "error"
+            self.instance.reason = str(error)
+            logger.error(self.instance.reason)
+            return
+        return build_result
 
     def run(self):
 
         instance = self.instance
 
         if instance.handler.ready:
+            logger.debug(f"Reset instance status from '{instance.status}' to None before run.")
+            instance.status = None
+
             if instance.handler.type_str == "device":
                 instance.handler.duts = self.duts
 
-            if(self.options.seed is not None and instance.platform.name.startswith("native_posix")):
+            if(self.options.seed is not None and instance.platform.name.startswith("native_")):
                 self.parse_generated()
                 if('CONFIG_FAKE_ENTROPY_NATIVE_POSIX' in self.defconfig and
                     self.defconfig['CONFIG_FAKE_ENTROPY_NATIVE_POSIX'] == 'y'):
@@ -1029,15 +1117,24 @@ class ProjectBuilder(FilterBuilder):
                 instance.handler.extra_test_args = self.options.extra_test_args
 
             harness = HarnessImporter.get_harness(instance.testsuite.harness.capitalize())
-            harness.configure(instance)
+            try:
+                harness.configure(instance)
+            except ConfigurationError as error:
+                instance.status = "error"
+                instance.reason = str(error)
+                logger.error(instance.reason)
+                return
+            #
             if isinstance(harness, Pytest):
-                harness.pytest_run(instance.handler.timeout)
+                harness.pytest_run(instance.handler.get_test_timeout())
             else:
                 instance.handler.handle(harness)
 
         sys.stdout.flush()
 
     def gather_metrics(self, instance: TestInstance):
+        if self.options.create_rom_ram_report:
+            self.run_build(['--build', self.build_dir, "--target", "footprint"])
         if self.options.enable_size_report and not self.options.cmake_only:
             self.calc_size(instance=instance, from_buildlog=self.options.footprint_from_buildlog)
         else:
@@ -1195,12 +1292,17 @@ class TwisterRunner:
                 instance.filter_stages = []
                 if instance.testsuite.filter:
                     instance.filter_stages = self.get_cmake_filter_stages(instance.testsuite.filter, expr_parser.reserved.keys())
+
                 if test_only and instance.run:
                     pipeline.put({"op": "run", "test": instance})
                 elif instance.filter_stages and "full" not in instance.filter_stages:
                     pipeline.put({"op": "filter", "test": instance})
                 else:
-                    pipeline.put({"op": "cmake", "test": instance})
+                    cache_file = os.path.join(instance.build_dir, "CMakeCache.txt")
+                    if os.path.exists(cache_file) and self.env.options.aggressive_no_clean:
+                        pipeline.put({"op": "build", "test": instance})
+                    else:
+                        pipeline.put({"op": "cmake", "test": instance})
 
 
     def pipeline_mgr(self, pipeline, done_queue, lock, results):
@@ -1240,11 +1342,11 @@ class TwisterRunner:
 
         processes = []
 
-        for job in range(self.jobs):
-            logger.debug(f"Launch process {job}")
+        for _ in range(self.jobs):
             p = Process(target=self.pipeline_mgr, args=(pipeline, done, lock, self.results, ))
             processes.append(p)
             p.start()
+        logger.debug(f"Launched {self.jobs} jobs")
 
         try:
             for p in processes:

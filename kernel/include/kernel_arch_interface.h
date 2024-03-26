@@ -192,7 +192,7 @@ int arch_float_disable(struct k_thread *thread);
  *
  * The function is used to enable the preservation of floating
  * point context information for a particular thread.
- * This API depends on each architecture implimentation. If the architecture
+ * This API depends on each architecture implementation. If the architecture
  * does not support enabling, this API will always be failed.
  *
  * The @a options parameter indicates which floating point register sets will
@@ -402,9 +402,17 @@ void arch_mem_page_in(void *addr, uintptr_t phys);
  */
 void arch_mem_scratch(uintptr_t phys);
 
+/**
+ * Status of a particular page location.
+ */
 enum arch_page_location {
+	/** The page has been evicted to the backing store. */
 	ARCH_PAGE_LOCATION_PAGED_OUT,
+
+	/** The page is resident in memory. */
 	ARCH_PAGE_LOCATION_PAGED_IN,
+
+	/** The page is not mapped. */
 	ARCH_PAGE_LOCATION_BAD
 };
 
@@ -552,11 +560,8 @@ int arch_printk_char_out(int c);
 /**
  * Architecture-specific kernel initialization hook
  *
- * This function is invoked near the top of _Cstart, for additional
+ * This function is invoked near the top of z_cstart, for additional
  * architecture-specific setup before the rest of the kernel is brought up.
- *
- * TODO: Deprecate, most arches are using a prep_c() function to do the same
- * thing in a simpler way
  */
 static inline void arch_kernel_init(void);
 
@@ -597,7 +602,7 @@ uint16_t arch_coredump_tgt_code_get(void);
  * @brief Setup Architecture-specific TLS area in stack
  *
  * This sets up the stack area for thread local storage.
- * The structure inside in area is architecture specific.
+ * The structure inside TLS area is architecture specific.
  *
  * @param new_thread New thread object
  * @param stack_ptr Stack pointer

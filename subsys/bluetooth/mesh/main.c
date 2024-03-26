@@ -18,7 +18,6 @@
 #include <common/bt_str.h>
 
 #include "test.h"
-#include "adv.h"
 #include "prov.h"
 #include "provisioner.h"
 #include "net.h"
@@ -58,6 +57,7 @@ int bt_mesh_provision(const uint8_t net_key[16], uint16_t net_idx,
 	}
 
 	struct bt_mesh_cdb_subnet *subnet = NULL;
+	struct bt_mesh_cdb_node *node = NULL;
 
 	LOG_INF("Primary Element: 0x%04x", addr);
 	LOG_DBG("net_idx 0x%04x flags 0x%02x iv_index 0x%04x", net_idx, flags, iv_index);
@@ -70,7 +70,6 @@ int bt_mesh_provision(const uint8_t net_key[16], uint16_t net_idx,
 	    atomic_test_bit(bt_mesh_cdb.flags, BT_MESH_CDB_VALID)) {
 		const struct bt_mesh_comp *comp;
 		const struct bt_mesh_prov *prov;
-		struct bt_mesh_cdb_node *node;
 
 		comp = bt_mesh_comp_get();
 		if (comp == NULL) {
@@ -101,16 +100,16 @@ int bt_mesh_provision(const uint8_t net_key[16], uint16_t net_idx,
 			subnet->kr_phase = BT_MESH_KR_NORMAL;
 		}
 
+		/* The primary network key has been imported during cdb creation.
+		 * Importing here leaves it 'as is' if the key is the same.
+		 * Otherwise, cdb replaces the old one with the new one.
+		 */
 		err = bt_mesh_cdb_subnet_key_import(subnet, BT_MESH_KEY_REFRESH(flags) ? 1 : 0,
 						    net_key);
 		if (err) {
 			LOG_ERR("Failed to import cdb network key");
 			goto end;
 		}
-		memcpy(&mesh_net_key, &subnet->keys[BT_MESH_KEY_REFRESH(flags) ? 1 : 0].net_key,
-		       sizeof(struct bt_mesh_key));
-		is_net_key_valid = true;
-
 		bt_mesh_cdb_subnet_store(subnet);
 
 		addr = node->addr;
@@ -121,27 +120,25 @@ int bt_mesh_provision(const uint8_t net_key[16], uint16_t net_idx,
 			LOG_ERR("Failed to import cdb device key");
 			goto end;
 		}
-		memcpy(&mesh_dev_key, &node->dev_key, sizeof(struct bt_mesh_key));
-		is_dev_key_valid = true;
 
 		if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
 			bt_mesh_cdb_node_store(node);
 		}
-	} else {
-		err = bt_mesh_key_import(BT_MESH_KEY_TYPE_NET, net_key, &mesh_net_key);
-		if (err) {
-			LOG_ERR("Failed to import network key");
-			goto end;
-		}
-		is_net_key_valid = true;
-
-		err = bt_mesh_key_import(BT_MESH_KEY_TYPE_DEV, dev_key, &mesh_dev_key);
-		if (err) {
-			LOG_ERR("Failed to import device key");
-			goto end;
-		}
-		is_dev_key_valid = true;
 	}
+
+	err = bt_mesh_key_import(BT_MESH_KEY_TYPE_DEV, dev_key, &mesh_dev_key);
+	if (err) {
+		LOG_ERR("Failed to import device key");
+		goto end;
+	}
+	is_dev_key_valid = true;
+
+	err = bt_mesh_key_import(BT_MESH_KEY_TYPE_NET, net_key, &mesh_net_key);
+	if (err) {
+		LOG_ERR("Failed to import network key");
+		goto end;
+	}
+	is_net_key_valid = true;
 
 	err = bt_mesh_net_create(net_idx, flags, &mesh_net_key, iv_index);
 	if (err) {
@@ -169,6 +166,10 @@ int bt_mesh_provision(const uint8_t net_key[16], uint16_t net_idx,
 	bt_mesh_start();
 
 end:
+	if (err && node != NULL && IS_ENABLED(CONFIG_BT_MESH_CDB)) {
+		bt_mesh_cdb_node_del(node, true);
+	}
+
 	if (err && is_dev_key_valid) {
 		bt_mesh_key_destroy(&mesh_dev_key);
 	}
@@ -358,6 +359,7 @@ void bt_mesh_reset(void)
 	 */
 	(void)k_work_cancel_delayable(&bt_mesh.ivu_timer);
 
+	bt_mesh_access_reset();
 	bt_mesh_model_reset();
 	bt_mesh_cfg_default_set();
 	bt_mesh_trans_reset();
@@ -399,16 +401,16 @@ void bt_mesh_reset(void)
 
 	bt_mesh_comp_unprovision();
 
+	if (IS_ENABLED(CONFIG_BT_MESH_PROXY_SOLICITATION)) {
+		bt_mesh_sol_reset();
+	}
+
 	if (IS_ENABLED(CONFIG_BT_SETTINGS)) {
 		bt_mesh_settings_store_pending();
 	}
 
 	if (IS_ENABLED(CONFIG_BT_MESH_PROV)) {
 		bt_mesh_prov_reset();
-	}
-
-	if (IS_ENABLED(CONFIG_BT_MESH_PROXY_SOLICITATION)) {
-		bt_mesh_sol_reset();
 	}
 }
 
@@ -417,7 +419,7 @@ bool bt_mesh_is_provisioned(void)
 	return atomic_test_bit(bt_mesh.flags, BT_MESH_VALID);
 }
 
-static void model_suspend(struct bt_mesh_model *mod, struct bt_mesh_elem *elem,
+static void model_suspend(const struct bt_mesh_model *mod, const struct bt_mesh_elem *elem,
 			  bool vnd, bool primary, void *user_data)
 {
 	if (mod->pub && mod->pub->update) {
@@ -458,10 +460,35 @@ int bt_mesh_suspend(void)
 
 	bt_mesh_model_foreach(model_suspend, NULL);
 
+	bt_mesh_access_suspend();
+
+	if (IS_ENABLED(CONFIG_BT_MESH_PB_GATT)) {
+		err = bt_mesh_pb_gatt_srv_disable();
+		if (err && err != -EALREADY) {
+			LOG_WRN("Disabling PB-GATT failed (err %d)", err);
+			return err;
+		}
+	}
+
+	if (IS_ENABLED(CONFIG_BT_MESH_GATT_PROXY)) {
+		err = bt_mesh_proxy_gatt_disable();
+		if (err && err != -EALREADY) {
+			LOG_WRN("Disabling GATT proxy failed (err %d)", err);
+			return err;
+		}
+	}
+
+	err = bt_mesh_adv_disable();
+	if (err) {
+		atomic_clear_bit(bt_mesh.flags, BT_MESH_SUSPENDED);
+		LOG_WRN("Disabling advertisers failed (err %d)", err);
+		return err;
+	}
+
 	return 0;
 }
 
-static void model_resume(struct bt_mesh_model *mod, struct bt_mesh_elem *elem,
+static void model_resume(const struct bt_mesh_model *mod, const struct bt_mesh_elem *elem,
 			  bool vnd, bool primary, void *user_data)
 {
 	if (mod->pub && mod->pub->update) {
@@ -486,6 +513,33 @@ int bt_mesh_resume(void)
 		return -EALREADY;
 	}
 
+	if (!IS_ENABLED(CONFIG_BT_EXT_ADV)) {
+		bt_mesh_adv_init();
+	}
+
+	err = bt_mesh_adv_enable();
+	if (err) {
+		atomic_set_bit(bt_mesh.flags, BT_MESH_SUSPENDED);
+		LOG_WRN("Re-enabling advertisers failed (err %d)", err);
+		return err;
+	}
+
+	if (IS_ENABLED(CONFIG_BT_MESH_GATT_PROXY) && bt_mesh_is_provisioned()) {
+		err = bt_mesh_proxy_gatt_enable();
+		if (err) {
+			LOG_WRN("Re-enabling GATT proxy failed (err %d)", err);
+			return err;
+		}
+	}
+
+	if (IS_ENABLED(CONFIG_BT_MESH_PB_GATT) && !bt_mesh_is_provisioned()) {
+		err = bt_mesh_pb_gatt_srv_enable();
+		if (err) {
+			LOG_WRN("Re-enabling PB-GATT failed (err %d)", err);
+			return err;
+		}
+	}
+
 	err = bt_mesh_scan_enable();
 	if (err) {
 		LOG_WRN("Re-enabling scanning failed (err %d)", err);
@@ -502,7 +556,13 @@ int bt_mesh_resume(void)
 
 	bt_mesh_model_foreach(model_resume, NULL);
 
-	return err;
+	err = bt_mesh_adv_gatt_send();
+	if (err && (err != -ENOTSUP)) {
+		LOG_WRN("GATT send failed (err %d)", err);
+		return err;
+	}
+
+	return 0;
 }
 
 int bt_mesh_init(const struct bt_mesh_prov *prov,
@@ -539,6 +599,7 @@ int bt_mesh_init(const struct bt_mesh_prov *prov,
 	bt_mesh_cfg_default_set();
 	bt_mesh_net_init();
 	bt_mesh_trans_init();
+	bt_mesh_access_init();
 	bt_mesh_hb_init();
 	bt_mesh_beacon_init();
 	bt_mesh_adv_init();
@@ -550,7 +611,7 @@ int bt_mesh_init(const struct bt_mesh_prov *prov,
 	return 0;
 }
 
-static void model_start(struct bt_mesh_model *mod, struct bt_mesh_elem *elem,
+static void model_start(const struct bt_mesh_model *mod, const struct bt_mesh_elem *elem,
 			bool vnd, bool primary, void *user_data)
 {
 	if (mod->cb && mod->cb->start) {

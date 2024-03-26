@@ -5,7 +5,7 @@
  */
 
 #include <zephyr/usb/usbd.h>
-#include <zephyr/toolchain/common.h>
+#include <zephyr/toolchain.h>
 #include <zephyr/drivers/usb/udc.h>
 #include <zephyr/sys/slist.h>
 #include <zephyr/sys/iterable_sections.h>
@@ -313,7 +313,7 @@ int usbd_register_class(struct usbd_contex *const uds_ctx,
 
 	/* TODO: does it still need to be atomic ? */
 	if (atomic_test_bit(&data->state, USBD_CCTX_REGISTERED)) {
-		LOG_WRN("Class instance allready registered");
+		LOG_WRN("Class instance already registered");
 		ret = -EBUSY;
 		goto register_class_error;
 	}

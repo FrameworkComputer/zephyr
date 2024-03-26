@@ -40,6 +40,8 @@ struct udc_device_caps {
 	uint32_t rwup : 1;
 	/** Controller performs status OUT stage automatically */
 	uint32_t out_ack : 1;
+	/** Controller expects device address to be set before status stage */
+	uint32_t addr_before_status : 1;
 	/** Maximum packet size for control endpoint */
 	enum udc_mps0 mps0 : 2;
 };
@@ -215,7 +217,7 @@ typedef int (*udc_event_cb_t)(const struct device *dev,
  * @brief UDC driver API
  * This is the mandatory API any USB device controller driver needs to expose
  * with exception of:
- *   device_speed() used by udc_device_speed(), not required for FS only devices
+ *   device_speed(), test_mode() are only required for HS controllers
  */
 struct udc_api {
 	enum udc_bus_speed (*device_speed)(const struct device *dev);
@@ -237,6 +239,8 @@ struct udc_api {
 	int (*host_wakeup)(const struct device *dev);
 	int (*set_address)(const struct device *dev,
 			   const uint8_t addr);
+	int (*test_mode)(const struct device *dev,
+			 const uint8_t mode, const bool dryrun);
 	int (*enable)(const struct device *dev);
 	int (*disable)(const struct device *dev);
 	int (*init)(const struct device *dev);
@@ -445,6 +449,42 @@ static inline int udc_set_address(const struct device *dev, const uint8_t addr)
 }
 
 /**
+ * @brief Enable Test Mode.
+ *
+ * For compliance testing, high-speed controllers must support test modes.
+ * A particular test is enabled by a SetFeature(TEST_MODE) request.
+ * To disable a test mode, device needs to be power cycled.
+ *
+ * @param[in] dev    Pointer to device struct of the driver instance
+ * @param[in] mode   Test mode
+ * @param[in] dryrun Verify that a particular mode can be enabled, but do not
+ *                   enable test mode
+ *
+ * @return 0 on success, all other values should be treated as error.
+ * @retval -ENOTSUP Test mode is not supported
+ */
+static inline int udc_test_mode(const struct device *dev,
+				const uint8_t mode, const bool dryrun)
+{
+	const struct udc_api *api = dev->api;
+	int ret;
+
+	if (!udc_is_enabled(dev)) {
+		return -EPERM;
+	}
+
+	if (api->test_mode != NULL) {
+		api->lock(dev);
+		ret = api->test_mode(dev, mode, dryrun);
+		api->unlock(dev);
+	} else {
+		ret = -ENOTSUP;
+	}
+
+	return ret;
+}
+
+/**
  * @brief Initiate host wakeup procedure.
  *
  * Initiate host wakeup. Only possible when the bus is suspended.
@@ -478,7 +518,7 @@ static inline int udc_host_wakeup(const struct device *dev)
  * of the endpoint. All properties of the descriptor,
  * such as direction, and transfer type, should be set correctly.
  * If wMaxPacketSize value is zero, it will be
- * updated to maximum buffer size of the enpoint.
+ * updated to maximum buffer size of the endpoint.
  *
  * @param[in] dev        Pointer to device struct of the driver instance
  * @param[in] ep         Endpoint address (same as bEndpointAddress)

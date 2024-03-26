@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/*
+ * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
+ * #line marks the *next* line, so it is off by one.
+ */
+#line 12
+
 #define DT_DRV_COMPAT ite_it8xxx2_adc
 
 #define LOG_LEVEL CONFIG_ADC_LOG_LEVEL
@@ -41,6 +47,12 @@ LOG_MODULE_REGISTER(adc_ite_it8xxx2);
 #define ADC_0_7_FULL_SCALE_MASK   GENMASK(7, 0)
 #define ADC_8_10_FULL_SCALE_MASK  GENMASK(2, 0)
 #define ADC_13_16_FULL_SCALE_MASK GENMASK(3, 0)
+#endif
+
+#ifdef CONFIG_SOC_IT8XXX2_EC_BUS_24MHZ
+/* Select analog clock division factor */
+#define ADC_SACLKDIV_MASK   GENMASK(6, 4)
+#define ADC_SACLKDIV(div)   FIELD_PREP(ADC_SACLKDIV_MASK, div)
 #endif
 
 /* List of ADC channels. */
@@ -451,6 +463,11 @@ static int adc_it8xxx2_init(const struct device *dev)
 	 * SCLKDIV has to be equal to or greater than 1h;
 	 */
 	adc_regs->ADCCTL = 1;
+
+#ifdef CONFIG_SOC_IT8XXX2_EC_BUS_24MHZ
+	adc_regs->ADCCTL1 =
+		(adc_regs->ADCCTL1 & ~ADC_SACLKDIV_MASK) | ADC_SACLKDIV(2);
+#endif
 	/*
 	 * Enable this bit, and data of VCHxDATL/VCHxDATM will be
 	 * kept until data valid is cleared.

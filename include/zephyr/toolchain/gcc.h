@@ -7,6 +7,10 @@
 #ifndef ZEPHYR_INCLUDE_TOOLCHAIN_GCC_H_
 #define ZEPHYR_INCLUDE_TOOLCHAIN_GCC_H_
 
+#ifndef ZEPHYR_INCLUDE_TOOLCHAIN_H_
+#error Please do not include toolchain-specific headers directly, use <zephyr/toolchain.h> instead
+#endif
+
 /**
  * @file
  * @brief GCC toolchain abstraction
@@ -29,6 +33,8 @@
 #if !defined(TOOLCHAIN_HAS_C_AUTO_TYPE) && (TOOLCHAIN_GCC_VERSION >= 40900)
 #define TOOLCHAIN_HAS_C_AUTO_TYPE 1
 #endif
+
+#define TOOLCHAIN_HAS_ZLA 1
 
 /*
  * Older versions of GCC do not define __BYTE_ORDER__, so it must be manually
@@ -97,7 +103,7 @@
 #define FUNC_ALIAS(real_func, new_alias, return_type) \
 	return_type new_alias() ALIAS_OF(real_func)
 
-#if defined(CONFIG_ARCH_POSIX)
+#if defined(CONFIG_ARCH_POSIX) && !defined(_ASMLANGUAGE)
 #include <zephyr/arch/posix/posix_trace.h>
 
 /*let's not segfault if this were to happen for some reason*/
@@ -123,12 +129,12 @@
 #endif
 
 /* Unaligned access */
-#define UNALIGNED_GET(p)						\
+#define UNALIGNED_GET(g)						\
 __extension__ ({							\
 	struct  __attribute__((__packed__)) {				\
-		__typeof__(*(p)) __v;					\
-	} *__p = (__typeof__(__p)) (p);					\
-	__p->__v;							\
+		__typeof__(*(g)) __v;					\
+	} *__g = (__typeof__(__g)) (g);					\
+	__g->__v;							\
 })
 
 
@@ -194,8 +200,13 @@ do {                                                                    \
 #if !defined(CONFIG_XIP)
 #define __ramfunc
 #elif defined(CONFIG_ARCH_HAS_RAMFUNC_SUPPORT)
+#if defined(CONFIG_ARM)
 #define __ramfunc	__attribute__((noinline))			\
 			__attribute__((long_call, section(".ramfunc")))
+#else
+#define __ramfunc	__attribute__((noinline))			\
+			__attribute__((section(".ramfunc")))
+#endif
 #endif /* !CONFIG_XIP */
 
 #ifndef __fallthrough
@@ -261,6 +272,10 @@ do {                                                                    \
 
 #ifndef __weak
 #define __weak __attribute__((__weak__))
+#endif
+
+#ifndef __attribute_nonnull
+#define __attribute_nonnull(...) __attribute__((nonnull(__VA_ARGS__)))
 #endif
 
 /* Builtins with availability that depend on the compiler version. */
@@ -633,11 +648,19 @@ do {                                                                    \
  *
  * @note Only supported for GCC >= 11.0.0 or Clang >= 7.
  */
-#if (TOOLCHAIN_GCC_VERSION >= 110000) || (TOOLCHAIN_CLANG_VERSION >= 70000)
+#if (TOOLCHAIN_GCC_VERSION >= 110000) || \
+	(defined(TOOLCHAIN_CLANG_VERSION) && (TOOLCHAIN_CLANG_VERSION >= 70000))
 #define FUNC_NO_STACK_PROTECTOR __attribute__((no_stack_protector))
 #else
 #define FUNC_NO_STACK_PROTECTOR
 #endif
+
+#define TOOLCHAIN_IGNORE_WSHADOW_BEGIN \
+	_Pragma("GCC diagnostic push") \
+	_Pragma("GCC diagnostic ignored \"-Wshadow\"")
+
+#define TOOLCHAIN_IGNORE_WSHADOW_END \
+	_Pragma("GCC diagnostic pop")
 
 #endif /* !_LINKER */
 #endif /* ZEPHYR_INCLUDE_TOOLCHAIN_GCC_H_ */

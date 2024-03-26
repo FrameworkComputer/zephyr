@@ -4,11 +4,6 @@
 
 / {
 	pcie0 {
-		#address-cells = <1>;
-		#size-cells = <1>;
-		compatible = "intel,pcie";
-		ranges;
-
 		nvme0: nvme0 {
 			compatible = "nvme-controller";
 
@@ -17,5 +12,12 @@
 
 			status = "okay";
 		};
+	};
+
+	ramdisk0 {
+		compatible = "zephyr,ram-disk";
+		disk-name = "RAM";
+		sector-size = <512>;
+		sector-count = <192>;
 	};
 };
