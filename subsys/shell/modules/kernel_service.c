@@ -5,6 +5,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/*
+ * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
+ * #line marks the *next* line, so it is off by one.
+ */
+#line 13
+#include <version.h>
+
 #include <zephyr/sys/printk.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/init.h>
@@ -16,7 +23,7 @@
 #include <zephyr/kernel.h>
 #include <kernel_internal.h>
 #include <stdlib.h>
-#if defined(CONFIG_SYS_HEAP_RUNTIME_STATS) && (CONFIG_HEAP_MEM_POOL_SIZE > 0)
+#if defined(CONFIG_SYS_HEAP_RUNTIME_STATS) && (K_HEAP_MEM_POOL_SIZE > 0)
 #include <zephyr/sys/sys_heap.h>
 #endif
 #if defined(CONFIG_LOG_RUNTIME_FILTERING)
@@ -32,25 +39,52 @@
 static int cmd_kernel_version(const struct shell *sh,
 			      size_t argc, char **argv)
 {
-	uint32_t version = sys_kernel_version_get();
-
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
-	shell_print(sh, "Zephyr version %d.%d.%d",
-		      SYS_KERNEL_VER_MAJOR(version),
-		      SYS_KERNEL_VER_MINOR(version),
-		      SYS_KERNEL_VER_PATCHLEVEL(version));
+	shell_print(sh, "Zephyr version %s", KERNEL_VERSION_STRING);
 	return 0;
 }
 
-static int cmd_kernel_uptime(const struct shell *sh,
-			     size_t argc, char **argv)
+#define MINUTES_FACTOR (MSEC_PER_SEC * SEC_PER_MIN)
+#define HOURS_FACTOR   (MINUTES_FACTOR * MIN_PER_HOUR)
+#define DAYS_FACTOR    (HOURS_FACTOR * HOUR_PER_DAY)
+
+static int cmd_kernel_uptime(const struct shell *sh, size_t argc, char **argv)
 {
 	ARG_UNUSED(argc);
 	ARG_UNUSED(argv);
 
-	shell_print(sh, "Uptime: %u ms", k_uptime_get_32());
+	int64_t milliseconds = k_uptime_get();
+	int64_t days;
+	int64_t hours;
+	int64_t minutes;
+	int64_t seconds;
+
+	if (argc == 1) {
+		shell_print(sh, "Uptime: %llu ms", milliseconds);
+		return 0;
+	}
+
+	/* No need to enable the getopt and getopt_long for just one option. */
+	if (strcmp("-p", argv[1]) && strcmp("--pretty", argv[1]) != 0) {
+		shell_error(sh, "Usupported option: %s", argv[1]);
+		return -EIO;
+	}
+
+	days = milliseconds / DAYS_FACTOR;
+	milliseconds %= DAYS_FACTOR;
+	hours = milliseconds / HOURS_FACTOR;
+	milliseconds %= HOURS_FACTOR;
+	minutes = milliseconds / MINUTES_FACTOR;
+	milliseconds %= MINUTES_FACTOR;
+	seconds = milliseconds / MSEC_PER_SEC;
+	milliseconds = milliseconds % MSEC_PER_SEC;
+
+	shell_print(sh,
+		    "uptime: %llu days, %llu hours, %llu minutes, %llu seconds, %llu milliseconds",
+		    days, hours, minutes, seconds, milliseconds);
+
 	return 0;
 }
 
@@ -165,11 +199,12 @@ static int cmd_kernel_threads(const struct shell *sh,
 	shell_print(sh, "Scheduler: %u since last call", sys_clock_elapsed());
 	shell_print(sh, "Threads:");
 
-#ifdef CONFIG_SMP
+	/*
+	 * Use the unlocked version as the callback itself might call
+	 * arch_irq_unlock.
+	 */
 	k_thread_foreach_unlocked(shell_tdata_dump, (void *)sh);
-#else
-	k_thread_foreach(shell_tdata_dump, (void *)sh);
-#endif
+
 	return 0;
 }
 
@@ -213,11 +248,11 @@ static int cmd_kernel_stacks(const struct shell *sh,
 
 	memset(pad, ' ', MAX((THREAD_MAX_NAM_LEN - strlen("IRQ 00")), 1));
 
-#ifdef CONFIG_SMP
+	/*
+	 * Use the unlocked version as the callback itself might call
+	 * arch_irq_unlock.
+	 */
 	k_thread_foreach_unlocked(shell_stack_dump, (void *)sh);
-#else
-	k_thread_foreach(shell_stack_dump, (void *)sh);
-#endif
 
 	/* Placeholder logic for interrupt stack until we have better
 	 * kernel support, including dumping arch-specific exception-related
@@ -244,7 +279,7 @@ static int cmd_kernel_stacks(const struct shell *sh,
 }
 #endif
 
-#if defined(CONFIG_SYS_HEAP_RUNTIME_STATS) && (CONFIG_HEAP_MEM_POOL_SIZE > 0)
+#if defined(CONFIG_SYS_HEAP_RUNTIME_STATS) && (K_HEAP_MEM_POOL_SIZE > 0)
 extern struct sys_heap _system_heap;
 
 static int cmd_kernel_heap(const struct shell *sh,
@@ -368,10 +403,11 @@ SHELL_STATIC_SUBCMD_SET_CREATE(sub_kernel,
 	SHELL_CMD(stacks, NULL, "List threads stack usage.", cmd_kernel_stacks),
 	SHELL_CMD(threads, NULL, "List kernel threads.", cmd_kernel_threads),
 #endif
-#if defined(CONFIG_SYS_HEAP_RUNTIME_STATS) && (CONFIG_HEAP_MEM_POOL_SIZE > 0)
+#if defined(CONFIG_SYS_HEAP_RUNTIME_STATS) && (K_HEAP_MEM_POOL_SIZE > 0)
 	SHELL_CMD(heap, NULL, "System heap usage statistics.", cmd_kernel_heap),
 #endif
-	SHELL_CMD(uptime, NULL, "Kernel uptime.", cmd_kernel_uptime),
+	SHELL_CMD_ARG(uptime, NULL, "Kernel uptime. Can be called with the -p or --pretty options",
+		      cmd_kernel_uptime, 1, 1),
 	SHELL_CMD(version, NULL, "Kernel version.", cmd_kernel_version),
 	SHELL_CMD_ARG(sleep, NULL, "ms", cmd_kernel_sleep, 2, 0),
 #if defined(CONFIG_LOG_RUNTIME_FILTERING)

@@ -67,9 +67,9 @@ template <new?assignees=&labels=Role+Nomination&template=006_nomination.md&title
 
 Contributors granted the Triage permission level are permitted to add reviewers
 to a pull request and can be added as a reviewer by other GitHub users.
-Contributor votes on pull requests are not counted with respect to accepting and
-merging a pull request. However, Contributors comments and requested changes
-should still be considered by the pull request author.
+Contributor change requests or approval on pull requests are not counted with
+respect to accepting and merging a pull request. However, Contributors comments
+and requested changes should still be considered by the pull request author.
 
 Collaborator
 ++++++++++++
@@ -95,7 +95,14 @@ Contributors are promoted to the Collaborator role by adding the GitHub user
 name to one or more ``collaborators`` sections of the :ref:`maintainers_file` in
 the Zephyr repository.
 
-Collaborator votes on pull requests can block or approve the pull request.
+Collaborator change requests on pull requests should
+be addressed by the original submitter. In cases where the changes requested do
+not follow the :ref:`expectations <reviewer-expectations>` and the guidelines
+of the project or in cases of disagreement, it is the responsibility of the
+assignee to advance the review process and resolve any disagreements.
+
+Collaborator approval of pull requests are counted toward the minimum required
+approvals needed to merge a PR. Other criteria for merging may apply.
 
 Maintainer
 ++++++++++
@@ -116,12 +123,15 @@ in addition to those listed for Contributors and Collaborators:
 * Responsibility to ensure all contributions of the project have been reviewed
   within reasonable time.
 * Responsibility to enforce the code of conduct.
+* Responsibility to triage static analysis issues in their code area.
+  See :ref:`static_analysis`.
 
 Contributors or Collaborators are promoted to the Maintainer role by adding the
 GitHub user name to one or more ``maintainers`` sections of the
 :ref:`maintainers_file` in the Zephyr repository.
 
-Maintainer votes on pull requests can block or approve the pull request.
+Maintainer approval of pull requests are counted toward the minimum
+required approvals needed to merge a PR. Other criteria for merging may apply.
 
 Role Retirement
 ###############
@@ -149,14 +159,36 @@ Assignees are set either automatically based on the code being changed or set
 by the other Maintainers, the Release Engineering team can set an assignee when
 the latter is not possible.
 
-* Right to dismiss stale reviews and seek reviews from additional maintainers,
-  developers and contributors
-* Right to block pull requests from being merged
+* Right to dismiss stale and unrelated reviews or reviews not following
+  :ref:`expectations <reviewer-expectations>` from reviewers and seek reviews
+  from additional maintainers, developers and contributors
+* Right to block pull requests from being merged until issues or changes
+  requested are addressed
 * Responsibility to re-assign a pull request if they are the original submitter
   of the code
 * Responsibility to drive the pull request to a mergeable state
 * Solicit approvals from maintainers of the subsystems affected
 * Responsibility to drive the :ref:`pr_technical_escalation` process
+
+Static Analysis Audit Team
+++++++++++++++++++++++++++
+
+The Static Analysis Audit team works closely with the release engineering
+team to ensure that static analysis defects opened during a release
+cycle are properly addressed. The team has the following rights and
+responsibilities:
+
+* Right to revert any triage in a static analysis tool (e.g: Coverity)
+  that does not follow the project expectations.
+* Responsibility to inform code owners about improper classifications.
+* Responsibility to alert TSC if any issues are not adequately addressed by the
+  responsible code owners.
+
+Joining the Static Analysis Audit team
+
+* Contributors highly involved in the project with some expertise
+  in static analysis.
+
 
 .. _release-engineering-team:
 
@@ -271,7 +303,7 @@ Generic guidelines for deciding and filling in the Maintainers' list
 
 * Pull requests may be re-assigned if this is needed or more appropriate
 
-  * Re-assigned by original assignee (see “Assignee” slide)
+  * Re-assigned by original assignee
 
 * In general, updates to the MAINTAINERS file should be
   in a standalone commit alongside other changes introducing new files and
@@ -314,7 +346,40 @@ Release Activity
 Merge Criteria
 ++++++++++++++
 
-* All continuous integration checks have passed
+* Minimal of 2 approvals, including an approval by the designated assignee.
+* Pull requests should be reviewed by at least a maintainer or collaborator of
+  each affected area; Unless the changes to a given area are considered trivial
+  enough, in which case approvals by other affected subsystems
+  maintainers/collaborators would suffice.
+* Four eye principle on the organisation level. We already require at least 2
+  approvals (basic four eye principle), however, such reviews and approvals
+  might be unintentionally biased in the case where the submitter is from the
+  same organisation as the approvers. To allow for project wide review and
+  approvals, the merge criteria is extended with the guidelines below:
+
+  * Changes or additions to common and shared code shall have approvals from
+    different organisations (at least one approval from an
+    organisation different than the submitters').
+    Common and shared code is defined as anything that does not fall under
+    :file:`soc`, :file:`boards` and :file:`drivers/*/*`.
+  * Changes or additions to hardware support (driver, SoC, boards) shall at
+    least have the merger be from a different organisation. This applies only
+    to implementation of an API supporting vendor specific hardware and not the
+    APIs.
+  * Release engineers may make exceptions for areas with contributions primarily
+    coming from one organisation and where reviews from other organisations are
+    not possible, however, merges shall be completed by a person from a different
+    organisation. In such cases, the minimum review period of at least 2 days
+    shall be strictly followed to allow for additional reviews.
+  * Release engineers shall not merge code changes originating and reviewed
+    only by their own organisation. To be able to merge such changes, at least
+    one review shall be from a different organisation.
+
+* A minimum review period of 2 business days, 4 hours for trivial changes (see
+  :ref:`review_time`).
+* Hotfixes can be merged at any time after CI has passed and are excluded from
+  most of the conditions listed above.
+* All required checks are passing:
 
   * Codeowners
   * Device Tree
@@ -322,7 +387,7 @@ Merge Criteria
   * Gitlint
   * Identity/Emails
   * Kconfig
-  * License
+  * License checks
   * Checkpatch (Coding Style)
   * Pylint
   * Integration Tests (Via twister) on emulation/simulation platforms
@@ -335,15 +400,3 @@ Merge Criteria
   * Coding Guidelines
   * Static Analysis (Coverity)
   * Documentation coverage (APIs)
-
-* PR template with checklist
-
-* Minimal of 2 approvals
-
-  * A collaborator from the same subsystem.
-  * Alternately another maintainer of another subsystem
-  * Approval by the assignee
-
-* A minimum review period of 2 days, 4 hours for trivial changes (see
-  :ref:`review_time`). Hotfixes can be merged at any time after CI passes.
-* All required checks are passing

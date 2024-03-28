@@ -1,6 +1,7 @@
 /*
  * Copyright (c) 2018 Savoir-Faire Linux.
  * Copyright (c) 2020 Peter Bigot Consulting, LLC
+ * Copyright (c) 2023 Intercreate, Inc.
  *
  * This driver is heavily inspired from the spi_flash_w25qxxdv.c SPI NOR driver.
  *
@@ -11,11 +12,13 @@
 
 #include <errno.h>
 #include <zephyr/drivers/flash.h>
+#include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/spi.h>
 #include <zephyr/init.h>
 #include <string.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys_clock.h>
+#include <zephyr/pm/device.h>
 
 #include "spi_nor.h"
 #include "jesd216.h"
@@ -61,10 +64,22 @@ LOG_MODULE_REGISTER(spi_nor, CONFIG_FLASH_LOG_LEVEL);
 #define T_DPDD_MS 0
 #endif /* DPD_WAKEUP_SEQUENCE */
 
+#define _INST_HAS_WP_OR(inst) DT_INST_NODE_HAS_PROP(inst, wp_gpios) ||
+#define ANY_INST_HAS_WP_GPIOS DT_INST_FOREACH_STATUS_OKAY(_INST_HAS_WP_OR) 0
+
+#define _INST_HAS_HOLD_OR(inst) DT_INST_NODE_HAS_PROP(inst, hold_gpios) ||
+#define ANY_INST_HAS_HOLD_GPIOS DT_INST_FOREACH_STATUS_OKAY(_INST_HAS_HOLD_OR) 0
+
+#define DEV_CFG(_dev_) ((const struct spi_nor_config * const) (_dev_)->config)
+
 /* Build-time data associated with the device. */
 struct spi_nor_config {
 	/* Devicetree SPI configuration */
 	struct spi_dt_spec spi;
+
+#if DT_INST_NODE_HAS_PROP(0, reset_gpios)
+	const struct gpio_dt_spec reset;
+#endif
 
 	/* Runtime SFDP stores no static configuration. */
 
@@ -101,6 +116,15 @@ struct spi_nor_config {
 	 * This information cannot be derived from SFDP.
 	 */
 	uint8_t has_lock;
+
+#if ANY_INST_HAS_WP_GPIOS
+	/* The write-protect GPIO (wp-gpios) */
+	const struct gpio_dt_spec *wp;
+#endif
+#if ANY_INST_HAS_HOLD_GPIOS
+	/* The hold GPIO (hold-gpios) */
+	const struct gpio_dt_spec *hold;
+#endif
 };
 
 /**
@@ -162,6 +186,13 @@ static const struct jesd216_erase_type minimal_erase_types[JESD216_NUM_ERASE_TYP
 };
 #endif /* CONFIG_SPI_NOR_SFDP_MINIMAL */
 
+/* Register writes should be ready extremely quickly */
+#define WAIT_READY_REGISTER K_NO_WAIT
+/* Page writes range from sub-ms to 10ms */
+#define WAIT_READY_WRITE K_TICKS(1)
+/* Erases can range from 45ms to 240sec */
+#define WAIT_READY_ERASE K_MSEC(50)
+
 static int spi_nor_write_protection_set(const struct device *dev,
 					bool write_protect);
 
@@ -202,7 +233,7 @@ static inline uint32_t dev_flash_size(const struct device *dev)
 static inline uint16_t dev_page_size(const struct device *dev)
 {
 #ifdef CONFIG_SPI_NOR_SFDP_MINIMAL
-	return 256;
+	return DT_INST_PROP_OR(0, page_size, 256);
 #else /* CONFIG_SPI_NOR_SFDP_MINIMAL */
 	const struct spi_nor_data *data = dev->data;
 
@@ -371,17 +402,27 @@ static int spi_nor_access(const struct device *const dev,
  * in the code.
  *
  * @param dev The device structure
+ * @param poll_delay Duration between polls of status register
  * @return 0 on success, negative errno code otherwise
  */
-static int spi_nor_wait_until_ready(const struct device *dev)
+static int spi_nor_wait_until_ready(const struct device *dev, k_timeout_t poll_delay)
 {
 	int ret;
 	uint8_t reg;
 
-	do {
-		ret = spi_nor_cmd_read(dev, SPI_NOR_CMD_RDSR, &reg, sizeof(reg));
-	} while (!ret && (reg & SPI_NOR_WIP_BIT));
+	ARG_UNUSED(poll_delay);
 
+	while (true) {
+		ret = spi_nor_cmd_read(dev, SPI_NOR_CMD_RDSR, &reg, sizeof(reg));
+		/* Exit on error or no longer WIP */
+		if (ret || !(reg & SPI_NOR_WIP_BIT)) {
+			break;
+		}
+#ifdef CONFIG_SPI_NOR_SLEEP_WHILE_WAITING_UNTIL_READY
+		/* Don't monopolise the CPU while waiting for ready */
+		k_sleep(poll_delay);
+#endif /* CONFIG_SPI_NOR_SLEEP_WHILE_WAITING_UNTIL_READY */
+	}
 	return ret;
 }
 
@@ -534,7 +575,7 @@ static int spi_nor_wrsr(const struct device *dev,
 	if (ret == 0) {
 		ret = spi_nor_access(dev, SPI_NOR_CMD_WRSR, NOR_ACCESS_WRITE, 0, &sr,
 				     sizeof(sr));
-		spi_nor_wait_until_ready(dev);
+		spi_nor_wait_until_ready(dev, WAIT_READY_REGISTER);
 	}
 
 	return ret;
@@ -602,7 +643,7 @@ static int mxicy_wrcr(const struct device *dev,
 
 		ret = spi_nor_access(dev, SPI_NOR_CMD_WRSR, NOR_ACCESS_WRITE, 0, data,
 			sizeof(data));
-		spi_nor_wait_until_ready(dev);
+		spi_nor_wait_until_ready(dev, WAIT_READY_REGISTER);
 	}
 
 	return ret;
@@ -635,6 +676,7 @@ static int mxicy_configure(const struct device *dev, const uint8_t *jedec_id)
 
 	ret = mxicy_rdcr(dev);
 	if (ret < 0) {
+		release_device(dev);
 		return ret;
 	}
 	current_cr = ret;
@@ -678,6 +720,34 @@ static int spi_nor_read(const struct device *dev, off_t addr, void *dest,
 	return ret;
 }
 
+#if defined(CONFIG_FLASH_EX_OP_ENABLED)
+static int flash_spi_nor_ex_op(const struct device *dev, uint16_t code,
+			const uintptr_t in, void *out)
+{
+	int ret;
+
+	ARG_UNUSED(in);
+	ARG_UNUSED(out);
+
+	acquire_device(dev);
+
+	switch (code) {
+	case FLASH_EX_OP_RESET:
+		ret = spi_nor_cmd_write(dev, SPI_NOR_CMD_RESET_EN);
+		if (ret == 0) {
+			ret = spi_nor_cmd_write(dev, SPI_NOR_CMD_RESET_MEM);
+		}
+		break;
+	default:
+		ret = -ENOTSUP;
+		break;
+	}
+
+	release_device(dev);
+	return ret;
+}
+#endif
+
 static int spi_nor_write(const struct device *dev, off_t addr,
 			 const void *src,
 			 size_t size)
@@ -719,7 +789,7 @@ static int spi_nor_write(const struct device *dev, off_t addr,
 			src = (const uint8_t *)src + to_write;
 			addr += to_write;
 
-			spi_nor_wait_until_ready(dev);
+			spi_nor_wait_until_ready(dev, WAIT_READY_WRITE);
 		}
 	}
 
@@ -774,7 +844,7 @@ static int spi_nor_erase(const struct device *dev, off_t addr, size_t size)
 
 				if ((etp->exp != 0)
 				    && SPI_NOR_IS_ALIGNED(addr, etp->exp)
-				    && SPI_NOR_IS_ALIGNED(size, etp->exp)
+				    && (size >= BIT(etp->exp))
 				    && ((bet == NULL)
 					|| (etp->exp > bet->exp))) {
 					bet = etp;
@@ -801,7 +871,7 @@ static int spi_nor_erase(const struct device *dev, off_t addr, size_t size)
 		 */
 		volatile int xcc_ret =
 #endif
-		spi_nor_wait_until_ready(dev);
+		spi_nor_wait_until_ready(dev, WAIT_READY_ERASE);
 	}
 
 	int ret2 = spi_nor_write_protection_set(dev, true);
@@ -823,6 +893,12 @@ static int spi_nor_write_protection_set(const struct device *dev,
 {
 	int ret;
 
+#if ANY_INST_HAS_WP_GPIOS
+	if (DEV_CFG(dev)->wp && write_protect == false) {
+		gpio_pin_set_dt(DEV_CFG(dev)->wp, 0);
+	}
+#endif
+
 	ret = spi_nor_cmd_write(dev, (write_protect) ?
 	      SPI_NOR_CMD_WRDI : SPI_NOR_CMD_WREN);
 
@@ -831,6 +907,12 @@ static int spi_nor_write_protection_set(const struct device *dev,
 	    && !write_protect) {
 		ret = spi_nor_cmd_write(dev, SPI_NOR_CMD_ULBPR);
 	}
+
+#if ANY_INST_HAS_WP_GPIOS
+	if (DEV_CFG(dev)->wp && write_protect == true) {
+		gpio_pin_set_dt(DEV_CFG(dev)->wp, 1);
+	}
+#endif
 
 	return ret;
 }
@@ -993,10 +1075,10 @@ static int spi_nor_process_sfdp(const struct device *dev)
 		/* We only process BFP so use one parameter block */
 		uint8_t raw[JESD216_SFDP_SIZE(decl_nph)];
 		struct jesd216_sfdp_header sfdp;
-	} u;
-	const struct jesd216_sfdp_header *hp = &u.sfdp;
+	} u_header;
+	const struct jesd216_sfdp_header *hp = &u_header.sfdp;
 
-	rc = spi_nor_sfdp_read(dev, 0, u.raw, sizeof(u.raw));
+	rc = spi_nor_sfdp_read(dev, 0, u_header.raw, sizeof(u_header.raw));
 	if (rc != 0) {
 		LOG_ERR("SFDP read failed: %d", rc);
 		return rc;
@@ -1026,10 +1108,11 @@ static int spi_nor_process_sfdp(const struct device *dev)
 			union {
 				uint32_t dw[MIN(php->len_dw, 20)];
 				struct jesd216_bfp bfp;
-			} u;
-			const struct jesd216_bfp *bfp = &u.bfp;
+			} u_param;
+			const struct jesd216_bfp *bfp = &u_param.bfp;
 
-			rc = spi_nor_sfdp_read(dev, jesd216_param_addr(php), u.dw, sizeof(u.dw));
+			rc = spi_nor_sfdp_read(dev, jesd216_param_addr(php),
+				u_param.dw, sizeof(u_param.dw));
 			if (rc == 0) {
 				rc = spi_nor_process_bfp(dev, php, bfp);
 			}
@@ -1143,14 +1226,37 @@ static int spi_nor_configure(const struct device *dev)
 		return -ENODEV;
 	}
 
+#if DT_INST_NODE_HAS_PROP(0, reset_gpios)
+	if (!gpio_is_ready_dt(&cfg->reset)) {
+		LOG_ERR("Reset pin not ready");
+		return -ENODEV;
+	}
+	if (gpio_pin_configure_dt(&cfg->reset, GPIO_OUTPUT_ACTIVE)) {
+		LOG_ERR("Couldn't configure reset pin");
+		return -ENODEV;
+	}
+	rc = gpio_pin_set_dt(&cfg->reset, 0);
+	if (rc) {
+		return rc;
+	}
+#endif
+
 	/* After a soft-reset the flash might be in DPD or busy writing/erasing.
 	 * Exit DPD and wait until flash is ready.
 	 */
 	acquire_device(dev);
+
+	rc = exit_dpd(dev);
+	if (rc < 0) {
+		LOG_ERR("Failed to exit DPD (%d)", rc);
+		release_device(dev);
+		return -ENODEV;
+	}
+
 	rc = spi_nor_rdsr(dev);
 	if (rc > 0 && (rc & SPI_NOR_WIP_BIT)) {
 		LOG_WRN("Waiting until flash is ready");
-		spi_nor_wait_until_ready(dev);
+		spi_nor_wait_until_ready(dev, WAIT_READY_REGISTER);
 	}
 	release_device(dev);
 
@@ -1193,12 +1299,12 @@ static int spi_nor_configure(const struct device *dev)
 			rc = spi_nor_wrsr(dev, rc & ~cfg->has_lock);
 		}
 
+		release_device(dev);
+
 		if (rc != 0) {
 			LOG_ERR("BP clear failed: %d\n", rc);
 			return -ENODEV;
 		}
-
-		release_device(dev);
 	}
 
 #ifdef CONFIG_SPI_NOR_SFDP_MINIMAL
@@ -1246,6 +1352,54 @@ static int spi_nor_configure(const struct device *dev)
 	return 0;
 }
 
+#ifdef CONFIG_PM_DEVICE
+
+static int spi_nor_pm_control(const struct device *dev, enum pm_device_action action)
+{
+	int rc = 0;
+
+	switch (action) {
+#ifdef CONFIG_SPI_NOR_IDLE_IN_DPD
+	case PM_DEVICE_ACTION_SUSPEND:
+	case PM_DEVICE_ACTION_RESUME:
+		break;
+#else
+	case PM_DEVICE_ACTION_SUSPEND:
+		acquire_device(dev);
+		rc = enter_dpd(dev);
+		release_device(dev);
+		break;
+	case PM_DEVICE_ACTION_RESUME:
+		acquire_device(dev);
+		rc = exit_dpd(dev);
+		release_device(dev);
+		break;
+#endif /* CONFIG_SPI_NOR_IDLE_IN_DPD */
+	case PM_DEVICE_ACTION_TURN_ON:
+		/* Coming out of power off */
+		rc = spi_nor_configure(dev);
+#ifndef CONFIG_SPI_NOR_IDLE_IN_DPD
+		if (rc == 0) {
+			/* Move to DPD, the correct device state
+			 * for PM_DEVICE_STATE_SUSPENDED
+			 */
+			acquire_device(dev);
+			rc = enter_dpd(dev);
+			release_device(dev);
+		}
+#endif /* CONFIG_SPI_NOR_IDLE_IN_DPD */
+		break;
+	case PM_DEVICE_ACTION_TURN_OFF:
+		break;
+	default:
+		rc = -ENOSYS;
+	}
+
+	return rc;
+}
+
+#endif /* CONFIG_PM_DEVICE */
+
 /**
  * @brief Initialize and configure the flash
  *
@@ -1259,6 +1413,31 @@ static int spi_nor_init(const struct device *dev)
 
 		k_sem_init(&driver_data->sem, 1, K_SEM_MAX_LIMIT);
 	}
+
+#if ANY_INST_HAS_WP_GPIOS
+	if (DEV_CFG(dev)->wp) {
+		if (!device_is_ready(DEV_CFG(dev)->wp->port)) {
+			LOG_ERR("Write-protect pin not ready");
+			return -ENODEV;
+		}
+		if (gpio_pin_configure_dt(DEV_CFG(dev)->wp, GPIO_OUTPUT_ACTIVE)) {
+			LOG_ERR("Write-protect pin failed to set active");
+			return -ENODEV;
+		}
+	}
+#endif /* ANY_INST_HAS_WP_GPIOS */
+#if ANY_INST_HAS_HOLD_GPIOS
+	if (DEV_CFG(dev)->hold) {
+		if (!device_is_ready(DEV_CFG(dev)->hold->port)) {
+			LOG_ERR("Hold pin not ready");
+			return -ENODEV;
+		}
+		if (gpio_pin_configure_dt(DEV_CFG(dev)->hold, GPIO_OUTPUT_INACTIVE)) {
+			LOG_ERR("Hold pin failed to set inactive");
+			return -ENODEV;
+		}
+	}
+#endif /* ANY_INST_HAS_HOLD_GPIOS */
 
 	return spi_nor_configure(dev);
 }
@@ -1304,6 +1483,9 @@ static const struct flash_driver_api spi_nor_api = {
 #if defined(CONFIG_FLASH_JESD216_API)
 	.sfdp_read = spi_nor_sfdp_read,
 	.read_jedec_id = spi_nor_read_jedec_id,
+#endif
+#if defined(CONFIG_FLASH_EX_OP_ENABLED)
+	.ex_op = flash_spi_nor_ex_op,
 #endif
 };
 
@@ -1356,9 +1538,28 @@ BUILD_ASSERT(DT_INST_PROP(0, has_lock) == (DT_INST_PROP(0, has_lock) & 0xFF),
 	     "Need support for lock clear beyond SR1");
 #endif
 
+#define INST_HAS_WP_GPIO(idx) DT_INST_NODE_HAS_PROP(idx, wp_gpios)
+
+#define INST_WP_GPIO_SPEC(idx)                                                                     \
+	IF_ENABLED(INST_HAS_WP_GPIO(idx), (static const struct gpio_dt_spec wp_##idx =             \
+						   GPIO_DT_SPEC_INST_GET(idx, wp_gpios);))
+
+#define INST_HAS_HOLD_GPIO(idx) DT_INST_NODE_HAS_PROP(idx, hold_gpios)
+
+#define INST_HOLD_GPIO_SPEC(idx)                                                                   \
+	IF_ENABLED(INST_HAS_HOLD_GPIO(idx), (static const struct gpio_dt_spec hold_##idx =         \
+						     GPIO_DT_SPEC_INST_GET(idx, hold_gpios);))
+
+INST_WP_GPIO_SPEC(0)
+INST_HOLD_GPIO_SPEC(0)
+
 static const struct spi_nor_config spi_nor_config_0 = {
 	.spi = SPI_DT_SPEC_INST_GET(0, SPI_WORD_SET(8),
 				    CONFIG_SPI_NOR_CS_WAIT_DELAY),
+#if DT_INST_NODE_HAS_PROP(0, reset_gpios)
+	.reset = GPIO_DT_SPEC_INST_GET(0, reset_gpios),
+#endif
+
 #if !defined(CONFIG_SPI_NOR_SFDP_RUNTIME)
 
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
@@ -1385,11 +1586,20 @@ static const struct spi_nor_config spi_nor_config_0 = {
 #endif /* CONFIG_SPI_NOR_SFDP_DEVICETREE */
 
 #endif /* CONFIG_SPI_NOR_SFDP_RUNTIME */
+
+#if DT_INST_NODE_HAS_PROP(0, wp_gpios)
+	.wp = &wp_0,
+#endif
+
+#if DT_INST_NODE_HAS_PROP(0, hold_gpios)
+	.hold = &hold_0,
+#endif
 };
 
 static struct spi_nor_data spi_nor_data_0;
 
-DEVICE_DT_INST_DEFINE(0, &spi_nor_init, NULL,
+PM_DEVICE_DT_INST_DEFINE(0, spi_nor_pm_control);
+DEVICE_DT_INST_DEFINE(0, &spi_nor_init, PM_DEVICE_DT_INST_GET(0),
 		 &spi_nor_data_0, &spi_nor_config_0,
 		 POST_KERNEL, CONFIG_SPI_NOR_INIT_PRIORITY,
 		 &spi_nor_api);

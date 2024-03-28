@@ -8,6 +8,7 @@
 
 #include "ec_host_cmd_backend_shi.h"
 
+#include <chip_chipregs.h>
 #include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/pinctrl.h>
 #include <zephyr/dt-bindings/gpio/ite-it8xxx2-gpio.h>
@@ -263,7 +264,7 @@ static void shi_ite_parse_header(const struct device *dev)
 		shi_ite_host_request_data(data->rx_ctx->buf + sizeof(*r),
 					  data->rx_ctx->len - sizeof(*r));
 
-		k_sem_give(&data->rx_ctx->handler_owns);
+		ec_host_cmd_rx_notify();
 	} else {
 		/* Invalid version number */
 		LOG_ERR("Invalid version number");
@@ -455,8 +456,9 @@ static int shi_ite_backend_init(const struct ec_host_cmd_backend *backend,
 	data->tx = tx;
 
 	rx_ctx->buf = data->in_msg;
+	rx_ctx->len_max = CONFIG_EC_HOST_CMD_BACKEND_SHI_MAX_REQUEST;
 	tx->buf = data->out_msg + sizeof(out_preamble);
-	data->tx->len_max = sizeof(data->out_msg) - EC_SHI_PREAMBLE_LENGTH - EC_SHI_PAST_END_LENGTH;
+	data->tx->len_max = CONFIG_EC_HOST_CMD_BACKEND_SHI_MAX_RESPONSE;
 
 	return 0;
 }

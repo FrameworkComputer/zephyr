@@ -474,6 +474,12 @@ struct ppp_context {
 	/** Current phase of PPP link */
 	enum ppp_phase phase;
 
+	/** Signal when PPP link is terminated */
+	struct k_sem wait_ppp_link_terminated;
+
+	/** Signal when PPP link is down */
+	struct k_sem wait_ppp_link_down;
+
 	/** This tells what features the PPP supports. */
 	enum net_l2_flags ppp_l2_flags;
 
@@ -483,11 +489,11 @@ struct ppp_context {
 	/** This tells how many network protocols are up */
 	int network_protos_up;
 
-	/** Is network carrier up */
-	uint16_t is_net_carrier_up : 1;
-
 	/** Is PPP ready to receive packets */
 	uint16_t is_ready_to_serve : 1;
+
+	/** Is PPP L2 enabled or not */
+	uint16_t is_enabled : 1;
 
 	/** PPP enable pending */
 	uint16_t is_enable_done : 1;

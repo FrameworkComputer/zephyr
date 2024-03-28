@@ -16,7 +16,7 @@ void mock_bap_stream_init(void);
 void mock_bap_stream_cleanup(void);
 
 DECLARE_FAKE_VOID_FUNC(mock_bap_stream_configured_cb, struct bt_bap_stream *,
-		       const struct bt_codec_qos_pref *);
+		       const struct bt_audio_codec_qos_pref *);
 DECLARE_FAKE_VOID_FUNC(mock_bap_stream_qos_set_cb, struct bt_bap_stream *);
 DECLARE_FAKE_VOID_FUNC(mock_bap_stream_enabled_cb, struct bt_bap_stream *);
 DECLARE_FAKE_VOID_FUNC(mock_bap_stream_metadata_updated_cb, struct bt_bap_stream *);
@@ -27,5 +27,7 @@ DECLARE_FAKE_VOID_FUNC(mock_bap_stream_stopped_cb, struct bt_bap_stream *, uint8
 DECLARE_FAKE_VOID_FUNC(mock_bap_stream_recv_cb, struct bt_bap_stream *,
 		       const struct bt_iso_recv_info *, struct net_buf *);
 DECLARE_FAKE_VOID_FUNC(mock_bap_stream_sent_cb, struct bt_bap_stream *);
+DECLARE_FAKE_VOID_FUNC(mock_bap_stream_connected_cb, struct bt_bap_stream *);
+DECLARE_FAKE_VOID_FUNC(mock_bap_stream_disconnected_cb, struct bt_bap_stream *, uint8_t);
 
 #endif /* MOCKS_BAP_STREAM_H_ */

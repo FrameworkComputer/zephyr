@@ -67,23 +67,19 @@
  * between secure and non-secure mapping.
  */
 #if defined(NRF_TRUSTZONE_NONSECURE)
+#define NRF_GPIOTE       NRF_GPIOTE1
 #define NRF_GPIOTE1      NRF_GPIOTE1_NS
 #else
 #define NRF_CC_HOST_RGF  NRF_CC_HOST_RGF_S
 #define NRF_CRYPTOCELL   NRF_CRYPTOCELL_S
 #define NRF_CTRL_AP_PERI NRF_CTRL_AP_PERI_S
 #define NRF_FICR         NRF_FICR_S
+#define NRF_GPIOTE       NRF_GPIOTE0
 #define NRF_GPIOTE0      NRF_GPIOTE0_S
+#define NRF_GPIOTE1      NRF_GPIOTE1_NS
 #define NRF_SPU          NRF_SPU_S
 #define NRF_TAD          NRF_TAD_S
 #define NRF_UICR         NRF_UICR_S
-#endif
-
-/* Fixups for the GPIOTE driver. */
-#if defined(NRF_TRUSTZONE_NONSECURE)
-#define NRF_GPIOTE       NRF_GPIOTE1
-#else
-#define NRF_GPIOTE       NRF_GPIOTE0
 #endif
 
 /**
@@ -109,8 +105,8 @@
  *
  * Integer value.
  * Supported values:
- * - RC   = 1
- * - XTAL = 2
+ * - RC    = 1
+ * - XTAL  = 2
  */
 #ifndef NRFX_CLOCK_CONFIG_LF_SRC
 #define NRFX_CLOCK_CONFIG_LF_SRC 2
@@ -278,7 +274,7 @@
  * Integer value. Minimum: 0 Maximum: 7
  */
 #ifndef NRFX_GPIOTE_DEFAULT_CONFIG_IRQ_PRIORITY
-#define NRFX_GPIOTE_DEFAULT_CONFIG_IRQ_PRIORITY 3
+#define NRFX_GPIOTE_DEFAULT_CONFIG_IRQ_PRIORITY NRFX_DEFAULT_IRQ_PRIORITY
 #endif
 
 /**

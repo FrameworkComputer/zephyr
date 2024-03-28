@@ -18,6 +18,8 @@
 #include <stdio.h>
 #include <zephyr/kernel.h>
 
+#include <soc.h>
+
 LOG_MODULE_REGISTER(CLK_CTRL_LITEX, CONFIG_CLOCK_CONTROL_LOG_LEVEL);
 
 static struct litex_clk_device *ldev;	/* global struct for whole driver */
@@ -975,8 +977,6 @@ static int litex_clk_set_duty_cycle(struct litex_clk_clkout *lcko,
 	   *low_time = &lcko->div.low_time;
 
 	if (lcko->frac.frac == 0) {
-		int ret;
-
 		lcko->ts_config.duty = *duty;
 		LOG_DBG("CLKOUT%d: setting duty: %u/%u",
 			lcko->id, duty->num, duty->den);

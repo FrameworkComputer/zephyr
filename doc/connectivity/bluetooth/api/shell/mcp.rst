@@ -27,8 +27,7 @@ Also note that this documentation does not list all shell commands, it
 just shows examples of some of them. The set of commands is
 explorable from the mcc shell and the mpl shell, by typing :code:`mcc`
 or :code:`mpl` and pressing TAB.  A help text for each command can be
-found by doing :code:`mcc <command> help` or or :code:`mpl <command>
-help`.
+found by doing :samp:`mcc {<command>} help` or :samp:`mpl {<command>} help`.
 
 Overview
 ********
@@ -435,7 +434,7 @@ track" command:
 
 
 Some server commands are available. These commands force
-notifications of the various characterstics, for testing that the
+notifications of the various characteristics, for testing that the
 client receives notifications. The values sent in the notifications
 caused by these testing commands are independent of the media player,
 so they do not correspond the actual values of the characteristics nor

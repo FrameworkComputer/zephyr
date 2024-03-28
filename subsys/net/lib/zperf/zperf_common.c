@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <zephyr/init.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/net/socket.h>
 
@@ -108,29 +109,8 @@ int zperf_get_ipv4_addr(char *host, struct in_addr *addr)
 	return 0;
 }
 
-
-const struct in_addr *zperf_get_default_if_in4_addr(void)
-{
-#if CONFIG_NET_IPV4
-	return net_if_ipv4_select_src_addr(NULL,
-					   net_ipv4_unspecified_address());
-#else
-	return NULL;
-#endif
-}
-
-const struct in6_addr *zperf_get_default_if_in6_addr(void)
-{
-#if CONFIG_NET_IPV6
-	return net_if_ipv6_select_src_addr(NULL,
-					   net_ipv6_unspecified_address());
-#else
-	return NULL;
-#endif
-}
-
-int zperf_prepare_upload_sock(const struct sockaddr *peer_addr, int tos,
-			      int proto)
+int zperf_prepare_upload_sock(const struct sockaddr *peer_addr, uint8_t tos,
+			      int priority, int proto)
 {
 	socklen_t addrlen = peer_addr->sa_family == AF_INET6 ?
 			    sizeof(struct sockaddr_in6) :
@@ -191,6 +171,24 @@ int zperf_prepare_upload_sock(const struct sockaddr *peer_addr, int tos,
 		return -EINVAL;
 	}
 
+	if (IS_ENABLED(CONFIG_NET_CONTEXT_PRIORITY) && priority >= 0) {
+		uint8_t prio = priority;
+
+		if (!IS_ENABLED(CONFIG_NET_ALLOW_ANY_PRIORITY) &&
+		    (prio >= NET_MAX_PRIORITIES)) {
+			NET_ERR("Priority %d is too large, maximum allowed is %d",
+				prio, NET_MAX_PRIORITIES - 1);
+			return -EINVAL;
+		}
+
+		if (zsock_setsockopt(sock, SOL_SOCKET, SO_PRIORITY,
+				     &prio,
+				     sizeof(prio)) != 0) {
+			NET_WARN("Failed to set SOL_SOCKET - SO_PRIORITY socket option.");
+			return -EINVAL;
+		}
+	}
+
 	ret = zsock_connect(sock, peer_addr, addrlen);
 	if (ret < 0) {
 		NET_ERR("Connect failed (%d)", errno);
@@ -224,8 +222,6 @@ static int zperf_init(void)
 
 	zperf_udp_uploader_init();
 	zperf_tcp_uploader_init();
-	zperf_udp_receiver_init();
-	zperf_tcp_receiver_init();
 
 	zperf_session_init();
 

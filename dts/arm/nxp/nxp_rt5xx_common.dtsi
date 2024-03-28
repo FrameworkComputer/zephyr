@@ -11,6 +11,8 @@
 #include <zephyr/dt-bindings/gpio/gpio.h>
 #include <zephyr/dt-bindings/i2c/i2c.h>
 #include <zephyr/dt-bindings/mipi_dsi/mipi_dsi.h>
+#include <zephyr/dt-bindings/inputmux/inputmux_trigger_ports.h>
+#include <zephyr/dt-bindings/memory-attr/memory-attr-arm.h>
 
 / {
 	chosen {
@@ -26,11 +28,38 @@
 			reg = <0>;
 			#address-cells = <1>;
 			#size-cells = <1>;
+			cpu-power-states = <&idle &suspend>;
 
 			mpu: mpu@e000ed90 {
 				compatible = "arm,armv8m-mpu";
 				reg = <0xe000ed90 0x40>;
-				arm,num-mpu-regions = <8>;
+			};
+		};
+
+		power-states {
+			/* This is the setting Sleep Mode */
+			idle: idle {
+				compatible = "zephyr,power-state";
+				power-state-name = "runtime-idle";
+				min-residency-us = <0>;
+				exit-latency-us = <0>;
+			};
+			/* This is the setting for Deep-sleep Mode */
+			suspend: suspend {
+				compatible = "nxp,pdcfg-power", "zephyr,power-state";
+				power-state-name = "suspend-to-idle";
+				min-residency-us = <500>;
+				exit-latency-us = <120>;
+				/*
+				 * These values are written to the PDSLEEPCFG
+				 * registers to keep certain blocks such as
+				 * LPOSC, SRAM's, FlexSPI0 SRAM powered on
+				 * during deep sleep mode.
+				 */
+				deep-sleep-config = <0xC800>,
+							<0x80000004>,
+							<0xFFFFFFFF>,
+							<0>;
 			};
 		};
 	};
@@ -39,6 +68,20 @@
 &sram {
 	#address-cells = <1>;
 	#size-cells = <1>;
+
+	/* RT5XX SRAM partitions are shared
+	 * between code and data. Boards can
+	 * override the reg properties of either sram0 or sram_code nodes to
+	 * change the balance of SRAM allocation.
+	 *
+	 * Note that the sram code region starts at an offset of 0x1B000,
+	 * as the boot ROM will not load code before 0x1C000. The first
+	 * 0x1000 of the image will contain the boot header.
+	 */
+	sram_code: memory@1b000 {
+		compatible = "mmio-sram";
+		reg = <0x1b000 DT_SIZE_K(1428)>;
+	};
 
 	sram0: memory@20180000 {
 		compatible = "mmio-sram";
@@ -49,7 +92,7 @@
 		compatible =  "zephyr,memory-region", "mmio-sram";
 		reg = <0x40140000 DT_SIZE_K(16)>;
 		zephyr,memory-region = "SRAM1";
-		zephyr,memory-region-mpu = "RAM";
+		zephyr,memory-attr = <( DT_MEM_ARM(ATTR_MPU_RAM) )>;
 	};
 };
 
@@ -294,11 +337,10 @@
 	};
 
 	usbhs: usbhs@144000 {
-		compatible = "nxp,mcux-usbd";
+		compatible = "nxp,lpcip3511";
 		reg = <0x144000 0x1000>;
 		interrupts = <50 1>;
 		num-bidir-endpoints = <6>;
-		usb-controller-index = "LpcIp3511Hs0";
 		status = "disabled";
 	};
 
@@ -326,6 +368,10 @@
 		compatible = "nxp,lpc-dma";
 		reg = <0x104000 0x1000>;
 		interrupts = <1 0>;
+		dma-channels = <37>;
+		nxp,dma-num-of-otrigs = <4>;
+		nxp,dma-otrig-base-address = <RT595_DMA0_OTRIG_BASE>;
+		nxp,dma-itrig-base-address = <RT595_DMA0_ITRIG_BASE>;
 		status = "disabled";
 		#dma-cells = <1>;
 	};
@@ -334,8 +380,78 @@
 		compatible = "nxp,lpc-dma";
 		reg = <0x105000 0x1000>;
 		interrupts = <54 0>;
+		dma-channels = <37>;
+		nxp,dma-num-of-otrigs = <4>;
+		nxp,dma-otrig-base-address = <RT595_DMA1_OTRIG_BASE>;
+		nxp,dma-itrig-base-address = <RT595_DMA1_ITRIG_BASE>;
 		status = "disabled";
 		#dma-cells = <1>;
+	};
+
+	dmic0: dmic@121000 {
+		#address-cells=<1>;
+		#size-cells=<0>;
+		compatible = "nxp,dmic";
+		reg = <0x121000 0x1000>;
+		interrupts = <25 0>;
+		status = "disabled";
+		clocks = <&clkctl0 MCUX_DMIC_CLK>;
+
+		pdmc0: dmic-channel@0 {
+			compatible = "nxp,dmic-channel";
+			reg = <0>;
+			dmas = <&dma0 16>;
+			status = "disabled";
+		};
+
+		pdmc1: dmic-channel@1 {
+			compatible = "nxp,dmic-channel";
+			reg = <1>;
+			dmas = <&dma0 17>;
+			status = "disabled";
+		};
+
+		pdmc2: dmic-channel@2 {
+			compatible = "nxp,dmic-channel";
+			reg = <2>;
+			dmas = <&dma0 18>;
+			status = "disabled";
+		};
+
+		pdmc3: dmic-channel@3 {
+			compatible = "nxp,dmic-channel";
+			reg = <3>;
+			dmas = <&dma0 19>;
+			status = "disabled";
+		};
+
+		pdmc4: dmic-channel@4 {
+			compatible = "nxp,dmic-channel";
+			reg = <4>;
+			dmas = <&dma0 20>;
+			status = "disabled";
+		};
+
+		pdmc5: dmic-channel@5 {
+			compatible = "nxp,dmic-channel";
+			reg = <5>;
+			dmas = <&dma0 21>;
+			status = "disabled";
+		};
+
+		pdmc6: dmic-channel@6 {
+			compatible = "nxp,dmic-channel";
+			reg = <6>;
+			dmas = <&dma0 22>;
+			status = "disabled";
+		};
+
+		pdmc7: dmic-channel@7 {
+			compatible = "nxp,dmic-channel";
+			reg = <7>;
+			dmas = <&dma0 23>;
+			status = "disabled";
+		};
 	};
 
 	os_timer: timers@113000 {
@@ -350,6 +466,10 @@
 		reg = <0x30000 0x1000>;
 		interrupts = <32 0>;
 		status = "disabled";
+		rtc_highres: rtc_highres {
+			compatible = "nxp,lpc-rtc-highres";
+			status = "disabled";
+		};
 	};
 
 	trng: random@138000 {
@@ -366,6 +486,7 @@
 		status = "disabled";
 		prescaler = <8>;
 		#pwm-cells = <3>;
+		clocks = <&clkctl1 MCUX_SCTIMER_CLK>;
 	};
 
 	wwdt0: watchdog@e000 {
@@ -421,6 +542,15 @@
 		offset-value-a = <10>;
 		offset-value-b = <10>;
 		#io-channel-cells = <1>;
+	};
+
+	smartdma: dma@27020 {
+		compatible = "nxp,smartdma";
+		reg = <0x27020 0x1000>;
+		program-mem = <0x24100000>;
+		interrupts = <73 0>;
+		status = "disabled";
+		#dma-cells = <0>;
 	};
 
 	ctimer0: ctimer@28000 {
@@ -488,7 +618,7 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 		reg = <0x31000 0x1000>;
-		interrupts = <87 0>;
+		interrupts = <71 0>;
 		clocks = <&clkctl1 MCUX_MIPI_DSI_DPHY_CLK>,
 			<&clkctl1 MCUX_MIPI_DSI_ESC_CLK>,
 			<&clkctl1 MCUX_LCDIF_PIXEL_CLK>;
@@ -508,6 +638,47 @@
 		#address-cells = <3>;
 		#size-cells = <0>;
 	};
+
+	mbox:mbox@110000 {
+		compatible = "nxp,mbox-imx-mu";
+		reg = <0x110000 0x100>;
+		interrupts = <34 0>;
+		rx-channels = <4>;
+		#mbox-cells = <1>;
+		status = "disabled";
+	};
+
+	mrt: mrt@2d000 {
+		compatible = "nxp,mrt";
+		reg = <0x2d000 0x100>;
+		interrupts = <9 0>;
+		num-channels = <4>;
+		num-bits = <24>;
+		clocks = <&clkctl1 MCUX_MRT_CLK>;
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		mrt_channel0: mrt_channel@0 {
+			compatible = "nxp,mrt-channel";
+			reg = <0>;
+			status = "disabled";
+		};
+		mrt_channel1: mrt_channel@1 {
+			compatible = "nxp,mrt-channel";
+			reg = <1>;
+			status = "disabled";
+		};
+		mrt_channel2: mrt_channel@2 {
+			compatible = "nxp,mrt-channel";
+			reg = <2>;
+			status = "disabled";
+		};
+		mrt_channel3: mrt_channel@3 {
+			compatible = "nxp,mrt-channel";
+			reg = <3>;
+			status = "disabled";
+		};
+	};
 };
 
 &flexspi {
@@ -516,6 +687,7 @@
 	interrupts = <42 0>;
 	#address-cells = <1>;
 	#size-cells = <0>;
+	clocks = <&clkctl1 MCUX_FLEXSPI_CLK>;
 };
 
 &flexspi2 {
@@ -524,6 +696,7 @@
 	interrupts = <42 0>;
 	#address-cells = <1>;
 	#size-cells = <0>;
+	clocks = <&clkctl1 MCUX_FLEXSPI2_CLK>;
 };
 
 &nvic {

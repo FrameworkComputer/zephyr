@@ -15,9 +15,9 @@ properties:
 
   nxp,lcdif:
     type: phandle
-    required: true
     description:
-      Instance of the LCDIF peripheral.
+      Instance of the LCDIF peripheral. Only required when using the MIPI
+      in video mode
   dpi-color-coding:
     type: string
     enum:
@@ -70,3 +70,9 @@ properties:
     description:
       Maximum clock speed supported by the device, in Hz. Leave at default
       if no DPHY PLL is present
+
+  noncontinuous-hs-clk:
+    type: boolean
+    description:
+      Enable non-contiuous high speed clock. Saves power but introduces latency
+      when transitioning to high speed mode.

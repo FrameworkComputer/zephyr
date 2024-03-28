@@ -7,6 +7,10 @@
 #ifndef ZEPHYR_INCLUDE_TOOLCHAIN_XCC_H_
 #define ZEPHYR_INCLUDE_TOOLCHAIN_XCC_H_
 
+#ifndef ZEPHYR_INCLUDE_TOOLCHAIN_H_
+#error Please do not include toolchain-specific headers directly, use <zephyr/toolchain.h> instead
+#endif
+
 /* toolchain/gcc.h errors out if __BYTE_ORDER__ cannot be determined
  * there. However, __BYTE_ORDER__ is actually being defined later in
  * this file. So define __BYTE_ORDER__ to skip the check in gcc.h
@@ -19,21 +23,10 @@
 #endif
 
 #ifdef __clang__
-#if __clang_major__ >= 10
-#define __fallthrough __attribute__((fallthrough))
-#endif
-
-#define TOOLCHAIN_CLANG_VERSION \
-	((__clang_major__ * 10000) + (__clang_minor__ * 100) + \
-	__clang_patchlevel__)
-
-#if TOOLCHAIN_CLANG_VERSION >= 30800
-#define TOOLCHAIN_HAS_C_GENERIC 1
-#define TOOLCHAIN_HAS_C_AUTO_TYPE 1
-#endif
-#endif
-
+#include <zephyr/toolchain/llvm.h>
+#else
 #include <zephyr/toolchain/gcc.h>
+#endif
 
 #ifndef __clang__
 #undef __BYTE_ORDER__

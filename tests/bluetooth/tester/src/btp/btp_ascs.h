@@ -1,4 +1,4 @@
-/* btp_bap.h - Bluetooth tester headers */
+/* btp_ascs.h - Bluetooth tester headers */
 
 /*
  * Copyright (c) 2023 Codecoup
@@ -19,8 +19,8 @@ struct btp_ascs_configure_codec_cmd {
 	uint8_t coding_format;
 	uint16_t vid;
 	uint16_t cid;
-	uint8_t ltvs_len;
-	uint8_t ltvs[0];
+	uint8_t cc_ltvs_len;
+	uint8_t cc_ltvs[0];
 } __packed;
 
 #define BTP_ASCS_CONFIGURE_QOS	0x03
@@ -73,6 +73,26 @@ struct btp_ascs_update_metadata_cmd {
 	uint8_t ase_id;
 } __packed;
 
+#define BTP_ASCS_ADD_ASE_TO_CIS		0x0a
+struct btp_ascs_add_ase_to_cis {
+	bt_addr_le_t address;
+	uint8_t ase_id;
+	uint8_t cig_id;
+	uint8_t cis_id;
+} __packed;
+
+#define BTP_ASCS_PRECONFIGURE_QOS	0x0b
+struct btp_ascs_preconfigure_qos_cmd {
+	uint8_t cig_id;
+	uint8_t cis_id;
+	uint8_t sdu_interval[3];
+	uint8_t framing;
+	uint16_t max_sdu;
+	uint8_t retransmission_num;
+	uint16_t max_transport_latency;
+	uint8_t presentation_delay[3];
+} __packed;
+
 /* ASCS events */
 #define BTP_ASCS_EV_OPERATION_COMPLETED	0x80
 struct btp_ascs_operation_completed_ev {
@@ -83,6 +103,15 @@ struct btp_ascs_operation_completed_ev {
 
 	/* RFU */
 	uint8_t flags;
+} __packed;
+
+#define BTP_ASCS_EV_CHARACTERISTIC_SUBSCRIBED 0x81
+
+#define BTP_ASCS_EV_ASE_STATE_CHANGED	0x82
+struct btp_ascs_ase_state_changed_ev {
+	bt_addr_le_t address;
+	uint8_t ase_id;
+	uint8_t state;
 } __packed;
 
 #define BTP_ASCS_STATUS_SUCCESS	0x00

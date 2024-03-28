@@ -18,7 +18,7 @@ variable.  This must be set to "y" to enable SMP features, otherwise
 a uniprocessor kernel will be built.  In general the platform default
 will have enabled this anywhere it's supported. When enabled, the
 number of physical CPUs available is visible at build time as
-:kconfig:option:`CONFIG_MP_NUM_CPUS`.  Likewise, the default for this will be the
+:kconfig:option:`CONFIG_MP_MAX_NUM_CPUS`.  Likewise, the default for this will be the
 number of available CPUs on the platform and it is not expected that
 typical apps will change it.  But it is legal and supported to set
 this to a smaller (but obviously not larger) number for special
@@ -302,7 +302,7 @@ registers only when :c:func:`arch_switch` is called to minimize context
 switching latency. Such architectures must use NULL as the argument to
 :c:func:`z_get_next_switch_handle` to determine if there is a new thread
 to schedule, and follow through with their own :c:func:`arch_switch` or
-derrivative if so, or directly leave interrupt mode otherwise.
+derivative if so, or directly leave interrupt mode otherwise.
 In the former case it is up to that switch code to store the handle
 resulting from the thread that is being switched out in that thread's
 "switch_handle" field after its context has fully been saved.

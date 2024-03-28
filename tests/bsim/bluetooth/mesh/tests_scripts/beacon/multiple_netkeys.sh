@@ -8,7 +8,7 @@ RunTest mesh_beacon_multiple_netkeys \
 	beacon_tx_multiple_netkeys \
 	beacon_rx_multiple_netkeys
 
-conf=prj_mesh1d1_conf
-RunTest mesh_beacon_multiple_netkeys_1d1 \
+overlay=overlay_psa_conf
+RunTest mesh_beacon_multiple_netkeys_psa \
 	beacon_tx_multiple_netkeys \
 	beacon_rx_multiple_netkeys

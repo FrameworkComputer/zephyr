@@ -28,9 +28,8 @@
 #define test_sink_ase_state_transition_fixture test_ase_state_transition_fixture
 #define test_source_ase_state_transition_fixture test_ase_state_transition_fixture
 
-static const struct bt_codec_qos_pref qos_pref = BT_CODEC_QOS_PREF(true, BT_GAP_LE_PHY_2M,
-								   0x02, 10, 40000, 40000,
-								   40000, 40000);
+static const struct bt_audio_codec_qos_pref qos_pref =
+	BT_AUDIO_CODEC_QOS_PREF(true, BT_GAP_LE_PHY_2M, 0x02, 10, 40000, 40000, 40000, 40000);
 
 struct test_ase_state_transition_fixture {
 	struct bt_conn conn;
@@ -107,6 +106,7 @@ ZTEST_F(test_sink_ase_state_transition, test_client_codec_configured_to_qos_conf
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_qos_called_once(stream, EMPTY);
 	expect_bt_bap_stream_ops_qos_set_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_client_qos_configured_to_enabling)
@@ -141,6 +141,7 @@ ZTEST_F(test_sink_ase_state_transition, test_client_enabling_to_qos_configured)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_disable_called_once(stream);
 	expect_bt_bap_stream_ops_qos_set_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_called_once(stream);
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_client_qos_configured_to_releasing)
@@ -193,6 +194,7 @@ ZTEST_F(test_sink_ase_state_transition, test_client_qos_configured_to_qos_config
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_qos_called_once(stream, EMPTY);
 	expect_bt_bap_stream_ops_qos_set_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_client_qos_configured_to_codec_configured)
@@ -244,6 +246,7 @@ ZTEST_F(test_sink_ase_state_transition, test_client_enabling_to_releasing)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_release_called_once(stream);
 	expect_bt_bap_stream_ops_released_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_client_enabling_to_enabling)
@@ -261,6 +264,7 @@ ZTEST_F(test_sink_ase_state_transition, test_client_enabling_to_enabling)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_metadata_called_once(stream, EMPTY, EMPTY);
 	expect_bt_bap_stream_ops_metadata_updated_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_client_streaming_to_releasing)
@@ -277,11 +281,14 @@ ZTEST_F(test_sink_ase_state_transition, test_client_streaming_to_releasing)
 	test_ase_control_client_release(conn, ase_id);
 
 	/* Client disconnects the ISO */
-	mock_bt_iso_disconnect(chan);
+	mock_bt_iso_disconnected(chan, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_release_called_once(stream);
+	expect_bt_bap_stream_ops_stopped_called_once(stream, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 	expect_bt_bap_stream_ops_released_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
+	expect_bt_bap_stream_ops_disconnected_called_once(stream);
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_client_streaming_to_streaming)
@@ -300,6 +307,7 @@ ZTEST_F(test_sink_ase_state_transition, test_client_streaming_to_streaming)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_metadata_called_once(stream, EMPTY, EMPTY);
 	expect_bt_bap_stream_ops_metadata_updated_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_client_streaming_to_qos_configured)
@@ -317,20 +325,23 @@ ZTEST_F(test_sink_ase_state_transition, test_client_streaming_to_qos_configured)
 
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_disable_called_once(stream);
+	expect_bt_bap_stream_ops_stopped_called_once(stream, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 	expect_bt_bap_stream_ops_qos_set_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_called_once(stream);
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_server_idle_to_codec_configured)
 {
-	struct bt_codec codec = BT_CODEC_LC3_CONFIG_16_2(BT_AUDIO_LOCATION_FRONT_LEFT,
-							 BT_AUDIO_CONTEXT_TYPE_UNSPECIFIED);
+	struct bt_audio_codec_cfg codec_cfg = BT_AUDIO_CODEC_LC3_CONFIG(
+		BT_AUDIO_CODEC_CFG_FREQ_16KHZ, BT_AUDIO_CODEC_CFG_DURATION_10,
+		BT_AUDIO_LOCATION_FRONT_LEFT, 40U, 1, BT_AUDIO_CONTEXT_TYPE_UNSPECIFIED);
 	struct bt_bap_stream *stream = &fixture->stream;
 	struct bt_conn *conn = &fixture->conn;
 	int err;
 
 	Z_TEST_SKIP_IFNDEF(CONFIG_BT_ASCS_ASE_SNK);
 
-	err = bt_bap_unicast_server_config_ase(conn, stream, &codec, &qos_pref);
+	err = bt_bap_unicast_server_config_ase(conn, stream, &codec_cfg, &qos_pref);
 	zassert_false(err < 0, "bt_bap_unicast_server_config_ase returned err %d", err);
 
 	/* Verification */
@@ -340,8 +351,9 @@ ZTEST_F(test_sink_ase_state_transition, test_server_idle_to_codec_configured)
 
 ZTEST_F(test_sink_ase_state_transition, test_server_codec_configured_to_codec_configured)
 {
-	struct bt_codec codec = BT_CODEC_LC3_CONFIG_16_2(BT_AUDIO_LOCATION_FRONT_LEFT,
-							 BT_AUDIO_CONTEXT_TYPE_UNSPECIFIED);
+	struct bt_audio_codec_cfg codec_cfg = BT_AUDIO_CODEC_LC3_CONFIG(
+		BT_AUDIO_CODEC_CFG_FREQ_16KHZ, BT_AUDIO_CODEC_CFG_DURATION_10,
+		BT_AUDIO_LOCATION_FRONT_LEFT, 40U, 1, BT_AUDIO_CONTEXT_TYPE_UNSPECIFIED);
 	struct bt_bap_stream *stream = &fixture->stream;
 	struct bt_conn *conn = &fixture->conn;
 	uint8_t ase_id = fixture->ase.id;
@@ -351,7 +363,7 @@ ZTEST_F(test_sink_ase_state_transition, test_server_codec_configured_to_codec_co
 
 	test_preamble_state_codec_configured(conn, ase_id, stream);
 
-	err = bt_bap_stream_reconfig(stream, &codec);
+	err = bt_bap_stream_reconfig(stream, &codec_cfg);
 	zassert_false(err < 0, "bt_bap_stream_reconfig returned err %d", err);
 
 	/* Verification */
@@ -380,8 +392,9 @@ ZTEST_F(test_sink_ase_state_transition, test_server_codec_configured_to_releasin
 
 ZTEST_F(test_sink_ase_state_transition, test_server_qos_configured_to_codec_configured)
 {
-	struct bt_codec codec = BT_CODEC_LC3_CONFIG_16_2(BT_AUDIO_LOCATION_FRONT_LEFT,
-							 BT_AUDIO_CONTEXT_TYPE_UNSPECIFIED);
+	struct bt_audio_codec_cfg codec_cfg = BT_AUDIO_CODEC_LC3_CONFIG(
+		BT_AUDIO_CODEC_CFG_FREQ_16KHZ, BT_AUDIO_CODEC_CFG_DURATION_10,
+		BT_AUDIO_LOCATION_FRONT_LEFT, 40U, 1, BT_AUDIO_CONTEXT_TYPE_UNSPECIFIED);
 	struct bt_bap_stream *stream = &fixture->stream;
 	struct bt_conn *conn = &fixture->conn;
 	uint8_t ase_id = fixture->ase.id;
@@ -391,7 +404,7 @@ ZTEST_F(test_sink_ase_state_transition, test_server_qos_configured_to_codec_conf
 
 	test_preamble_state_qos_configured(conn, ase_id, stream);
 
-	err = bt_bap_stream_reconfig(stream, &codec);
+	err = bt_bap_stream_reconfig(stream, &codec_cfg);
 	zassert_false(err < 0, "bt_bap_stream_reconfig returned err %d", err);
 
 	/* Verification */
@@ -435,14 +448,14 @@ ZTEST_F(test_sink_ase_state_transition, test_server_enabling_to_releasing)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_release_called_once(stream);
 	expect_bt_bap_stream_ops_released_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_server_enabling_to_enabling)
 {
-	struct bt_codec_data meta[] = {
-		BT_CODEC_DATA(BT_AUDIO_METADATA_TYPE_STREAM_CONTEXT,
-			      (BT_AUDIO_CONTEXT_TYPE_MEDIA & 0xFFU),
-			      ((BT_AUDIO_CONTEXT_TYPE_MEDIA >> 8) & 0xFFU)),
+	const uint8_t meta[] = {
+		BT_AUDIO_CODEC_DATA(BT_AUDIO_METADATA_TYPE_STREAM_CONTEXT,
+				    BT_BYTES_LIST_LE16(BT_AUDIO_CONTEXT_TYPE_MEDIA)),
 	};
 	struct bt_bap_stream *stream = &fixture->stream;
 	struct bt_conn *conn = &fixture->conn;
@@ -459,6 +472,7 @@ ZTEST_F(test_sink_ase_state_transition, test_server_enabling_to_enabling)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_metadata_called_once(stream, EMPTY, EMPTY);
 	expect_bt_bap_stream_ops_metadata_updated_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_server_enabling_to_qos_configured)
@@ -478,6 +492,7 @@ ZTEST_F(test_sink_ase_state_transition, test_server_enabling_to_qos_configured)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_disable_called_once(stream);
 	expect_bt_bap_stream_ops_qos_set_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_called_once(stream);
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_server_enabling_to_streaming)
@@ -499,16 +514,17 @@ ZTEST_F(test_sink_ase_state_transition, test_server_enabling_to_streaming)
 	zassert_false(err < 0, "bt_bap_stream_start returned err %d", err);
 
 	/* Verification */
+	expect_bt_bap_stream_ops_connected_called_once(stream);
 	expect_bt_bap_stream_ops_started_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 	/* XXX: unicast_server_cb->start is not called for Sink ASE */
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_server_streaming_to_streaming)
 {
-	struct bt_codec_data meta[] = {
-		BT_CODEC_DATA(BT_AUDIO_METADATA_TYPE_STREAM_CONTEXT,
-			      (BT_AUDIO_CONTEXT_TYPE_MEDIA & 0xFFU),
-			      ((BT_AUDIO_CONTEXT_TYPE_MEDIA >> 8) & 0xFFU)),
+	const uint8_t meta[] = {
+		BT_AUDIO_CODEC_DATA(BT_AUDIO_METADATA_TYPE_STREAM_CONTEXT,
+				    BT_BYTES_LIST_LE16(BT_AUDIO_CONTEXT_TYPE_MEDIA)),
 	};
 	struct bt_bap_stream *stream = &fixture->stream;
 	struct bt_conn *conn = &fixture->conn;
@@ -526,6 +542,7 @@ ZTEST_F(test_sink_ase_state_transition, test_server_streaming_to_streaming)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_metadata_called_once(stream, EMPTY, EMPTY);
 	expect_bt_bap_stream_ops_metadata_updated_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_server_streaming_to_qos_configured)
@@ -545,7 +562,9 @@ ZTEST_F(test_sink_ase_state_transition, test_server_streaming_to_qos_configured)
 
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_disable_called_once(stream);
+	expect_bt_bap_stream_ops_stopped_called_once(stream, BT_HCI_ERR_LOCALHOST_TERM_CONN);
 	expect_bt_bap_stream_ops_qos_set_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_called_once(stream);
 }
 
 ZTEST_F(test_sink_ase_state_transition, test_server_streaming_to_releasing)
@@ -564,11 +583,14 @@ ZTEST_F(test_sink_ase_state_transition, test_server_streaming_to_releasing)
 	zassert_false(err < 0, "bt_bap_stream_release returned err %d", err);
 
 	/* Client disconnects the ISO */
-	mock_bt_iso_disconnect(chan);
+	mock_bt_iso_disconnected(chan, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_release_called_once(stream);
+	expect_bt_bap_stream_ops_stopped_called_once(stream, BT_HCI_ERR_LOCALHOST_TERM_CONN);
 	expect_bt_bap_stream_ops_released_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
+	expect_bt_bap_stream_ops_disconnected_called_once(stream);
 }
 
 static void *test_source_ase_state_transition_setup(void)
@@ -622,6 +644,7 @@ ZTEST_F(test_source_ase_state_transition, test_client_codec_configured_to_qos_co
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_qos_called_once(stream, EMPTY);
 	expect_bt_bap_stream_ops_qos_set_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_source_ase_state_transition, test_client_qos_configured_to_enabling)
@@ -694,7 +717,9 @@ ZTEST_F(test_source_ase_state_transition, test_client_enabling_to_streaming)
 
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_start_called_once(stream);
+	expect_bt_bap_stream_ops_connected_called_once(stream);
 	expect_bt_bap_stream_ops_started_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_source_ase_state_transition, test_client_codec_configured_to_codec_configured)
@@ -729,6 +754,7 @@ ZTEST_F(test_source_ase_state_transition, test_client_qos_configured_to_qos_conf
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_qos_called_once(stream, EMPTY);
 	expect_bt_bap_stream_ops_qos_set_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_source_ase_state_transition, test_client_qos_configured_to_codec_configured)
@@ -780,6 +806,7 @@ ZTEST_F(test_source_ase_state_transition, test_client_enabling_to_releasing)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_release_called_once(stream);
 	expect_bt_bap_stream_ops_released_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_source_ase_state_transition, test_client_enabling_to_enabling)
@@ -797,6 +824,7 @@ ZTEST_F(test_source_ase_state_transition, test_client_enabling_to_enabling)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_metadata_called_once(stream, EMPTY, EMPTY);
 	expect_bt_bap_stream_ops_metadata_updated_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_source_ase_state_transition, test_client_streaming_to_releasing)
@@ -811,13 +839,16 @@ ZTEST_F(test_source_ase_state_transition, test_client_streaming_to_releasing)
 	test_preamble_state_streaming(conn, ase_id, stream, &chan, true);
 
 	test_ase_control_client_release(conn, ase_id);
+
 	/* Client disconnects the ISO */
-	mock_bt_iso_disconnect(chan);
+	mock_bt_iso_disconnected(chan, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_release_called_once(stream);
-	expect_bt_bap_stream_ops_stopped_called_once(stream, EMPTY);
+	expect_bt_bap_stream_ops_stopped_called_once(stream, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 	expect_bt_bap_stream_ops_released_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
+	expect_bt_bap_stream_ops_disconnected_called_once(stream);
 }
 
 ZTEST_F(test_source_ase_state_transition, test_client_streaming_to_streaming)
@@ -836,6 +867,7 @@ ZTEST_F(test_source_ase_state_transition, test_client_streaming_to_streaming)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_metadata_called_once(stream, EMPTY, EMPTY);
 	expect_bt_bap_stream_ops_metadata_updated_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_source_ase_state_transition, test_client_streaming_to_disabling)
@@ -853,6 +885,7 @@ ZTEST_F(test_source_ase_state_transition, test_client_streaming_to_disabling)
 
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_disable_called_once(stream);
+	expect_bt_bap_stream_ops_stopped_called_once(stream, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 	expect_bt_bap_stream_ops_disabled_called_once(stream);
 }
 
@@ -866,6 +899,8 @@ ZTEST_F(test_source_ase_state_transition, test_client_enabling_to_disabling_to_q
 
 	test_preamble_state_enabling(conn, ase_id, stream);
 	test_ase_control_client_disable(conn, ase_id);
+	expect_bt_bap_stream_ops_disabled_called_once(stream);
+
 	test_mocks_reset();
 
 	test_ase_control_client_receiver_stop_ready(conn, ase_id);
@@ -873,6 +908,7 @@ ZTEST_F(test_source_ase_state_transition, test_client_enabling_to_disabling_to_q
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_stop_called_once(stream);
 	expect_bt_bap_stream_ops_qos_set_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_source_ase_state_transition, test_client_streaming_to_disabling_to_qos_configured)
@@ -886,6 +922,12 @@ ZTEST_F(test_source_ase_state_transition, test_client_streaming_to_disabling_to_
 
 	test_preamble_state_streaming(conn, ase_id, stream, &chan, true);
 	test_ase_control_client_disable(conn, ase_id);
+
+	/* Verify that stopped callback was called by disable */
+	expect_bt_bap_stream_ops_disabled_called_once(stream);
+	expect_bt_bap_stream_ops_stopped_called_once(stream, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
+
+
 	test_mocks_reset();
 
 	test_ase_control_client_receiver_stop_ready(conn, ase_id);
@@ -893,19 +935,21 @@ ZTEST_F(test_source_ase_state_transition, test_client_streaming_to_disabling_to_
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_stop_called_once(stream);
 	expect_bt_bap_stream_ops_qos_set_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_source_ase_state_transition, test_server_idle_to_codec_configured)
 {
-	struct bt_codec codec = BT_CODEC_LC3_CONFIG_16_2(BT_AUDIO_LOCATION_FRONT_LEFT,
-							 BT_AUDIO_CONTEXT_TYPE_UNSPECIFIED);
+	struct bt_audio_codec_cfg codec_cfg = BT_AUDIO_CODEC_LC3_CONFIG(
+		BT_AUDIO_CODEC_CFG_FREQ_16KHZ, BT_AUDIO_CODEC_CFG_DURATION_10,
+		BT_AUDIO_LOCATION_FRONT_LEFT, 40U, 1, BT_AUDIO_CONTEXT_TYPE_UNSPECIFIED);
 	struct bt_bap_stream *stream = &fixture->stream;
 	struct bt_conn *conn = &fixture->conn;
 	int err;
 
 	Z_TEST_SKIP_IFNDEF(CONFIG_BT_ASCS_ASE_SRC);
 
-	err = bt_bap_unicast_server_config_ase(conn, stream, &codec, &qos_pref);
+	err = bt_bap_unicast_server_config_ase(conn, stream, &codec_cfg, &qos_pref);
 	zassert_false(err < 0, "bt_bap_unicast_server_config_ase returned err %d", err);
 
 	/* Verification */
@@ -915,8 +959,9 @@ ZTEST_F(test_source_ase_state_transition, test_server_idle_to_codec_configured)
 
 ZTEST_F(test_source_ase_state_transition, test_server_codec_configured_to_codec_configured)
 {
-	struct bt_codec codec = BT_CODEC_LC3_CONFIG_16_2(BT_AUDIO_LOCATION_FRONT_LEFT,
-							 BT_AUDIO_CONTEXT_TYPE_UNSPECIFIED);
+	struct bt_audio_codec_cfg codec_cfg = BT_AUDIO_CODEC_LC3_CONFIG(
+		BT_AUDIO_CODEC_CFG_FREQ_16KHZ, BT_AUDIO_CODEC_CFG_DURATION_10,
+		BT_AUDIO_LOCATION_FRONT_LEFT, 40U, 1, BT_AUDIO_CONTEXT_TYPE_UNSPECIFIED);
 	struct bt_bap_stream *stream = &fixture->stream;
 	struct bt_conn *conn = &fixture->conn;
 	uint8_t ase_id = fixture->ase.id;
@@ -926,7 +971,7 @@ ZTEST_F(test_source_ase_state_transition, test_server_codec_configured_to_codec_
 
 	test_preamble_state_codec_configured(conn, ase_id, stream);
 
-	err = bt_bap_stream_reconfig(stream, &codec);
+	err = bt_bap_stream_reconfig(stream, &codec_cfg);
 	zassert_false(err < 0, "bt_bap_stream_reconfig returned err %d", err);
 
 	/* Verification */
@@ -955,8 +1000,9 @@ ZTEST_F(test_source_ase_state_transition, test_server_codec_configured_to_releas
 
 ZTEST_F(test_source_ase_state_transition, test_server_qos_configured_to_codec_configured)
 {
-	struct bt_codec codec = BT_CODEC_LC3_CONFIG_16_2(BT_AUDIO_LOCATION_FRONT_LEFT,
-							 BT_AUDIO_CONTEXT_TYPE_UNSPECIFIED);
+	struct bt_audio_codec_cfg codec_cfg = BT_AUDIO_CODEC_LC3_CONFIG(
+		BT_AUDIO_CODEC_CFG_FREQ_16KHZ, BT_AUDIO_CODEC_CFG_DURATION_10,
+		BT_AUDIO_LOCATION_FRONT_LEFT, 40U, 1, BT_AUDIO_CONTEXT_TYPE_UNSPECIFIED);
 	struct bt_bap_stream *stream = &fixture->stream;
 	struct bt_conn *conn = &fixture->conn;
 	uint8_t ase_id = fixture->ase.id;
@@ -966,7 +1012,7 @@ ZTEST_F(test_source_ase_state_transition, test_server_qos_configured_to_codec_co
 
 	test_preamble_state_qos_configured(conn, ase_id, stream);
 
-	err = bt_bap_stream_reconfig(stream, &codec);
+	err = bt_bap_stream_reconfig(stream, &codec_cfg);
 	zassert_false(err < 0, "bt_bap_stream_reconfig returned err %d", err);
 
 	/* Verification */
@@ -1010,14 +1056,14 @@ ZTEST_F(test_source_ase_state_transition, test_server_enabling_to_releasing)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_release_called_once(stream);
 	expect_bt_bap_stream_ops_released_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_source_ase_state_transition, test_server_enabling_to_enabling)
 {
-	struct bt_codec_data meta[] = {
-		BT_CODEC_DATA(BT_AUDIO_METADATA_TYPE_STREAM_CONTEXT,
-			      (BT_AUDIO_CONTEXT_TYPE_MEDIA & 0xFFU),
-			      ((BT_AUDIO_CONTEXT_TYPE_MEDIA >> 8) & 0xFFU)),
+	const uint8_t meta[] = {
+		BT_AUDIO_CODEC_DATA(BT_AUDIO_METADATA_TYPE_STREAM_CONTEXT,
+				    BT_BYTES_LIST_LE16(BT_AUDIO_CONTEXT_TYPE_MEDIA)),
 	};
 	struct bt_bap_stream *stream = &fixture->stream;
 	struct bt_conn *conn = &fixture->conn;
@@ -1034,6 +1080,7 @@ ZTEST_F(test_source_ase_state_transition, test_server_enabling_to_enabling)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_metadata_called_once(stream, EMPTY, EMPTY);
 	expect_bt_bap_stream_ops_metadata_updated_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_source_ase_state_transition, test_server_enabling_to_disabling)
@@ -1057,10 +1104,9 @@ ZTEST_F(test_source_ase_state_transition, test_server_enabling_to_disabling)
 
 ZTEST_F(test_source_ase_state_transition, test_server_streaming_to_streaming)
 {
-	struct bt_codec_data meta[] = {
-		BT_CODEC_DATA(BT_AUDIO_METADATA_TYPE_STREAM_CONTEXT,
-			      (BT_AUDIO_CONTEXT_TYPE_MEDIA & 0xFFU),
-			      ((BT_AUDIO_CONTEXT_TYPE_MEDIA >> 8) & 0xFFU)),
+	const uint8_t meta[] = {
+		BT_AUDIO_CODEC_DATA(BT_AUDIO_METADATA_TYPE_STREAM_CONTEXT,
+				    BT_BYTES_LIST_LE16(BT_AUDIO_CONTEXT_TYPE_MEDIA)),
 	};
 	struct bt_bap_stream *stream = &fixture->stream;
 	struct bt_conn *conn = &fixture->conn;
@@ -1078,6 +1124,7 @@ ZTEST_F(test_source_ase_state_transition, test_server_streaming_to_streaming)
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_metadata_called_once(stream, EMPTY, EMPTY);
 	expect_bt_bap_stream_ops_metadata_updated_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
 }
 
 ZTEST_F(test_source_ase_state_transition, test_server_streaming_to_disabling)
@@ -1097,6 +1144,7 @@ ZTEST_F(test_source_ase_state_transition, test_server_streaming_to_disabling)
 
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_disable_called_once(stream);
+	expect_bt_bap_stream_ops_stopped_called_once(stream, BT_HCI_ERR_LOCALHOST_TERM_CONN);
 	expect_bt_bap_stream_ops_disabled_called_once(stream);
 }
 
@@ -1116,10 +1164,12 @@ ZTEST_F(test_source_ase_state_transition, test_server_streaming_to_releasing)
 	zassert_false(err < 0, "bt_bap_stream_release returned err %d", err);
 
 	/* Client disconnects the ISO */
-	mock_bt_iso_disconnect(chan);
+	mock_bt_iso_disconnected(chan, BT_HCI_ERR_REMOTE_USER_TERM_CONN);
 
 	/* Verification */
 	expect_bt_bap_unicast_server_cb_release_called_once(stream);
-	expect_bt_bap_stream_ops_stopped_called_once(stream, EMPTY);
+	expect_bt_bap_stream_ops_stopped_called_once(stream, BT_HCI_ERR_LOCALHOST_TERM_CONN);
 	expect_bt_bap_stream_ops_released_called_once(stream);
+	expect_bt_bap_stream_ops_disabled_not_called();
+	expect_bt_bap_stream_ops_disconnected_called_once(stream);
 }

@@ -6,6 +6,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/**
+ * @file
+ * @brief Controller Area Network (CAN) driver API.
+ */
+
 #ifndef ZEPHYR_INCLUDE_DRIVERS_CAN_H_
 #define ZEPHYR_INCLUDE_DRIVERS_CAN_H_
 
@@ -25,6 +30,8 @@ extern "C" {
 /**
  * @brief CAN Interface
  * @defgroup can_interface CAN Interface
+ * @since 1.12
+ * @version 1.0.0
  * @ingroup io_interfaces
  * @{
  */
@@ -55,7 +62,7 @@ extern "C" {
  */
 #define CAN_MAX_DLC     8U
 /**
- * @brief Maximum data length code for CAN-FD.
+ * @brief Maximum data length code for CAN FD.
  */
 #define CANFD_MAX_DLC   15U
 
@@ -84,19 +91,22 @@ extern "C" {
 #define CAN_MODE_NORMAL     0
 
 /** Controller is in loopback mode (receives own frames). */
-#define CAN_MODE_LOOPBACK   BIT(0)
+#define CAN_MODE_LOOPBACK        BIT(0)
 
 /** Controller is not allowed to send dominant bits. */
-#define CAN_MODE_LISTENONLY BIT(1)
+#define CAN_MODE_LISTENONLY      BIT(1)
 
-/** Controller allows transmitting/receiving CAN-FD frames. */
-#define CAN_MODE_FD         BIT(2)
+/** Controller allows transmitting/receiving CAN FD frames. */
+#define CAN_MODE_FD              BIT(2)
 
 /** Controller does not retransmit in case of lost arbitration or missing ACK */
-#define CAN_MODE_ONE_SHOT   BIT(3)
+#define CAN_MODE_ONE_SHOT        BIT(3)
 
 /** Controller uses triple sampling mode */
-#define CAN_MODE_3_SAMPLES  BIT(4)
+#define CAN_MODE_3_SAMPLES       BIT(4)
+
+/** Controller requires manual recovery after entering bus-off state */
+#define CAN_MODE_MANUAL_RECOVERY BIT(5)
 
 /** @} */
 
@@ -139,13 +149,13 @@ enum can_state {
 /** Frame is a Remote Transmission Request (RTR) */
 #define CAN_FRAME_RTR BIT(1)
 
-/** Frame uses CAN-FD format (FDF) */
+/** Frame uses CAN FD format (FDF) */
 #define CAN_FRAME_FDF BIT(2)
 
-/** Frame uses CAN-FD Baud Rate Switch (BRS). Only valid in combination with ``CAN_FRAME_FDF``. */
+/** Frame uses CAN FD Baud Rate Switch (BRS). Only valid in combination with ``CAN_FRAME_FDF``. */
 #define CAN_FRAME_BRS BIT(3)
 
-/** CAN-FD Error State Indicator (ESI). Indicates that the transmitting node is in error-passive
+/** CAN FD Error State Indicator (ESI). Indicates that the transmitting node is in error-passive
  * state. Only valid in combination with ``CAN_FRAME_FDF``.
  */
 #define CAN_FRAME_ESI BIT(4)
@@ -181,7 +191,9 @@ struct can_frame {
 #endif
 	/** The frame payload data. */
 	union {
+		/** Payload data accessed as unsigned 8 bit values. */
 		uint8_t data[CAN_MAX_DLEN];
+		/** Payload data accessed as unsigned 32 bit values. */
 		uint32_t data_32[DIV_ROUND_UP(CAN_MAX_DLEN, sizeof(uint32_t))];
 	};
 };
@@ -196,14 +208,6 @@ struct can_frame {
 /** Filter matches frames with extended (29-bit) CAN IDs */
 #define CAN_FILTER_IDE  BIT(0)
 
-/** Filter matches Remote Transmission Request (RTR) frames */
-#define CAN_FILTER_RTR  BIT(1)
-
-/** Filter matches data frames */
-#define CAN_FILTER_DATA BIT(2)
-
-/** Filter matches CAN-FD frames (FDF) */
-#define CAN_FILTER_FDF BIT(3)
 
 /** @} */
 
@@ -233,11 +237,6 @@ struct can_bus_err_cnt {
 	/** Value of the CAN controller receive error counter. */
 	uint8_t rx_err_cnt;
 };
-
-/** Synchronization Jump Width (SJW) value to indicate that the SJW should not
- * be changed by the timing calculation.
- */
-#define CAN_SJW_NO_CHANGE 0
 
 /**
  * @brief CAN bus timing structure
@@ -324,6 +323,78 @@ typedef void (*can_state_change_callback_t)(const struct device *dev,
  */
 
 /**
+ * @brief Common CAN controller driver configuration.
+ *
+ * This structure is common to all CAN controller drivers and is expected to be the first element in
+ * the object pointed to by the config field in the device structure.
+ */
+struct can_driver_config {
+	/** Pointer to the device structure for the associated CAN transceiver device or NULL. */
+	const struct device *phy;
+	/** The minimum bitrate supported by the CAN controller/transceiver combination. */
+	uint32_t min_bitrate;
+	/** The maximum bitrate supported by the CAN controller/transceiver combination. */
+	uint32_t max_bitrate;
+	/** Initial CAN classic/CAN FD arbitration phase bitrate. */
+	uint32_t bus_speed;
+	/** Initial CAN classic/CAN FD arbitration phase sample point in permille. */
+	uint16_t sample_point;
+#ifdef CONFIG_CAN_FD_MODE
+	/** Initial CAN FD data phase sample point in permille. */
+	uint16_t sample_point_data;
+	/** Initial CAN FD data phase bitrate. */
+	uint32_t bus_speed_data;
+#endif /* CONFIG_CAN_FD_MODE */
+};
+
+/**
+ * @brief Static initializer for @p can_driver_config struct
+ *
+ * @param node_id Devicetree node identifier
+ * @param _min_bitrate minimum bitrate supported by the CAN controller
+ * @param _max_bitrate maximum bitrate supported by the CAN controller
+ */
+#define CAN_DT_DRIVER_CONFIG_GET(node_id, _min_bitrate, _max_bitrate)				\
+	{											\
+		.phy = DEVICE_DT_GET_OR_NULL(DT_PHANDLE(node_id, phys)),			\
+		.min_bitrate = DT_CAN_TRANSCEIVER_MIN_BITRATE(node_id, _min_bitrate),		\
+		.max_bitrate = DT_CAN_TRANSCEIVER_MAX_BITRATE(node_id, _max_bitrate),		\
+		.bus_speed = DT_PROP(node_id, bus_speed),					\
+		.sample_point = DT_PROP_OR(node_id, sample_point, 0),				\
+		IF_ENABLED(CONFIG_CAN_FD_MODE,							\
+			(.bus_speed_data = DT_PROP_OR(node_id, bus_speed_data, 0),		\
+			 .sample_point_data = DT_PROP_OR(node_id, sample_point_data, 0),))	\
+	}
+
+/**
+ * @brief Static initializer for @p can_driver_config struct from DT_DRV_COMPAT instance
+ *
+ * @param inst DT_DRV_COMPAT instance number
+ * @param _min_bitrate minimum bitrate supported by the CAN controller
+ * @param _max_bitrate maximum bitrate supported by the CAN controller
+ * @see CAN_DT_DRIVER_CONFIG_GET()
+ */
+#define CAN_DT_DRIVER_CONFIG_INST_GET(inst, _min_bitrate, _max_bitrate)				\
+	CAN_DT_DRIVER_CONFIG_GET(DT_DRV_INST(inst), _min_bitrate, _max_bitrate)
+
+/**
+ * @brief Common CAN controller driver data.
+ *
+ * This structure is common to all CAN controller drivers and is expected to be the first element in
+ * the driver's struct driver_data declaration.
+ */
+struct can_driver_data {
+	/** Current CAN controller mode. */
+	can_mode_t mode;
+	/** True if the CAN controller is started, false otherwise. */
+	bool started;
+	/** State change callback function pointer or NULL. */
+	can_state_change_callback_t state_change_cb;
+	/** State change callback user data pointer or NULL. */
+	void *state_change_cb_user_data;
+};
+
+/**
  * @brief Callback API upon setting CAN bus timing
  * See @a can_set_timing() for argument description
  */
@@ -331,7 +402,7 @@ typedef int (*can_set_timing_t)(const struct device *dev,
 				const struct can_timing *timing);
 
 /**
- * @brief Optional callback API upon setting CAN-FD bus timing for the data phase.
+ * @brief Optional callback API upon setting CAN FD bus timing for the data phase.
  * See @a can_set_timing_data() for argument description
  */
 typedef int (*can_set_timing_data_t)(const struct device *dev,
@@ -389,7 +460,7 @@ typedef int (*can_add_rx_filter_t)(const struct device *dev,
 typedef void (*can_remove_rx_filter_t)(const struct device *dev, int filter_id);
 
 /**
- * @brief Callback API upon recovering the CAN bus
+ * @brief Optional callback API upon manually recovering the CAN controller from bus-off state
  * See @a can_recover() for argument description
  */
 typedef int (*can_recover_t)(const struct device *dev, k_timeout_t timeout);
@@ -421,12 +492,6 @@ typedef int (*can_get_core_clock_t)(const struct device *dev, uint32_t *rate);
  */
 typedef int (*can_get_max_filters_t)(const struct device *dev, bool ide);
 
-/**
- * @brief Optional callback API upon getting the maximum supported bitrate
- * See @a can_get_max_bitrate() for argument description
- */
-typedef int (*can_get_max_bitrate_t)(const struct device *dev, uint32_t *max_bitrate);
-
 __subsystem struct can_driver_api {
 	can_get_capabilities_t get_capabilities;
 	can_start_t start;
@@ -436,14 +501,13 @@ __subsystem struct can_driver_api {
 	can_send_t send;
 	can_add_rx_filter_t add_rx_filter;
 	can_remove_rx_filter_t remove_rx_filter;
-#if !defined(CONFIG_CAN_AUTO_BUS_OFF_RECOVERY) || defined(__DOXYGEN__)
+#if defined(CONFIG_CAN_MANUAL_RECOVERY_MODE) || defined(__DOXYGEN__)
 	can_recover_t recover;
-#endif /* CONFIG_CAN_AUTO_BUS_OFF_RECOVERY */
+#endif /* CONFIG_CAN_MANUAL_RECOVERY_MODE */
 	can_get_state_t get_state;
 	can_set_state_change_callback_t set_state_change_callback;
 	can_get_core_clock_t get_core_clock;
 	can_get_max_filters_t get_max_filters;
-	can_get_max_bitrate_t get_max_bitrate;
 	/* Min values for the timing registers */
 	struct can_timing timing_min;
 	/* Max values for the timing registers */
@@ -466,6 +530,7 @@ __subsystem struct can_driver_api {
 /** @cond INTERNAL_HIDDEN */
 
 STATS_SECT_START(can)
+STATS_SECT_ENTRY32(bit_error)
 STATS_SECT_ENTRY32(bit0_error)
 STATS_SECT_ENTRY32(bit1_error)
 STATS_SECT_ENTRY32(stuff_error)
@@ -476,6 +541,7 @@ STATS_SECT_ENTRY32(rx_overrun)
 STATS_SECT_END;
 
 STATS_NAME_START(can)
+STATS_NAME(can, bit_error)
 STATS_NAME(can, bit0_error)
 STATS_NAME(can, bit1_error)
 STATS_NAME(can, stuff_error)
@@ -492,7 +558,9 @@ STATS_NAME_END(can);
  * additions
  */
 struct can_device_state {
+	/** Common device state. */
 	struct device_state devstate;
+	/** CAN device statistics */
 	struct stats_can stats;
 };
 
@@ -507,15 +575,40 @@ struct can_device_state {
 /** @endcond */
 
 /**
+ * @brief Increment the bit error counter for a CAN device
+ *
+ * The bit error counter is incremented when the CAN controller is unable to
+ * transmit either a dominant or a recessive bit.
+ *
+ * @note This error counter should only be incremented if the CAN controller is unable to
+ * distinquish between failure to transmit a dominant versus failure to transmit a recessive bit. If
+ * the CAN controller supports distinguishing between the two, the `bit0` or `bit1` error counter
+ * shall be incremented instead.
+ *
+ * @see CAN_STATS_BIT0_ERROR_INC()
+ * @see CAN_STATS_BIT1_ERROR_INC()
+ *
+ * @param dev_ Pointer to the device structure for the driver instance.
+ */
+#define CAN_STATS_BIT_ERROR_INC(dev_)                  \
+	STATS_INC(Z_CAN_GET_STATS(dev_), bit_error)
+
+/**
  * @brief Increment the bit0 error counter for a CAN device
  *
  * The bit0 error counter is incremented when the CAN controller is unable to
  * transmit a dominant bit.
  *
+ * Incrementing this counter will automatically increment the bit error counter.
+ * @see CAN_STATS_BIT_ERROR_INC()
+ *
  * @param dev_ Pointer to the device structure for the driver instance.
  */
-#define CAN_STATS_BIT0_ERROR_INC(dev_)			\
-	STATS_INC(Z_CAN_GET_STATS(dev_), bit0_error)
+#define CAN_STATS_BIT0_ERROR_INC(dev_)				\
+	do {							\
+		STATS_INC(Z_CAN_GET_STATS(dev_), bit0_error);	\
+		CAN_STATS_BIT_ERROR_INC(dev_);			\
+	} while (0)
 
 /**
  * @brief Increment the bit1 (recessive) error counter for a CAN device
@@ -523,10 +616,16 @@ struct can_device_state {
  * The bit1 error counter is incremented when the CAN controller is unable to
  * transmit a recessive bit.
  *
+ * Incrementing this counter will automatically increment the bit error counter.
+ * @see CAN_STATS_BIT_ERROR_INC()
+ *
  * @param dev_ Pointer to the device structure for the driver instance.
  */
-#define CAN_STATS_BIT1_ERROR_INC(dev_)			\
-	STATS_INC(Z_CAN_GET_STATS(dev_), bit1_error)
+#define CAN_STATS_BIT1_ERROR_INC(dev_)				\
+	do {							\
+		STATS_INC(Z_CAN_GET_STATS(dev_), bit1_error);	\
+		CAN_STATS_BIT_ERROR_INC(dev_);			\
+	} while (0)
 
 /**
  * @brief Increment the stuffing error counter for a CAN device
@@ -615,7 +714,7 @@ struct can_device_state {
 	{								\
 		struct can_device_state *state =			\
 			CONTAINER_OF(dev->state, struct can_device_state, devstate); \
-		stats_init(&state->stats.s_hdr, STATS_SIZE_32, 7,	\
+		stats_init(&state->stats.s_hdr, STATS_SIZE_32, 8,	\
 			   STATS_NAME_INIT_PARMS(can));			\
 		stats_register(dev->name, &(state->stats.s_hdr));	\
 		if (init_fn != NULL) {					\
@@ -660,6 +759,7 @@ struct can_device_state {
 
 #else /* CONFIG_CAN_STATS */
 
+#define CAN_STATS_BIT_ERROR_INC(dev_)
 #define CAN_STATS_BIT0_ERROR_INC(dev_)
 #define CAN_STATS_BIT1_ERROR_INC(dev_)
 #define CAN_STATS_STUFF_ERROR_INC(dev_)
@@ -695,7 +795,9 @@ struct can_device_state {
 /**
  * @brief Get the CAN core clock rate
  *
- * Returns the CAN core clock rate. One time quantum is 1/(core clock rate).
+ * Returns the CAN core clock rate. One minimum time quantum (mtq) is 1/(core clock rate). The CAN
+ * core clock can be further divided by the CAN clock prescaler (see the @a can_timing struct),
+ * providing the time quantum (tq).
  *
  * @param dev  Pointer to the device structure for the driver instance.
  * @param[out] rate CAN core clock rate in Hz.
@@ -709,6 +811,28 @@ static inline int z_impl_can_get_core_clock(const struct device *dev, uint32_t *
 	const struct can_driver_api *api = (const struct can_driver_api *)dev->api;
 
 	return api->get_core_clock(dev, rate);
+}
+
+/**
+ * @brief Get minimum supported bitrate
+ *
+ * Get the minimum supported bitrate for the CAN controller/transceiver combination.
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @param[out] min_bitrate Minimum supported bitrate in bits/s
+ *
+ * @retval -EIO General input/output error.
+ * @retval -ENOSYS If this function is not implemented by the driver.
+ */
+__syscall int can_get_min_bitrate(const struct device *dev, uint32_t *min_bitrate);
+
+static inline int z_impl_can_get_min_bitrate(const struct device *dev, uint32_t *min_bitrate)
+{
+	const struct can_driver_config *common = (const struct can_driver_config *)dev->config;
+
+	*min_bitrate = common->min_bitrate;
+
+	return 0;
 }
 
 /**
@@ -727,13 +851,15 @@ __syscall int can_get_max_bitrate(const struct device *dev, uint32_t *max_bitrat
 
 static inline int z_impl_can_get_max_bitrate(const struct device *dev, uint32_t *max_bitrate)
 {
-	const struct can_driver_api *api = (const struct can_driver_api *)dev->api;
+	const struct can_driver_config *common = (const struct can_driver_config *)dev->config;
 
-	if (api->get_max_bitrate == NULL) {
+	if (common->max_bitrate == 0U) {
 		return -ENOSYS;
 	}
 
-	return api->get_max_bitrate(dev, max_bitrate);
+	*max_bitrate = common->max_bitrate;
+
+	return 0;
 }
 
 /**
@@ -776,13 +902,18 @@ static inline const struct can_timing *z_impl_can_get_timing_max(const struct de
  * always match perfectly. If no result can be reached for the given parameters,
  * -EINVAL is returned.
  *
+ * If the sample point is set to 0, this function defaults to a sample point of 75.0%
+ * for bitrates over 800 kbit/s, 80.0% for bitrates over 500 kbit/s, and 87.5% for
+ * all other bitrates.
+ *
  * @note The requested ``sample_pnt`` will not always be matched perfectly. The
  * algorithm calculates the best possible match.
  *
  * @param dev        Pointer to the device structure for the driver instance.
  * @param[out] res   Result is written into the @a can_timing struct provided.
  * @param bitrate    Target bitrate in bits/s.
- * @param sample_pnt Sampling point in permill of the entire bit time.
+ * @param sample_pnt Sample point in permille of the entire bit time or 0 for
+ *                   automatic sample point location.
  *
  * @retval 0 or positive sample point error on success.
  * @retval -EINVAL if the requested bitrate or sample point is out of range.
@@ -803,7 +934,7 @@ __syscall int can_calc_timing(const struct device *dev, struct can_timing *res,
  * @param dev Pointer to the device structure for the driver instance.
  *
  * @return Pointer to the minimum supported timing parameter values, or NULL if
- *         CAN-FD support is not implemented by the driver.
+ *         CAN FD support is not implemented by the driver.
  */
 __syscall const struct can_timing *can_get_timing_data_min(const struct device *dev);
 
@@ -827,7 +958,7 @@ static inline const struct can_timing *z_impl_can_get_timing_data_min(const stru
  * @param dev Pointer to the device structure for the driver instance.
  *
  * @return Pointer to the maximum supported timing parameter values, or NULL if
- *         CAN-FD support is not implemented by the driver.
+ *         CAN FD support is not implemented by the driver.
  */
 __syscall const struct can_timing *can_get_timing_data_max(const struct device *dev);
 
@@ -852,7 +983,8 @@ static inline const struct can_timing *z_impl_can_get_timing_data_max(const stru
  * @param dev        Pointer to the device structure for the driver instance.
  * @param[out] res   Result is written into the @a can_timing struct provided.
  * @param bitrate    Target bitrate for the data phase in bits/s
- * @param sample_pnt Sampling point for the data phase in permille of the entire bit time.
+ * @param sample_pnt Sample point for the data phase in permille of the entire bit
+ *                   time or 0 for automatic sample point location.
  *
  * @retval 0 or positive sample point error on success.
  * @retval -EINVAL if the requested bitrate or sample point is out of range.
@@ -863,9 +995,7 @@ __syscall int can_calc_timing_data(const struct device *dev, struct can_timing *
 				   uint32_t bitrate, uint16_t sample_pnt);
 
 /**
- * @brief Configure the bus timing for the data phase of a CAN-FD controller.
- *
- * If the sjw equals CAN_SJW_NO_CHANGE, the sjw parameter is not changed.
+ * @brief Configure the bus timing for the data phase of a CAN FD controller.
  *
  * @note @kconfig{CONFIG_CAN_FD_MODE} must be selected for this function to be
  * available.
@@ -879,13 +1009,13 @@ __syscall int can_calc_timing_data(const struct device *dev, struct can_timing *
  * @retval -EBUSY if the CAN controller is not in stopped state.
  * @retval -EIO General input/output error, failed to configure device.
  * @retval -ENOTSUP if the timing parameters are not supported by the driver.
- * @retval -ENOSYS if CAN-FD support is not implemented by the driver.
+ * @retval -ENOSYS if CAN FD support is not implemented by the driver.
  */
 __syscall int can_set_timing_data(const struct device *dev,
 				  const struct can_timing *timing_data);
 
 /**
- * @brief Set the bitrate for the data phase of the CAN-FD controller
+ * @brief Set the bitrate for the data phase of the CAN FD controller
  *
  * CAN in Automation (CiA) 301 v4.2.0 recommends a sample point location of
  * 87.5% percent for all bitrates. However, some CAN controllers have
@@ -923,6 +1053,10 @@ __syscall int can_set_bitrate_data(const struct device *dev, uint32_t bitrate_da
  * The returned bitrate error is remainder of the division of the clock rate by
  * the bitrate times the timing segments.
  *
+ * @deprecated This function allows for bitrate errors, but bitrate errors between nodes on the same
+ *             network leads to them drifting apart after the start-of-frame (SOF) synchronization
+ *             has taken place.
+ *
  * @param dev     Pointer to the device structure for the driver instance.
  * @param timing  Result is written into the can_timing struct provided.
  * @param bitrate Target bitrate.
@@ -930,13 +1064,11 @@ __syscall int can_set_bitrate_data(const struct device *dev, uint32_t bitrate_da
  * @retval 0 or positive bitrate error.
  * @retval Negative error code on error.
  */
-int can_calc_prescaler(const struct device *dev, struct can_timing *timing,
-		       uint32_t bitrate);
+__deprecated int can_calc_prescaler(const struct device *dev, struct can_timing *timing,
+				    uint32_t bitrate);
 
 /**
  * @brief Configure the bus timing of a CAN controller.
- *
- * If the sjw equals CAN_SJW_NO_CHANGE, the sjw parameter is not changed.
  *
  * @see can_set_timing_data()
  *
@@ -974,11 +1106,31 @@ static inline int z_impl_can_get_capabilities(const struct device *dev, can_mode
 }
 
 /**
+ * @brief Get the CAN transceiver associated with the CAN controller
+ *
+ * Get a pointer to the device structure for the CAN transceiver associated with the CAN controller.
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @return Pointer to the device structure for the associated CAN transceiver driver instance, or
+ *         NULL if no transceiver is associated.
+ */
+__syscall const struct device *can_get_transceiver(const struct device *dev);
+
+static const struct device *z_impl_can_get_transceiver(const struct device *dev)
+{
+	const struct can_driver_config *common = (const struct can_driver_config *)dev->config;
+
+	return common->phy;
+}
+
+/**
  * @brief Start the CAN controller
  *
  * Bring the CAN controller out of `CAN_STATE_STOPPED`. This will reset the RX/TX error counters,
  * enable the CAN controller to participate in CAN communication, and enable the CAN tranceiver, if
  * supported.
+ *
+ * Starting the CAN controller resets all the CAN controller statistics.
  *
  * @see can_stop()
  * @see can_transceiver_enable()
@@ -1038,6 +1190,22 @@ static inline int z_impl_can_set_mode(const struct device *dev, can_mode_t mode)
 	const struct can_driver_api *api = (const struct can_driver_api *)dev->api;
 
 	return api->set_mode(dev, mode);
+}
+
+/**
+ * @brief Get the operation mode of the CAN controller
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ *
+ * @return Current operation mode.
+ */
+__syscall can_mode_t can_get_mode(const struct device *dev);
+
+static inline can_mode_t z_impl_can_get_mode(const struct device *dev)
+{
+	const struct can_driver_data *common = (const struct can_driver_data *)dev->data;
+
+	return common->mode;
 }
 
 /**
@@ -1159,7 +1327,7 @@ static inline int can_add_rx_filter(const struct device *dev, can_rx_callback_t 
 {
 	const struct can_driver_api *api = (const struct can_driver_api *)dev->api;
 
-	if (filter == NULL || (filter->flags & (CAN_FILTER_DATA | CAN_FILTER_RTR)) == 0) {
+	if (filter == NULL) {
 		return -EINVAL;
 	}
 
@@ -1289,34 +1457,32 @@ static inline int z_impl_can_get_state(const struct device *dev, enum can_state 
  *
  * Recover the CAN controller from bus-off state to error-active state.
  *
- * @note @kconfig{CONFIG_CAN_AUTO_BUS_OFF_RECOVERY} must be deselected for this
+ * @note @kconfig{CONFIG_CAN_MANUAL_RECOVERY_MODE} must be enabled for this
  * function to be available.
  *
  * @param dev     Pointer to the device structure for the driver instance.
  * @param timeout Timeout for waiting for the recovery or ``K_FOREVER``.
  *
  * @retval 0 on success.
+ * @retval -ENOTSUP if the CAN controller is not in manual recovery mode.
  * @retval -ENETDOWN if the CAN controller is in stopped state.
  * @retval -EAGAIN on timeout.
+ * @retval -ENOSYS If this function is not implemented by the driver.
  */
-#if !defined(CONFIG_CAN_AUTO_BUS_OFF_RECOVERY) || defined(__DOXYGEN__)
 __syscall int can_recover(const struct device *dev, k_timeout_t timeout);
 
+#ifdef CONFIG_CAN_MANUAL_RECOVERY_MODE
 static inline int z_impl_can_recover(const struct device *dev, k_timeout_t timeout)
 {
 	const struct can_driver_api *api = (const struct can_driver_api *)dev->api;
 
+	if (api->recover == NULL) {
+		return -ENOSYS;
+	}
+
 	return api->recover(dev, timeout);
 }
-#else /* CONFIG_CAN_AUTO_BUS_OFF_RECOVERY */
-/* This implementation prevents inking errors for auto recovery */
-static inline int z_impl_can_recover(const struct device *dev, k_timeout_t timeout)
-{
-	ARG_UNUSED(dev);
-	ARG_UNUSED(timeout);
-	return 0;
-}
-#endif /* !CONFIG_CAN_AUTO_BUS_OFF_RECOVERY */
+#endif /* CONFIG_CAN_MANUAL_RECOVERY_MODE */
 
 /**
  * @brief Set a callback for CAN controller state change events
@@ -1343,6 +1509,187 @@ static inline void can_set_state_change_callback(const struct device *dev,
 /** @} */
 
 /**
+ * @name CAN statistics
+ *
+ * @{
+ */
+
+/**
+ * @brief Get the bit error counter for a CAN device
+ *
+ * The bit error counter is incremented when the CAN controller is unable to
+ * transmit either a dominant or a recessive bit.
+ *
+ * @note @kconfig{CONFIG_CAN_STATS} must be selected for this function to be
+ * available.
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @return bit error counter
+ */
+__syscall uint32_t can_stats_get_bit_errors(const struct device *dev);
+
+#ifdef CONFIG_CAN_STATS
+static inline uint32_t z_impl_can_stats_get_bit_errors(const struct device *dev)
+{
+	return Z_CAN_GET_STATS(dev).bit_error;
+}
+#endif /* CONFIG_CAN_STATS */
+
+/**
+ * @brief Get the bit0 error counter for a CAN device
+ *
+ * The bit0 error counter is incremented when the CAN controller is unable to
+ * transmit a dominant bit.
+ *
+ * @note @kconfig{CONFIG_CAN_STATS} must be selected for this function to be
+ * available.
+ *
+ * @see can_stats_get_bit_errors()
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @return bit0 error counter
+ */
+__syscall uint32_t can_stats_get_bit0_errors(const struct device *dev);
+
+#ifdef CONFIG_CAN_STATS
+static inline uint32_t z_impl_can_stats_get_bit0_errors(const struct device *dev)
+{
+	return Z_CAN_GET_STATS(dev).bit0_error;
+}
+#endif /* CONFIG_CAN_STATS */
+
+/**
+ * @brief Get the bit1 error counter for a CAN device
+ *
+ * The bit1 error counter is incremented when the CAN controller is unable to
+ * transmit a recessive bit.
+ *
+ * @note @kconfig{CONFIG_CAN_STATS} must be selected for this function to be
+ * available.
+ *
+ * @see can_stats_get_bit_errors()
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @return bit1 error counter
+ */
+__syscall uint32_t can_stats_get_bit1_errors(const struct device *dev);
+
+#ifdef CONFIG_CAN_STATS
+static inline uint32_t z_impl_can_stats_get_bit1_errors(const struct device *dev)
+{
+	return Z_CAN_GET_STATS(dev).bit1_error;
+}
+#endif /* CONFIG_CAN_STATS */
+
+/**
+ * @brief Get the stuffing error counter for a CAN device
+ *
+ * The stuffing error counter is incremented when the CAN controller detects a
+ * bit stuffing error.
+ *
+ * @note @kconfig{CONFIG_CAN_STATS} must be selected for this function to be
+ * available.
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @return stuffing error counter
+ */
+__syscall uint32_t can_stats_get_stuff_errors(const struct device *dev);
+
+#ifdef CONFIG_CAN_STATS
+static inline uint32_t z_impl_can_stats_get_stuff_errors(const struct device *dev)
+{
+	return Z_CAN_GET_STATS(dev).stuff_error;
+}
+#endif /* CONFIG_CAN_STATS */
+
+/**
+ * @brief Get the CRC error counter for a CAN device
+ *
+ * The CRC error counter is incremented when the CAN controller detects a frame
+ * with an invalid CRC.
+ *
+ * @note @kconfig{CONFIG_CAN_STATS} must be selected for this function to be
+ * available.
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @return CRC error counter
+ */
+__syscall uint32_t can_stats_get_crc_errors(const struct device *dev);
+
+#ifdef CONFIG_CAN_STATS
+static inline uint32_t z_impl_can_stats_get_crc_errors(const struct device *dev)
+{
+	return Z_CAN_GET_STATS(dev).crc_error;
+}
+#endif /* CONFIG_CAN_STATS */
+
+/**
+ * @brief Get the form error counter for a CAN device
+ *
+ * The form error counter is incremented when the CAN controller detects a
+ * fixed-form bit field containing illegal bits.
+ *
+ * @note @kconfig{CONFIG_CAN_STATS} must be selected for this function to be
+ * available.
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @return form error counter
+ */
+__syscall uint32_t can_stats_get_form_errors(const struct device *dev);
+
+#ifdef CONFIG_CAN_STATS
+static inline uint32_t z_impl_can_stats_get_form_errors(const struct device *dev)
+{
+	return Z_CAN_GET_STATS(dev).form_error;
+}
+#endif /* CONFIG_CAN_STATS */
+
+/**
+ * @brief Get the acknowledge error counter for a CAN device
+ *
+ * The acknowledge error counter is incremented when the CAN controller does not
+ * monitor a dominant bit in the ACK slot.
+ *
+ * @note @kconfig{CONFIG_CAN_STATS} must be selected for this function to be
+ * available.
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @return acknowledge error counter
+ */
+__syscall uint32_t can_stats_get_ack_errors(const struct device *dev);
+
+#ifdef CONFIG_CAN_STATS
+static inline uint32_t z_impl_can_stats_get_ack_errors(const struct device *dev)
+{
+	return Z_CAN_GET_STATS(dev).ack_error;
+}
+#endif /* CONFIG_CAN_STATS */
+
+/**
+ * @brief Get the RX overrun counter for a CAN device
+ *
+ * The RX overrun counter is incremented when the CAN controller receives a CAN
+ * frame matching an installed filter but lacks the capacity to store it (either
+ * due to an already full RX mailbox or a full RX FIFO).
+ *
+ * @note @kconfig{CONFIG_CAN_STATS} must be selected for this function to be
+ * available.
+ *
+ * @param dev Pointer to the device structure for the driver instance.
+ * @return RX overrun counter
+ */
+__syscall uint32_t can_stats_get_rx_overruns(const struct device *dev);
+
+#ifdef CONFIG_CAN_STATS
+static inline uint32_t z_impl_can_stats_get_rx_overruns(const struct device *dev)
+{
+	return Z_CAN_GET_STATS(dev).rx_overrun;
+}
+#endif /* CONFIG_CAN_STATS */
+
+/** @} */
+
+/**
  * @name CAN utility functions
  *
  * @{
@@ -1360,7 +1707,7 @@ static inline uint8_t can_dlc_to_bytes(uint8_t dlc)
 	static const uint8_t dlc_table[] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 12,
 					    16, 20, 24, 32, 48, 64};
 
-	return dlc > 0x0F ? 64 : dlc_table[dlc];
+	return dlc_table[MIN(dlc, ARRAY_SIZE(dlc_table) - 1)];
 }
 
 /**
@@ -1399,26 +1746,6 @@ static inline bool can_frame_matches_filter(const struct can_frame *frame,
 
 	if ((frame->flags & CAN_FRAME_IDE) == 0 && (filter->flags & CAN_FILTER_IDE) != 0) {
 		/* Standard (11-bit) ID frame, extended (29-bit) filter */
-		return false;
-	}
-
-	if ((frame->flags & CAN_FRAME_RTR) == 0 && (filter->flags & CAN_FILTER_DATA) == 0) {
-		/* non-RTR frame, remote transmission request (RTR) filter */
-		return false;
-	}
-
-	if ((frame->flags & CAN_FRAME_RTR) != 0 && (filter->flags & CAN_FILTER_RTR) == 0) {
-		/* Remote transmission request (RTR) frame, non-RTR filter */
-		return false;
-	}
-
-	if ((frame->flags & CAN_FRAME_FDF) != 0 && (filter->flags & CAN_FILTER_FDF) == 0) {
-		/* CAN-FD format frame, classic format filter */
-		return false;
-	}
-
-	if ((frame->flags & CAN_FRAME_FDF) == 0 && (filter->flags & CAN_FILTER_FDF) != 0) {
-		/* Classic frame, CAN-FD format filter */
 		return false;
 	}
 

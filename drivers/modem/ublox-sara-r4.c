@@ -936,8 +936,12 @@ MODEM_CMD_DEFINE(on_cmd_socknotifycreg)
 }
 
 /* RX thread */
-static void modem_rx(void)
+static void modem_rx(void *p1, void *p2, void *p3)
 {
+	ARG_UNUSED(p1);
+	ARG_UNUSED(p2);
+	ARG_UNUSED(p3);
+
 	while (true) {
 		/* wait for incoming data */
 		modem_iface_uart_rx_wait(&mctx.iface, K_FOREVER);
@@ -1413,39 +1417,39 @@ static int create_socket(struct modem_socket *sock, const struct sockaddr *addr)
 	}
 
 	if (sock->ip_proto == IPPROTO_TLS_1_2) {
-		char buf[sizeof("AT+USECPRF=#,#,#######\r")];
+		char atbuf[sizeof("AT+USECPRF=#,#,#######\r")];
 
 		/* Enable socket security */
-		snprintk(buf, sizeof(buf), "AT+USOSEC=%d,1,%d", sock->id, sock->id);
-		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, buf,
+		snprintk(atbuf, sizeof(atbuf), "AT+USOSEC=%d,1,%d", sock->id, sock->id);
+		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, atbuf,
 				     &mdata.sem_response, MDM_CMD_TIMEOUT);
 		if (ret < 0) {
 			goto error;
 		}
 		/* Reset the security profile */
-		snprintk(buf, sizeof(buf), "AT+USECPRF=%d", sock->id);
-		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, buf,
+		snprintk(atbuf, sizeof(atbuf), "AT+USECPRF=%d", sock->id);
+		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, atbuf,
 				     &mdata.sem_response, MDM_CMD_TIMEOUT);
 		if (ret < 0) {
 			goto error;
 		}
 		/* Validate server cert against the CA.  */
-		snprintk(buf, sizeof(buf), "AT+USECPRF=%d,0,1", sock->id);
-		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, buf,
+		snprintk(atbuf, sizeof(atbuf), "AT+USECPRF=%d,0,1", sock->id);
+		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, atbuf,
 				     &mdata.sem_response, MDM_CMD_TIMEOUT);
 		if (ret < 0) {
 			goto error;
 		}
 		/* Use TLSv1.2 only */
-		snprintk(buf, sizeof(buf), "AT+USECPRF=%d,1,3", sock->id);
-		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, buf,
+		snprintk(atbuf, sizeof(atbuf), "AT+USECPRF=%d,1,3", sock->id);
+		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, atbuf,
 				     &mdata.sem_response, MDM_CMD_TIMEOUT);
 		if (ret < 0) {
 			goto error;
 		}
 		/* Set root CA filename */
-		snprintk(buf, sizeof(buf), "AT+USECPRF=%d,3,\"ca\"", sock->id);
-		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, buf,
+		snprintk(atbuf, sizeof(atbuf), "AT+USECPRF=%d,3,\"ca\"", sock->id);
+		ret = modem_cmd_send(&mctx.iface, &mctx.cmd_handler, NULL, 0U, atbuf,
 				     &mdata.sem_response, MDM_CMD_TIMEOUT);
 		if (ret < 0) {
 			goto error;
@@ -2031,7 +2035,7 @@ static int offload_getaddrinfo(const char *node, const char *service,
 static void offload_freeaddrinfo(struct zsock_addrinfo *res)
 {
 	/* using static result from offload_getaddrinfo() -- no need to free */
-	res = NULL;
+	ARG_UNUSED(res);
 }
 
 static const struct socket_dns_offload offload_dns_ops = {
@@ -2220,7 +2224,7 @@ static int modem_init(const struct device *dev)
 	/* start RX thread */
 	k_thread_create(&modem_rx_thread, modem_rx_stack,
 			K_KERNEL_STACK_SIZEOF(modem_rx_stack),
-			(k_thread_entry_t) modem_rx,
+			modem_rx,
 			NULL, NULL, NULL, K_PRIO_COOP(7), 0, K_NO_WAIT);
 
 #if defined(CONFIG_MODEM_UBLOX_SARA_RSSI_WORK)

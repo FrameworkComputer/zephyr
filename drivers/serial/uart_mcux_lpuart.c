@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2017,2021 NXP
+ * Copyright 2017,2021,2023-2024 NXP
  * Copyright (c) 2020 Softube
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -21,8 +21,13 @@
 #include <zephyr/logging/log.h>
 
 #include <fsl_lpuart.h>
+#if CONFIG_NXP_LP_FLEXCOMM
+#include <zephyr/drivers/mfd/nxp_lp_flexcomm.h>
+#endif
 
 LOG_MODULE_REGISTER(uart_mcux_lpuart, LOG_LEVEL_ERR);
+
+#define PINCTRL_STATE_FLOWCONTROL PINCTRL_STATE_PRIV_START
 
 #ifdef CONFIG_UART_ASYNC_API
 struct lpuart_dma_config {
@@ -34,6 +39,9 @@ struct lpuart_dma_config {
 
 struct mcux_lpuart_config {
 	LPUART_Type *base;
+#ifdef CONFIG_NXP_LP_FLEXCOMM
+	const struct device *parent_dev;
+#endif
 	const struct device *clock_dev;
 	const struct pinctrl_dev_config *pincfg;
 	clock_control_subsys_t clock_subsys;
@@ -142,7 +150,7 @@ static void mcux_lpuart_poll_out(const struct device *dev, unsigned char c)
 #endif
 
 	while (!(LPUART_GetStatusFlags(config->base)
-		& kLPUART_TxDataRegEmptyFlag)) {
+		& LPUART_STAT_TDRE_MASK)) {
 	}
 	/* Lock interrupts while we send data */
 	key = irq_lock();
@@ -207,7 +215,7 @@ static int mcux_lpuart_fifo_fill(const struct device *dev,
 
 	while ((len - num_tx > 0) &&
 	       (LPUART_GetStatusFlags(config->base)
-		& kLPUART_TxDataRegEmptyFlag)) {
+		& LPUART_STAT_TDRE_MASK)) {
 
 		LPUART_WriteByte(config->base, tx_data[num_tx++]);
 	}
@@ -293,7 +301,7 @@ static int mcux_lpuart_irq_tx_ready(const struct device *dev)
 	uint32_t flags = LPUART_GetStatusFlags(config->base);
 
 	return (LPUART_GetEnabledInterrupts(config->base) & mask)
-		&& (flags & kLPUART_TxDataRegEmptyFlag);
+		&& (flags & LPUART_STAT_TDRE_MASK);
 }
 
 static void mcux_lpuart_irq_rx_enable(const struct device *dev)
@@ -370,6 +378,11 @@ static void mcux_lpuart_irq_callback_set(const struct device *dev,
 
 	data->callback = cb;
 	data->cb_data = cb_data;
+
+#if defined(CONFIG_UART_EXCLUSIVE_API_CALLBACKS)
+	data->async.user_callback = NULL;
+	data->async.user_data = NULL;
+#endif
 }
 
 #endif /* CONFIG_UART_INTERRUPT_DRIVEN */
@@ -661,6 +674,11 @@ static int mcux_lpuart_callback_set(const struct device *dev, uart_callback_t ca
 	data->async.user_callback = callback;
 	data->async.user_data = user_data;
 
+#if defined(CONFIG_UART_EXCLUSIVE_API_CALLBACKS)
+	data->callback = NULL;
+	data->cb_data = NULL;
+#endif
+
 	return 0;
 }
 
@@ -810,7 +828,8 @@ static int mcux_lpuart_rx_buf_rsp(const struct device *dev, uint8_t *buf, size_t
 
 static void mcux_lpuart_async_rx_timeout(struct k_work *work)
 {
-	struct mcux_lpuart_rx_dma_params *rx_params = CONTAINER_OF(work,
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct mcux_lpuart_rx_dma_params *rx_params = CONTAINER_OF(dwork,
 								   struct mcux_lpuart_rx_dma_params,
 								   timeout_work);
 	struct mcux_lpuart_async_data *async_data = CONTAINER_OF(rx_params,
@@ -824,7 +843,8 @@ static void mcux_lpuart_async_rx_timeout(struct k_work *work)
 
 static void mcux_lpuart_async_tx_timeout(struct k_work *work)
 {
-	struct mcux_lpuart_tx_dma_params *tx_params = CONTAINER_OF(work,
+	struct k_work_delayable *dwork = k_work_delayable_from_work(work);
+	struct mcux_lpuart_tx_dma_params *tx_params = CONTAINER_OF(dwork,
 								   struct mcux_lpuart_tx_dma_params,
 								   timeout_work);
 	struct mcux_lpuart_async_data *async_data = CONTAINER_OF(tx_params,
@@ -855,8 +875,6 @@ static void mcux_lpuart_isr(const struct device *dev)
 			data->tx_poll_stream_on = false;
 			mcux_lpuart_pm_policy_state_lock_put(dev);
 		}
-		assert(LPUART_ClearStatusFlags(config->base,
-			kLPUART_TransmissionCompleteFlag) == 0U);
 	}
 #endif /* CONFIG_PM */
 
@@ -874,7 +892,7 @@ static void mcux_lpuart_isr(const struct device *dev)
 	if (status & kLPUART_IdleLineFlag) {
 		async_timer_start(&data->async.rx_dma_params.timeout_work,
 				  data->async.rx_dma_params.timeout_us);
-		assert(LPUART_ClearStatusFlags(config->base, kLPUART_IdleLineFlag) == 0U);
+		LPUART_ClearStatusFlags(config->base, kLPUART_IdleLineFlag);
 	}
 #endif /* CONFIG_UART_ASYNC_API */
 }
@@ -1050,13 +1068,31 @@ static int mcux_lpuart_init(const struct device *dev)
 
 	/* set initial configuration */
 	mcux_lpuart_configure_init(dev, uart_api_config);
-	err = pinctrl_apply_state(config->pincfg, PINCTRL_STATE_DEFAULT);
+	if (config->flow_ctrl) {
+		const struct pinctrl_state *state;
+
+		err = pinctrl_lookup_state(config->pincfg, PINCTRL_STATE_FLOWCONTROL, &state);
+		if (err < 0) {
+			err = pinctrl_apply_state(config->pincfg, PINCTRL_STATE_DEFAULT);
+		}
+	} else {
+		err = pinctrl_apply_state(config->pincfg, PINCTRL_STATE_DEFAULT);
+	}
 	if (err < 0) {
 		return err;
 	}
 
 #ifdef CONFIG_UART_MCUX_LPUART_ISR_SUPPORT
+#if CONFIG_NXP_LP_FLEXCOMM
+	/* When using LP Flexcomm driver, register the interrupt handler
+	 * so we receive notification from the LP Flexcomm interrupt handler.
+	 */
+	nxp_lp_flexcomm_setirqhandler(config->parent_dev, dev,
+				      LP_FLEXCOMM_PERIPH_LPUART, mcux_lpuart_isr);
+#else
+	/* Interrupt is managed by this driver */
 	config->irq_config_func(dev);
+#endif
 #endif
 
 #ifdef CONFIG_PM
@@ -1106,7 +1142,7 @@ static const struct uart_driver_api mcux_lpuart_driver_api = {
 #ifdef CONFIG_UART_MCUX_LPUART_ISR_SUPPORT
 #define MCUX_LPUART_IRQ_INSTALL(n, i)					\
 	do {								\
-		IRQ_CONNECT(DT_INST_IRQ_BY_IDX(n, i, irq),		\
+		IRQ_CONNECT(DT_INST_IRQN_BY_IDX(n, i),			\
 			    DT_INST_IRQ_BY_IDX(n, i, priority),		\
 			    mcux_lpuart_isr, DEVICE_DT_INST_GET(n), 0);	\
 									\
@@ -1116,7 +1152,8 @@ static const struct uart_driver_api mcux_lpuart_driver_api = {
 #define MCUX_LPUART_IRQ_DEFINE(n)						\
 	static void mcux_lpuart_config_func_##n(const struct device *dev)	\
 	{									\
-		MCUX_LPUART_IRQ_INSTALL(n, 0);				\
+		IF_ENABLED(DT_INST_IRQ_HAS_IDX(n, 0),			\
+			   (MCUX_LPUART_IRQ_INSTALL(n, 0);))		\
 									\
 		IF_ENABLED(DT_INST_IRQ_HAS_IDX(n, 1),			\
 			   (MCUX_LPUART_IRQ_INSTALL(n, 1);))		\
@@ -1184,10 +1221,17 @@ static const struct uart_driver_api mcux_lpuart_driver_api = {
 		: DT_INST_PROP(n, nxp_rs485_mode)\
 				? UART_CFG_FLOW_CTRL_RS485   \
 				: UART_CFG_FLOW_CTRL_NONE
+#ifdef CONFIG_NXP_LP_FLEXCOMM
+#define PARENT_DEV(n) \
+	.parent_dev = DEVICE_DT_GET(DT_INST_PARENT(n)),
+#else
+#define PARENT_DEV(n)
+#endif /* CONFIG_NXP_LP_FLEXCOMM */
 
 #define LPUART_MCUX_DECLARE_CFG(n)                                      \
 static const struct mcux_lpuart_config mcux_lpuart_##n##_config = {     \
 	.base = (LPUART_Type *) DT_INST_REG_ADDR(n),                          \
+	PARENT_DEV(n)		\
 	.clock_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(n)),                   \
 	.clock_subsys = (clock_control_subsys_t)DT_INST_CLOCKS_CELL(n, name),	\
 	.baud_rate = DT_INST_PROP(n, current_speed),                          \

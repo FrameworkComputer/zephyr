@@ -1,6 +1,8 @@
 # Copyright (c) 2017 Linaro Limited.
 #
 # SPDX-License-Identifier: Apache-2.0
+#
+# pylint: disable=duplicate-code
 
 '''Runner for openocd.'''
 
@@ -13,7 +15,7 @@ from pathlib import Path
 try:
     from elftools.elf.elffile import ELFFile
 except ImportError:
-    ELFFile = None
+    pass
 
 from runners.core import ZephyrBinaryRunner
 
@@ -189,7 +191,7 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
     def read_version(self):
         self.require(self.openocd_cmd[0])
 
-	# OpenOCD prints in stderr, need redirect to get output
+        # OpenOCD prints in stderr, need redirect to get output
         out = self.check_output([self.openocd_cmd[0], '--version'],
                                 stderr=subprocess.STDOUT).decode()
 
@@ -204,7 +206,7 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
 
     def do_run(self, command, **kwargs):
         self.require(self.openocd_cmd[0])
-        if ELFFile is None:
+        if globals().get('ELFFile') is None:
             raise RuntimeError(
                 'elftools missing; please "pip3 install elftools"')
 
@@ -355,6 +357,11 @@ class OpenOcdBinaryRunner(ZephyrBinaryRunner):
         for i in self.pre_init:
             pre_init_cmd.append("-c")
             pre_init_cmd.append(i)
+
+        if self.thread_info_enabled and self.supports_thread_info():
+            pre_init_cmd.append("-c")
+            rtos_command = '${} configure -rtos Zephyr'.format(self.target_handle)
+            pre_init_cmd.append(rtos_command)
 
         cmd = (self.openocd_cmd + self.cfg_cmd +
                ['-c', 'tcl_port {}'.format(self.tcl_port),

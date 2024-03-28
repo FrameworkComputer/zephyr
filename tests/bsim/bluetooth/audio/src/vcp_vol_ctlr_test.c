@@ -659,14 +659,6 @@ static void test_vocs_location_set(void)
 		return;
 	}
 
-	invalid_location = BT_AUDIO_LOCATION_PROHIBITED;
-
-	err = bt_vocs_location_set(vcp_included.vocs[0], invalid_location);
-	if (err == 0) {
-		FAIL("bt_vocs_location_set with location 0x%08X did not fail", invalid_location);
-		return;
-	}
-
 	invalid_location = BT_AUDIO_LOCATION_ANY + 1;
 
 	err = bt_vocs_location_set(vcp_included.vocs[0], invalid_location);
@@ -818,6 +810,8 @@ static void test_cb_register(void)
 static void test_discover(void)
 {
 	int err;
+
+	g_discovery_complete = false;
 
 	/* Invalid behavior */
 	err = bt_vcp_vol_ctlr_discover(NULL, &vol_ctlr);
@@ -1153,9 +1147,10 @@ static void test_main(void)
 		return;
 	}
 
+	bt_le_scan_cb_register(&common_scan_cb);
 	test_cb_register();
 
-	err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, device_found);
+	err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, NULL);
 	if (err != 0) {
 		FAIL("Scanning failed to start (err %d)\n", err);
 		return;
@@ -1166,6 +1161,7 @@ static void test_main(void)
 	WAIT_FOR_FLAG(flag_connected);
 
 	test_discover();
+	test_discover(); /* test that we can discover twice */
 	test_included_get();
 	test_conn_get();
 	test_read_state();

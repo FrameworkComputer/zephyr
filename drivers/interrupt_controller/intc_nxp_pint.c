@@ -12,12 +12,11 @@
 #include <zephyr/drivers/interrupt_controller/nxp_pint.h>
 
 #include <fsl_inputmux.h>
+#include <fsl_power.h>
 
 #define DT_DRV_COMPAT nxp_pint
 
-#define PINT_NODE DT_INST(0, DT_DRV_COMPAT)
-
-static PINT_Type *pint_base = (PINT_Type *)DT_REG_ADDR(PINT_NODE);
+static PINT_Type *pint_base = (PINT_Type *)DT_INST_REG_ADDR(0);
 
 /* Describes configuration of PINT IRQ slot */
 struct pint_irq_slot {
@@ -25,14 +24,15 @@ struct pint_irq_slot {
 	void *user_data;
 	uint8_t pin: 6;
 	uint8_t used: 1;
+	uint8_t irq;
 };
 
 #define NO_PINT_ID 0xFF
 
 /* Tracks IRQ configuration for each pint interrupt source */
-static struct pint_irq_slot pint_irq_cfg[DT_PROP(PINT_NODE, num_lines)];
+static struct pint_irq_slot pint_irq_cfg[DT_INST_PROP(0, num_lines)];
 /* Tracks pint interrupt source selected for each pin */
-static uint8_t pin_pint_id[DT_PROP(PINT_NODE, num_inputs)];
+static uint8_t pin_pint_id[DT_INST_PROP(0, num_inputs)];
 
 #define PIN_TO_INPUT_MUX_CONNECTION(pin) \
 	((PINTSEL_PMUX_ID << PMUX_SHIFT) + (pin))
@@ -60,9 +60,10 @@ static void attach_pin_to_pint(uint8_t pin, uint8_t pint_slot)
  * @param pin: pin to use as interrupt source
  *     0-64, corresponding to GPIO0 pin 1 - GPIO1 pin 31)
  * @param trigger: one of nxp_pint_trigger flags
+ * @param wake: indicates if the pin should wakeup the system
  * @return 0 on success, or negative value on error
  */
-int nxp_pint_pin_enable(uint8_t pin, enum nxp_pint_trigger trigger)
+int nxp_pint_pin_enable(uint8_t pin, enum nxp_pint_trigger trigger, bool wake)
 {
 	uint8_t slot = 0U;
 
@@ -93,6 +94,13 @@ int nxp_pint_pin_enable(uint8_t pin, enum nxp_pint_trigger trigger)
 	 * driver handles the IRQ
 	 */
 	PINT_PinInterruptConfig(pint_base, slot, trigger, NULL);
+#if !(defined(FSL_FEATURE_POWERLIB_EXTEND) && (FSL_FEATURE_POWERLIB_EXTEND != 0))
+	if (wake) {
+		EnableDeepSleepIRQ(pint_irq_cfg[slot].irq);
+	} else {
+		DisableDeepSleepIRQ(pint_irq_cfg[slot].irq);
+	}
+#endif
 	return 0;
 }
 
@@ -186,19 +194,20 @@ static void nxp_pint_isr(uint8_t *slot)
 			    DT_IRQ_BY_IDX(node_id, idx, priority),		\
 			    nxp_pint_isr, &nxp_pint_idx_##idx, 0);		\
 		irq_enable(DT_IRQ_BY_IDX(node_id, idx, irq));			\
+		pint_irq_cfg[idx].irq = DT_IRQ_BY_IDX(node_id, idx, irq);	\
 	} while (false)))
 
-static int intc_nxp_pint_init(void)
+static int intc_nxp_pint_init(const struct device *dev)
 {
 	/* First, connect IRQs for each interrupt.
 	 * The IRQ handler will receive the PINT slot as a
 	 * parameter.
 	 */
-	LISTIFY(8, NXP_PINT_IRQ, (;), PINT_NODE);
+	LISTIFY(8, NXP_PINT_IRQ, (;), DT_INST(0, DT_DRV_COMPAT));
 	PINT_Init(pint_base);
 	memset(pin_pint_id, NO_PINT_ID, ARRAY_SIZE(pin_pint_id));
 	return 0;
 }
 
-SYS_INIT(intc_nxp_pint_init, PRE_KERNEL_1,
-	CONFIG_INTC_INIT_PRIORITY);
+DEVICE_DT_INST_DEFINE(0, intc_nxp_pint_init, NULL, NULL, NULL,
+		      PRE_KERNEL_1, CONFIG_INTC_INIT_PRIORITY, NULL);

@@ -4,14 +4,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <zephyr/posix/fnmatch.h>
+#include <fnmatch.h>
+
 #include <zephyr/ztest.h>
 
 /*
  * Adapted from
  * https://git.musl-libc.org/cgit/libc-testsuite/tree/fnmatch.c
  */
-ZTEST(posix_apis, test_fnmatch)
+ZTEST(fnmatch, test_fnmatch)
 {
 	/* Note: commented out lines indicate known problems to be addressed in #55186 */
 
@@ -81,3 +82,5 @@ ZTEST(posix_apis, test_fnmatch)
 	zassert_ok(fnmatch("a*b", "a.b", FNM_PATHNAME | FNM_PERIOD));
 	zassert_ok(fnmatch("a[.]b", "a.b", FNM_PATHNAME | FNM_PERIOD));
 }
+
+ZTEST_SUITE(fnmatch, NULL, NULL, NULL, NULL, NULL);

@@ -7,12 +7,11 @@
 /** @file mqtt.h
  *
  * @defgroup mqtt_socket MQTT Client library
+ * @since 1.14
+ * @version 0.8.0
  * @ingroup networking
  * @{
  * @brief MQTT Client Implementation
- *
- * @details
- * MQTT Client's Application interface is defined in this header.
  *
  * @note The implementation assumes TCP module is enabled.
  *
@@ -207,36 +206,45 @@ struct mqtt_connack_param {
 
 /** @brief Parameters for MQTT publish acknowledgment (PUBACK). */
 struct mqtt_puback_param {
+	/** Message id of the PUBLISH message being acknowledged */
 	uint16_t message_id;
 };
 
 /** @brief Parameters for MQTT publish receive (PUBREC). */
 struct mqtt_pubrec_param {
+	/** Message id of the PUBLISH message being acknowledged */
 	uint16_t message_id;
 };
 
 /** @brief Parameters for MQTT publish release (PUBREL). */
 struct mqtt_pubrel_param {
+	/** Message id of the PUBREC message being acknowledged */
 	uint16_t message_id;
 };
 
 /** @brief Parameters for MQTT publish complete (PUBCOMP). */
 struct mqtt_pubcomp_param {
+	/** Message id of the PUBREL message being acknowledged */
 	uint16_t message_id;
 };
 
 /** @brief Parameters for MQTT subscription acknowledgment (SUBACK). */
 struct mqtt_suback_param {
+	/** Message id of the SUBSCRIBE message being acknowledged */
 	uint16_t message_id;
+	/** Return codes indicating maximum QoS level granted for each topic
+	 *  in the subscription list.
+	 */
 	struct mqtt_binstr return_codes;
 };
 
 /** @brief Parameters for MQTT unsubscribe acknowledgment (UNSUBACK). */
 struct mqtt_unsuback_param {
+	/** Message id of the UNSUBSCRIBE message being acknowledged */
 	uint16_t message_id;
 };
 
-/** @brief Parameters for a publish message. */
+/** @brief Parameters for a publish message (PUBLISH). */
 struct mqtt_publish_param {
 	/** Messages including topic, QoS and its payload (if any)
 	 *  to be published.
@@ -342,13 +350,26 @@ struct mqtt_sec_config {
 	/** Indicates the list of ciphers to be used for the session.
 	 *  May be NULL to use the default ciphers.
 	 */
-	int *cipher_list;
+	const int *cipher_list;
 
 	/** Indicates the number of entries in the sec tag list. */
 	uint32_t sec_tag_count;
 
 	/** Indicates the list of security tags to be used for the session. */
-	sec_tag_t *sec_tag_list;
+	const sec_tag_t *sec_tag_list;
+
+#if defined(CONFIG_MQTT_LIB_TLS_USE_ALPN)
+	/**
+	 * Pointer to array of string indicating the ALPN protocol name.
+	 * May be NULL to skip ALPN protocol negotiation.
+	 */
+	const char **alpn_protocol_name_list;
+
+	/**
+	 * Indicate number of ALPN protocol name in alpn protocol name list.
+	 */
+	uint32_t alpn_protocol_name_count;
+#endif
 
 	/** Peer hostname for ceritificate verification.
 	 *  May be NULL to skip hostname verification.

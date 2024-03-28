@@ -32,11 +32,15 @@
 /**
  * @brief DSP Interface
  * @defgroup math_dsp DSP Interface
+ * @since 3.3
+ * @version 0.1.0
  */
 
 #include <zephyr/dsp/types.h>
 
 #include <zephyr/dsp/basicmath.h>
+
+#include <zephyr/dsp/print_format.h>
 
 #include "zdsp_backend.h"
 

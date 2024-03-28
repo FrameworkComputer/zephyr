@@ -46,22 +46,16 @@ extern "C" {
 /**
  * @brief RTIO
  * @defgroup rtio RTIO
+ * @since 3.2
+ * @version 0.1.0
  * @ingroup os_services
- * @{
- * @}
- */
-
-/**
- * @brief RTIO API
- * @defgroup rtio_api RTIO API
- * @ingroup rtio
  * @{
  */
 
 /**
  * @brief RTIO Predefined Priorties
  * @defgroup rtio_sqe_prio RTIO Priorities
- * @ingroup rtio_api
+ * @ingroup rtio
  * @{
  */
 
@@ -88,7 +82,7 @@ extern "C" {
 /**
  * @brief RTIO SQE Flags
  * @defgroup rtio_sqe_flags RTIO SQE Flags
- * @ingroup rtio_api
+ * @ingroup rtio
  * @{
  */
 
@@ -136,7 +130,7 @@ extern "C" {
 /**
  * @brief The SQE should continue producing CQEs until canceled
  *
- * This flag must exist along :c:macro:`RTIO_SQE_MEMPOOL_BUFFER` and signals that when a read is
+ * This flag must exist along @ref RTIO_SQE_MEMPOOL_BUFFER and signals that when a read is
  * complete. It should be placed back in queue until canceled.
  */
 #define RTIO_SQE_MULTISHOT BIT(4)
@@ -153,7 +147,7 @@ extern "C" {
 /**
  * @brief RTIO CQE Flags
  * @defgroup rtio_cqe_flags RTIO CQE Flags
- * @ingroup rtio_api
+ * @ingroup rtio
  * @{
  */
 
@@ -201,17 +195,17 @@ extern "C" {
 /**
  * @brief Equivalent to the I2C_MSG_STOP flag
  */
-#define RTIO_IODEV_I2C_STOP BIT(0)
+#define RTIO_IODEV_I2C_STOP BIT(1)
 
 /**
  * @brief Equivalent to the I2C_MSG_RESTART flag
  */
-#define RTIO_IODEV_I2C_RESTART BIT(1)
+#define RTIO_IODEV_I2C_RESTART BIT(2)
 
 /**
  * @brief Equivalent to the I2C_MSG_ADDR_10_BITS
  */
-#define RTIO_IODEV_I2C_10_BITS BIT(2)
+#define RTIO_IODEV_I2C_10_BITS BIT(3)
 
 /** @cond ignore */
 struct rtio;
@@ -219,7 +213,6 @@ struct rtio_cqe;
 struct rtio_sqe;
 struct rtio_sqe_pool;
 struct rtio_cqe_pool;
-struct rtio_block_pool;
 struct rtio_iodev;
 struct rtio_iodev_sqe;
 /** @endcond */
@@ -285,6 +278,8 @@ struct rtio_sqe {
 			uint8_t *rx_buf;
 		};
 
+		/** OP_I2C_CONFIGURE */
+		uint32_t i2c_config;
 	};
 };
 
@@ -318,13 +313,6 @@ struct rtio_cqe_pool {
 	struct rtio_cqe *pool;
 };
 
-struct rtio_block_pool {
-	/* Memory pool associated with this RTIO context. */
-	struct sys_mem_blocks *mempool;
-	/* The size (in bytes) of a single block in the mempool */
-	const uint32_t blk_size;
-};
-
 /**
  * @brief An RTIO context containing what can be viewed as a pair of queues.
  *
@@ -334,7 +322,7 @@ struct rtio_block_pool {
  * The rtio executor along with any objects implementing the rtio_iodev interface are
  * the consumers of submissions and producers of completions.
  *
- * No work is started until rtio_submit is called.
+ * No work is started until rtio_submit() is called.
  */
 struct rtio {
 #ifdef CONFIG_RTIO_SUBMIT_SEM
@@ -354,6 +342,9 @@ struct rtio {
 	struct k_sem *consume_sem;
 #endif
 
+	/* Total number of completions */
+	atomic_t cq_count;
+
 	/* Number of completions that were unable to be submitted with results
 	 * due to the cq spsc being full
 	 */
@@ -367,7 +358,7 @@ struct rtio {
 
 #ifdef CONFIG_RTIO_SYS_MEM_BLOCKS
 	/* Mem block pool */
-	struct rtio_block_pool *block_pool;
+	struct sys_mem_blocks *block_pool;
 #endif
 
 	/* Submission queue */
@@ -381,9 +372,29 @@ struct rtio {
 extern struct k_mem_partition rtio_partition;
 
 /**
+ * @brief Get the mempool block size of the RTIO context
+ *
+ * @param[in] r The RTIO context
+ * @return The size of each block in the context's mempool
+ * @return 0 if the context doesn't have a mempool
+ */
+static inline size_t rtio_mempool_block_size(const struct rtio *r)
+{
+#ifndef CONFIG_RTIO_SYS_MEM_BLOCKS
+	ARG_UNUSED(r);
+	return 0;
+#else
+	if (r == NULL || r->block_pool == NULL) {
+		return 0;
+	}
+	return BIT(r->block_pool->info.blk_sz_shift);
+#endif
+}
+
+/**
  * @brief Compute the mempool block index for a given pointer
  *
- * @param[in] r RTIO contex
+ * @param[in] r RTIO context
  * @param[in] ptr Memory pointer in the mempool
  * @return Index of the mempool block associated with the pointer. Or UINT16_MAX if invalid.
  */
@@ -391,11 +402,11 @@ extern struct k_mem_partition rtio_partition;
 static inline uint16_t __rtio_compute_mempool_block_index(const struct rtio *r, const void *ptr)
 {
 	uintptr_t addr = (uintptr_t)ptr;
-	struct sys_mem_blocks *mem_pool = r->block_pool->mempool;
-	uint32_t block_size = r->block_pool->blk_size;
+	struct sys_mem_blocks *mem_pool = r->block_pool;
+	uint32_t block_size = rtio_mempool_block_size(r);
 
 	uintptr_t buff = (uintptr_t)mem_pool->buffer;
-	uint32_t buff_size = mem_pool->num_blocks * block_size;
+	uint32_t buff_size = mem_pool->info.num_blocks * block_size;
 
 	if (addr < buff || addr >= buff + buff_size) {
 		return UINT16_MAX;
@@ -425,9 +436,6 @@ struct rtio_iodev_api {
 	 *
 	 * This call should be short in duration and most likely
 	 * either enqueue or kick off an entry with the hardware.
-	 *
-	 * If polling is required the iodev should add itself to the execution
-	 * context (@see rtio_add_pollable())
 	 *
 	 * @param iodev_sqe Submission queue entry
 	 */
@@ -466,6 +474,11 @@ struct rtio_iodev {
 /** An operation that transceives (reads and writes simultaneously) */
 #define RTIO_OP_TXRX (RTIO_OP_CALLBACK+1)
 
+/** An operation to recover I2C buses */
+#define RTIO_OP_I2C_RECOVER (RTIO_OP_TXRX+1)
+
+/** An operation to configure I2C buses */
+#define RTIO_OP_I2C_CONFIGURE (RTIO_OP_I2C_RECOVER+1)
 
 /**
  * @brief Prepare a nop (no op) submission
@@ -656,31 +669,54 @@ static inline void rtio_cqe_pool_free(struct rtio_cqe_pool *pool, struct rtio_cq
 	pool->pool_free++;
 }
 
-static inline int rtio_block_pool_alloc(struct rtio_block_pool *pool, size_t min_sz,
+static inline int rtio_block_pool_alloc(struct rtio *r, size_t min_sz,
 					  size_t max_sz, uint8_t **buf, uint32_t *buf_len)
 {
+#ifndef CONFIG_RTIO_SYS_MEM_BLOCKS
+	ARG_UNUSED(r);
+	ARG_UNUSED(min_sz);
+	ARG_UNUSED(max_sz);
+	ARG_UNUSED(buf);
+	ARG_UNUSED(buf_len);
+	return -ENOTSUP;
+#else
+	const uint32_t block_size = rtio_mempool_block_size(r);
 	uint32_t bytes = max_sz;
 
+	/* Not every context has a block pool and the block size may return 0 in
+	 * that case
+	 */
+	if (block_size == 0) {
+		return -ENOMEM;
+	}
+
 	do {
-		size_t num_blks = DIV_ROUND_UP(bytes, pool->blk_size);
-		int rc = sys_mem_blocks_alloc_contiguous(pool->mempool, num_blks, (void **)buf);
+		size_t num_blks = DIV_ROUND_UP(bytes, block_size);
+		int rc = sys_mem_blocks_alloc_contiguous(r->block_pool, num_blks, (void **)buf);
 
 		if (rc == 0) {
-			*buf_len = num_blks * pool->blk_size;
+			*buf_len = num_blks * block_size;
 			return 0;
 		}
 
-		bytes -= pool->blk_size;
+		bytes -= block_size;
 	} while (bytes >= min_sz);
 
 	return -ENOMEM;
+#endif
 }
 
-static inline void rtio_block_pool_free(struct rtio_block_pool *pool, void *buf, uint32_t buf_len)
+static inline void rtio_block_pool_free(struct rtio *r, void *buf, uint32_t buf_len)
 {
-	size_t num_blks = buf_len / pool->blk_size;
+#ifndef CONFIG_RTIO_SYS_MEM_BLOCKS
+	ARG_UNUSED(r);
+	ARG_UNUSED(buf);
+	ARG_UNUSED(buf_len);
+#else
+	size_t num_blks = buf_len >> r->block_pool->info.blk_sz_shift;
 
-	sys_mem_blocks_free_contiguous(pool->mempool, buf, num_blks);
+	sys_mem_blocks_free_contiguous(r->block_pool, buf, num_blks);
+#endif
 }
 
 /* Do not try and reformat the macros */
@@ -741,16 +777,11 @@ static inline void rtio_block_pool_free(struct rtio_block_pool *pool, void *buf,
  */
 #define RTIO_DMEM COND_CODE_1(CONFIG_USERSPACE, (K_APP_DMEM(rtio_partition) static), (static))
 
-#define Z_RTIO_BLOCK_POOL_DEFINE(name, blk_sz, blk_cnt, blk_align)				\
-	RTIO_BMEM uint8_t __aligned(WB_UP(blk_align))						\
-	_block_pool_##name[blk_cnt*WB_UP(blk_sz)];						\
-	_SYS_MEM_BLOCKS_DEFINE_WITH_EXT_BUF(_sys_blocks_##name, WB_UP(blk_sz),			\
-					    blk_cnt, _block_pool_##name,			\
-					    RTIO_DMEM);						\
-	static struct rtio_block_pool name = {							\
-		.mempool = &_sys_blocks_##name,							\
-		.blk_size = blk_sz,								\
-	}
+#define Z_RTIO_BLOCK_POOL_DEFINE(name, blk_sz, blk_cnt, blk_align)                                 \
+	RTIO_BMEM uint8_t __aligned(WB_UP(blk_align))                                              \
+	_block_pool_##name[blk_cnt*WB_UP(blk_sz)];                                                 \
+	_SYS_MEM_BLOCKS_DEFINE_WITH_EXT_BUF(name, WB_UP(blk_sz), blk_cnt, _block_pool_##name,      \
+					    RTIO_DMEM)
 
 #define Z_RTIO_DEFINE(name, _sqe_pool, _cqe_pool, _block_pool)                                     \
 	IF_ENABLED(CONFIG_RTIO_SUBMIT_SEM,                                                         \
@@ -761,6 +792,7 @@ static inline void rtio_block_pool_free(struct rtio_block_pool *pool, void *buf,
 		IF_ENABLED(CONFIG_RTIO_SUBMIT_SEM, (.submit_sem = &_submit_sem_##name,))           \
 		IF_ENABLED(CONFIG_RTIO_SUBMIT_SEM, (.submit_count = 0,))                           \
 		IF_ENABLED(CONFIG_RTIO_CONSUME_SEM, (.consume_sem = &_consume_sem_##name,))        \
+		.cq_count = ATOMIC_INIT(0),                                                        \
 		.xcqcnt = ATOMIC_INIT(0),                                                          \
 		.sqe_pool = _sqe_pool,                                                             \
 		.cqe_pool = _cqe_pool,                                                             \
@@ -811,18 +843,6 @@ static inline void rtio_block_pool_free(struct rtio_block_pool *pool, void *buf,
 static inline uint32_t rtio_sqe_acquirable(struct rtio *r)
 {
 	return r->sqe_pool->pool_free;
-}
-
-/**
- * @brief Count of likely, but not gauranteed, consumable completion queue events
- *
- * @param r RTIO context
- *
- * @return Likely count of consumable completion queue events
- */
-static inline uint32_t rtio_cqe_consumable(struct rtio *r)
-{
-	return (r->cqe_pool->pool_size - r->cqe_pool->pool_free);
 }
 
 /**
@@ -986,8 +1006,8 @@ static inline struct rtio_cqe *rtio_cqe_consume_block(struct rtio *r)
 #endif
 	node = rtio_mpsc_pop(&r->cq);
 	while (node == NULL) {
-		node = rtio_mpsc_pop(&r->cq);
 		Z_SPIN_DELAY(1);
+		node = rtio_mpsc_pop(&r->cq);
 	}
 	cqe = CONTAINER_OF(node, struct rtio_cqe, q);
 
@@ -1018,10 +1038,10 @@ static inline uint32_t rtio_cqe_compute_flags(struct rtio_iodev_sqe *iodev_sqe)
 #ifdef CONFIG_RTIO_SYS_MEM_BLOCKS
 	if (iodev_sqe->sqe.op == RTIO_OP_RX && iodev_sqe->sqe.flags & RTIO_SQE_MEMPOOL_BUFFER) {
 		struct rtio *r = iodev_sqe->r;
-		struct sys_mem_blocks *mem_pool = r->block_pool->mempool;
-		uint32_t block_size = r->block_pool->blk_size;
-		int blk_index = (iodev_sqe->sqe.buf - mem_pool->buffer) / block_size;
-		int blk_count = iodev_sqe->sqe.buf_len / block_size;
+		struct sys_mem_blocks *mem_pool = r->block_pool;
+		int blk_index = (iodev_sqe->sqe.buf - mem_pool->buffer) >>
+				mem_pool->info.blk_sz_shift;
+		int blk_count = iodev_sqe->sqe.buf_len >> mem_pool->info.blk_sz_shift;
 
 		flags = RTIO_CQE_FLAG_PREP_MEMPOOL(blk_index, blk_count);
 	}
@@ -1057,13 +1077,13 @@ static inline int z_impl_rtio_cqe_get_mempool_buffer(const struct rtio *r, struc
 	if (RTIO_CQE_FLAG_GET(cqe->flags) == RTIO_CQE_FLAG_MEMPOOL_BUFFER) {
 		int blk_idx = RTIO_CQE_FLAG_MEMPOOL_GET_BLK_IDX(cqe->flags);
 		int blk_count = RTIO_CQE_FLAG_MEMPOOL_GET_BLK_CNT(cqe->flags);
+		uint32_t blk_size = rtio_mempool_block_size(r);
 
-		*buff = r->block_pool->mempool->buffer + blk_idx * r->block_pool->blk_size;
-		*buff_len = blk_count * r->block_pool->blk_size;
-		__ASSERT_NO_MSG(*buff >= r->block_pool->mempool->buffer);
+		*buff = r->block_pool->buffer + blk_idx * blk_size;
+		*buff_len = blk_count * blk_size;
+		__ASSERT_NO_MSG(*buff >= r->block_pool->buffer);
 		__ASSERT_NO_MSG(*buff <
-				r->block_pool->mempool->buffer +
-				r->block_pool->blk_size * r->block_pool->mempool->num_blocks);
+				r->block_pool->buffer + blk_size * r->block_pool->info.num_blocks);
 		return 0;
 	}
 	return -EINVAL;
@@ -1148,6 +1168,8 @@ static inline void rtio_cqe_submit(struct rtio *r, int result, void *userdata, u
 		cqe->flags = flags;
 		rtio_cqe_produce(r, cqe);
 	}
+
+	atomic_inc(&r->cq_count);
 #ifdef CONFIG_RTIO_SUBMIT_SEM
 	if (r->submit_count > 0) {
 		r->submit_count--;
@@ -1193,8 +1215,7 @@ static inline int rtio_sqe_rx_buf(const struct rtio_iodev_sqe *iodev_sqe, uint32
 			return 0;
 		}
 
-		int rc = rtio_block_pool_alloc(r->block_pool, min_buf_len, max_buf_len,
-					       buf, buf_len);
+		int rc = rtio_block_pool_alloc(r, min_buf_len, max_buf_len, buf, buf_len);
 		if (rc == 0) {
 			sqe->buf = *buf;
 			sqe->buf_len = *buf_len;
@@ -1239,7 +1260,7 @@ static inline void z_impl_rtio_release_buffer(struct rtio *r, void *buff, uint32
 		return;
 	}
 
-	rtio_block_pool_free(r->block_pool, buff, buff_len);
+	rtio_block_pool_free(r, buff, buff_len);
 #else
 	ARG_UNUSED(r);
 	ARG_UNUSED(buff);
@@ -1291,11 +1312,11 @@ static inline int z_impl_rtio_sqe_cancel(struct rtio_sqe *sqe)
  * @brief Copy an array of SQEs into the queue and get resulting handles back
  *
  * Copies one or more SQEs into the RTIO context and optionally returns their generated SQE handles.
- * Handles can be used to cancel events via the :c:func:`rtio_sqe_cancel` call.
+ * Handles can be used to cancel events via the rtio_sqe_cancel() call.
  *
  * @param[in]  r RTIO context
  * @param[in]  sqes Pointer to an array of SQEs
- * @param[out] handle Optional pointer to :c:struct:`rtio_sqe` pointer to store the handle of the
+ * @param[out] handle Optional pointer to @ref rtio_sqe pointer to store the handle of the
  *             first generated SQE. Use NULL to ignore.
  * @param[in]  sqe_count Count of sqes in array
  *
@@ -1375,7 +1396,7 @@ static inline int z_impl_rtio_cqe_copy_out(struct rtio *r,
 {
 	size_t copied = 0;
 	struct rtio_cqe *cqe;
-	int64_t end = sys_clock_timeout_end_calc(timeout);
+	k_timepoint_t end = sys_timepoint_calc(timeout);
 
 	do {
 		cqe = K_TIMEOUT_EQ(timeout, K_FOREVER) ? rtio_cqe_consume_block(r)
@@ -1391,7 +1412,7 @@ static inline int z_impl_rtio_cqe_copy_out(struct rtio *r,
 		}
 		cqes[copied++] = *cqe;
 		rtio_cqe_release(r, cqe);
-	} while (copied < cqe_count && end > k_uptime_ticks());
+	} while (copied < cqe_count && !sys_timepoint_expired(end));
 
 	return copied;
 }
@@ -1425,6 +1446,8 @@ static inline int z_impl_rtio_submit(struct rtio *r, uint32_t wait_count)
 		k_sem_reset(r->submit_sem);
 		r->submit_count = wait_count;
 	}
+#else
+	uintptr_t cq_count = (uintptr_t)atomic_get(&r->cq_count) + wait_count;
 #endif
 
 	/* Submit the queue to the executor which consumes submissions
@@ -1444,7 +1467,7 @@ static inline int z_impl_rtio_submit(struct rtio *r, uint32_t wait_count)
 			 "semaphore was reset or timed out while waiting on completions!");
 	}
 #else
-	while (rtio_cqe_consumable(r) < wait_count) {
+	while ((uintptr_t)atomic_get(&r->cq_count) < cq_count) {
 		Z_SPIN_DELAY(10);
 		k_yield();
 	}

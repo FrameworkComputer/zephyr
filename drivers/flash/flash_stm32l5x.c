@@ -26,8 +26,10 @@ LOG_MODULE_REGISTER(LOG_DOMAIN);
 #elif defined(CONFIG_SOC_SERIES_STM32L5X)
 #define STM32_SERIES_MAX_FLASH	512
 #elif defined(CONFIG_SOC_SERIES_STM32U5X)
-/* at this time stm32u5 mcus have 1MB (stm32u575) or 2MB (stm32u585) */
-#define STM32_SERIES_MAX_FLASH	2048
+/* It is used to handle the 2 banks discontinuity case, the discontinuity is not happen on STM32U5,
+ *  so define it to flash size to avoid the unexptected check.
+ */
+#define STM32_SERIES_MAX_FLASH	(CONFIG_FLASH_SIZE)
 #endif
 
 #define PAGES_PER_BANK ((FLASH_SIZE / FLASH_PAGE_SIZE) / 2)
@@ -128,7 +130,7 @@ static int icache_wait_for_invalidate_complete(void)
 #endif /* CONFIG_SOC_SERIES_STM32H5X */
 
 /*
- * offset and len must be aligned on 8 for write,
+ * offset and len must be aligned on write-block-size for write,
  * positive and not beyond end of flash
  */
 bool flash_stm32_valid_range(const struct device *dev, off_t offset,
@@ -149,17 +151,21 @@ bool flash_stm32_valid_range(const struct device *dev, off_t offset,
 		}
 	}
 
-	return (!write || (offset % 8 == 0 && len % 8 == 0U)) &&
-		flash_stm32_range_exists(dev, offset, len);
+	if (write && !flash_stm32_valid_write(offset, len)) {
+		return false;
+	}
+	return flash_stm32_range_exists(dev, offset, len);
 }
 
-static int write_dword(const struct device *dev, off_t offset, uint64_t val)
+static int write_nwords(const struct device *dev, off_t offset, const uint32_t *buff, size_t n)
 {
 	FLASH_TypeDef *regs = FLASH_STM32_REGS(dev);
 	volatile uint32_t *flash = (uint32_t *)(offset
-						+ CONFIG_FLASH_BASE_ADDRESS);
+						+ FLASH_STM32_BASE_ADDRESS);
+	bool full_zero = true;
 	uint32_t tmp;
 	int rc;
+	int i;
 
 	/* if the non-secure control register is locked,do not fail silently */
 	if (regs->NSCR & FLASH_STM32_NSLOCK) {
@@ -173,16 +179,26 @@ static int write_dword(const struct device *dev, off_t offset, uint64_t val)
 		return rc;
 	}
 
-	/* Check if this double word is erased and value isn't 0.
+	/* Check if this double/quad word is erased and value isn't 0.
 	 *
-	 * It is allowed to write only zeros over an already written dword
+	 * It is allowed to write only zeros over an already written dword / qword
 	 * See 6.3.7 in STM32L5 reference manual.
 	 * See 7.3.7 in STM32U5 reference manual.
+	 * See 7.3.5 in STM32H5 reference manual.
 	 */
-	if ((flash[0] != 0xFFFFFFFFUL ||
-	     flash[1] != 0xFFFFFFFFUL) && val != 0UL) {
-		LOG_ERR("Word at offs %ld not erased", (long)offset);
-		return -EIO;
+	for (i = 0; i < n; i++) {
+		if (buff[i] != 0) {
+			full_zero = false;
+			break;
+		}
+	}
+	if (!full_zero) {
+		for (i = 0; i < n; i++) {
+			if (flash[i] != 0xFFFFFFFFUL) {
+				LOG_ERR("Word at offs %ld not erased", (long)(offset + i));
+				return -EIO;
+			}
+		}
 	}
 
 	/* Set the NSPG bit */
@@ -192,8 +208,9 @@ static int write_dword(const struct device *dev, off_t offset, uint64_t val)
 	tmp = regs->NSCR;
 
 	/* Perform the data write operation at the desired memory address */
-	flash[0] = (uint32_t)val;
-	flash[1] = (uint32_t)(val >> 32);
+	for (i = 0; i < n; i++) {
+		flash[i] = buff[i];
+	}
 
 	/* Wait until the NSBSY bit is cleared */
 	rc = flash_stm32_wait_flash_idle(dev);
@@ -341,8 +358,9 @@ int flash_stm32_write_range(const struct device *dev, unsigned int offset,
 		}
 	}
 
-	for (i = 0; i < len; i += 8, offset += 8) {
-		rc = write_dword(dev, offset, ((const uint64_t *) data)[i>>3]);
+	for (i = 0; i < len; i += FLASH_STM32_WRITE_BLOCK_SIZE) {
+		rc = write_nwords(dev, offset + i, ((const uint32_t *) data + (i>>2)),
+				  FLASH_STM32_WRITE_BLOCK_SIZE / 4);
 		if (rc < 0) {
 			break;
 		}
@@ -381,7 +399,7 @@ void flash_stm32_page_layout(const struct device *dev,
 	if (stm32_flash_has_2_banks(dev) &&
 			(CONFIG_FLASH_SIZE < STM32_SERIES_MAX_FLASH)) {
 		/*
-		 * For stm32l552xx with 256 kB flash or stm32u57x with 1MB flash
+		 * For stm32l552xx with 256 kB flash
 		 * which have space between banks 1 and 2.
 		 */
 
@@ -401,8 +419,8 @@ void flash_stm32_page_layout(const struct device *dev,
 		stm32_flash_layout_size = ARRAY_SIZE(stm32_flash_layout);
 	} else {
 		/*
-		 * For stm32l562xx & stm32l552xx with 512 flash or stm32u58x
-		 * with 2MB flash which has no space between banks 1 and 2.
+		 * For stm32l562xx & stm32l552xx with 512 flash or stm32u5x,
+		 * which has no space between banks 1 and 2.
 		 */
 
 		if (stm32_flash_has_2_banks(dev)) {

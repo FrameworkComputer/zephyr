@@ -40,7 +40,10 @@ int emul_init_for_bus(const struct device *dev)
 	for (elp = cfg->children; elp < end; elp++) {
 		const struct emul *emul = emul_get_binding(elp->dev->name);
 
-		__ASSERT(emul, "Cannot find emulator for '%s'", elp->dev->name);
+		if (!emul) {
+			LOG_WRN("Cannot find emulator for '%s'", elp->dev->name);
+			continue;
+		}
 
 		switch (emul->bus_type) {
 		case EMUL_BUS_TYPE_I2C:
@@ -51,6 +54,8 @@ int emul_init_for_bus(const struct device *dev)
 			break;
 		case EMUL_BUS_TYPE_SPI:
 			emul->bus.spi->target = emul;
+			break;
+		case EMUL_BUS_TYPE_NONE:
 			break;
 		}
 		int rc = emul->init(emul, dev);

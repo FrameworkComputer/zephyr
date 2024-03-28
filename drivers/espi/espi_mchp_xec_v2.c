@@ -524,6 +524,11 @@ static int espi_xec_flash_write(const struct device *dev,
 
 	LOG_DBG("%s", __func__);
 
+	if (sizeof(target_mem) < pckt->len) {
+		LOG_ERR("Packet length is too big");
+		return -ENOMEM;
+	}
+
 	if (!(regs->FCSTS & MCHP_ESPI_FC_STS_CHAN_EN)) {
 		LOG_ERR("Flash channel is disabled");
 		return -EIO;
@@ -1431,6 +1436,12 @@ static int xec_register_vw_handlers(const struct device *dev)
 		const struct espi_vw_isr *vwi = &m2s_vwires_isr[i];
 		struct xec_signal signal_info = vw_tbl[vwi->signal];
 		uint8_t xec_id = signal_info.xec_reg_idx;
+		uint8_t en = (signal_info.flags & BIT(MCHP_DT_ESPI_VW_FLAG_STATUS_POS));
+
+		if (!en) {
+			LOG_INF("VW %d not enabled, skipping", vwi->signal);
+			continue;
+		}
 
 		/* enables interrupt in eSPI MSVWn register */
 		xec_espi_vw_intr_ctrl(dev, xec_id, signal_info.bit,

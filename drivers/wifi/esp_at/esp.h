@@ -77,7 +77,7 @@ extern "C" {
 	STRINGIFY(_UART_BAUD)",8,1,0,"_FLOW_CONTROL
 
 #define CONN_CMD_MAX_LEN (sizeof("AT+"_CWJAP"=\"\",\"\"") + \
-			  WIFI_SSID_MAX_LEN + WIFI_PSK_MAX_LEN)
+			  WIFI_SSID_MAX_LEN * 2 + WIFI_PSK_MAX_LEN * 2)
 
 #if defined(CONFIG_WIFI_ESP_AT_DNS_USE)
 #define ESP_MAX_DNS	MIN(3, CONFIG_DNS_RESOLVER_MAX_SERVERS)
@@ -264,6 +264,7 @@ struct esp_data {
 	struct k_sem sem_tx_ready;
 	struct k_sem sem_response;
 	struct k_sem sem_if_ready;
+	struct k_sem sem_if_up;
 };
 
 int esp_offload_init(struct net_if *iface);
@@ -343,7 +344,7 @@ static inline atomic_val_t esp_socket_flags(struct esp_socket *sock)
 
 static inline struct esp_data *esp_socket_to_dev(struct esp_socket *sock)
 {
-	return CONTAINER_OF(sock - sock->idx, struct esp_data, sockets);
+	return CONTAINER_OF(sock - sock->idx, struct esp_data, sockets[0]);
 }
 
 static inline void __esp_socket_work_submit(struct esp_socket *sock,

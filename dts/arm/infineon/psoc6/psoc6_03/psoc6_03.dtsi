@@ -178,9 +178,9 @@
 			status = "disabled";
 		};
 
-		adc0: adc@409f0000 {
+		adc0: adc@409d0000 {
 			compatible = "infineon,cat1-adc";
-			reg = <0x409f0000 0x10000>;
+			reg = <0x409d0000 0x10000>;
 			interrupts = <155 6>;
 			status = "disabled";
 		};
@@ -239,6 +239,12 @@
 			#address-cells = <1>;
 			#size-cells = <0>;
 			interrupts = <18 6>;
+			status = "disabled";
+		};
+		sdhc0: sdhc@40460000 {
+			compatible = "infineon,cat1-sdhc-sdio";
+			reg = <0x40460000 0x2000>;
+			interrupts = <164 6>;
 			status = "disabled";
 		};
 

@@ -3,6 +3,13 @@
  *
  * SPDX-License-Identifier: Apache-2.0
  */
+
+/*
+ * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
+ * #line marks the *next* line, so it is off by one.
+ */
+#line 12
+
 #ifndef ZEPHYR_INCLUDE_LOGGING_LOG_INSTANCE_H_
 #define ZEPHYR_INCLUDE_LOGGING_LOG_INSTANCE_H_
 
@@ -137,11 +144,16 @@ struct log_source_dynamic_data {
 /**
  * @brief Declare a logger instance pointer in the module structure.
  *
+ * If logging is disabled then element in the structure is still declared to avoid
+ * compilation issues. If compiler supports zero length arrays then it is utilized
+ * to not use any space, else a byte array is created.
+ *
  * @param _name Name of a structure element that will have a pointer to logging
  * instance object.
  */
 #define LOG_INSTANCE_PTR_DECLARE(_name)	\
-	IF_ENABLED(CONFIG_LOG, (Z_LOG_INSTANCE_STRUCT * _name))
+	COND_CODE_1(CONFIG_LOG, (Z_LOG_INSTANCE_STRUCT * _name), \
+				(int _name[TOOLCHAIN_HAS_ZLA ? 0 : 1]))
 
 #define Z_LOG_RUNTIME_INSTANCE_REGISTER(_module_name, _inst_name) \
 	STRUCT_SECTION_ITERABLE_ALTERNATE(log_dynamic, log_source_dynamic_data, \

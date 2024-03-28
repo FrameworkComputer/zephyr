@@ -30,6 +30,8 @@ BUILD_ASSERT(!(sizeof(off_t) > sizeof(size_t)),
 /**
  * @brief Retained memory driver interface
  * @defgroup retained_mem_interface Retained memory driver interface
+ * @since 3.4
+ * @version 0.8.0
  * @ingroup io_interfaces
  * @{
  */
@@ -75,7 +77,7 @@ typedef int (*retained_mem_clear_api)(const struct device *dev);
  *
  * Note that drivers must implement all functions, none of the functions are optional.
  */
-struct retained_mem_driver_api {
+__subsystem struct retained_mem_driver_api {
 	retained_mem_size_api size;
 	retained_mem_read_api read;
 	retained_mem_write_api write;

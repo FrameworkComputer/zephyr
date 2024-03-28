@@ -30,9 +30,9 @@
 #define PONG_CHR_UUID \
 	BT_UUID_128_ENCODE(0xabbf8f1c, 0xc56a, 0x82b5, 0xc640, 0x2ccdd7af94dd)
 
-static struct bt_uuid_128 pong_svc_uuid = BT_UUID_INIT_128(PONG_SVC_UUID);
-static struct bt_uuid_128 pong_chr_uuid = BT_UUID_INIT_128(PONG_CHR_UUID);
-static struct bt_uuid *gatt_ccc_uuid = BT_UUID_GATT_CCC;
+static const struct bt_uuid_128 pong_svc_uuid = BT_UUID_INIT_128(PONG_SVC_UUID);
+static const struct bt_uuid_128 pong_chr_uuid = BT_UUID_INIT_128(PONG_CHR_UUID);
+static const struct bt_uuid *gatt_ccc_uuid = BT_UUID_GATT_CCC;
 
 static struct bt_gatt_discover_params discov_param;
 static struct bt_gatt_subscribe_params subscribe_param;
@@ -360,35 +360,35 @@ static void create_conn(const bt_addr_le_t *addr)
 }
 
 static void device_found(const bt_addr_le_t *addr, int8_t rssi, uint8_t type,
-			 struct net_buf_simple *ad)
+			 struct net_buf_simple *ad_buf)
 {
 	if (type != BT_GAP_ADV_TYPE_ADV_IND) {
 		return;
 	}
 
-	while (ad->len > 1) {
-		uint8_t len = net_buf_simple_pull_u8(ad);
-		uint8_t type;
+	while (ad_buf->len > 1) {
+		uint8_t len = net_buf_simple_pull_u8(ad_buf);
+		uint8_t ad_type;
 
 		/* Check for early termination */
 		if (len == 0U) {
 			return;
 		}
 
-		if (len > ad->len) {
+		if (len > ad_buf->len) {
 			printk("AD malformed\n");
 			return;
 		}
 
-		type = net_buf_simple_pull_u8(ad);
-		if (type == BT_DATA_UUID128_ALL &&
-		    pong_uuid_match(ad->data, len - 1)) {
+		ad_type = net_buf_simple_pull_u8(ad_buf);
+		if (ad_type == BT_DATA_UUID128_ALL &&
+		    pong_uuid_match(ad_buf->data, len - 1)) {
 			bt_le_scan_stop();
 			create_conn(addr);
 			return;
 		}
 
-		net_buf_simple_pull(ad, len - 1);
+		net_buf_simple_pull(ad_buf, len - 1);
 	}
 }
 

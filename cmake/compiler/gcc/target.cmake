@@ -38,7 +38,7 @@ endif()
 # https://gcc.gnu.org/git/gitweb.cgi?p=gcc.git;h=be9dd80f933480
 # Add check for GCC version >= 13.1
 execute_process(
-    COMMAND ${CMAKE_C_COMPILER} -dumpversion
+    COMMAND ${CMAKE_C_COMPILER} -dumpfullversion
     OUTPUT_VARIABLE temp_compiler_version
     )
 
@@ -76,6 +76,8 @@ elseif("${ARCH}" STREQUAL "sparc")
   include(${CMAKE_CURRENT_LIST_DIR}/target_sparc.cmake)
 elseif("${ARCH}" STREQUAL "mips")
   include(${CMAKE_CURRENT_LIST_DIR}/target_mips.cmake)
+elseif("${ARCH}" STREQUAL "xtensa")
+  include(${CMAKE_CURRENT_LIST_DIR}/target_xtensa.cmake)
 endif()
 
 if(SYSROOT_DIR)

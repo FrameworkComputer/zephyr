@@ -38,7 +38,7 @@ Application API
 ***************
 
 An application can register a callback using the
-:c:macro:`INPUT_LISTENER_CB_DEFINE` macro. If a device node is specified, the
+:c:macro:`INPUT_CALLBACK_DEFINE` macro. If a device node is specified, the
 callback is only invoked for events from the specific device, otherwise the
 callback will receive all the events in the system. This is the only type of
 filtering supported, any more complex filtering logic has to be implemented in
@@ -54,6 +54,14 @@ The synchronous mode can be used in a simple application to keep a minimal
 footprint, or in a complex application with an existing event model, where the
 callback is just a wrapper to pipe back the event in a more complex application
 specific event system.
+
+HID code mapping
+****************
+
+A common use case for input devices is to use them to generate HID reports. For
+this purpose, the :c:func:`input_to_hid_code` and
+:c:func:`input_to_hid_modifier` functions can be used to map input codes to HID
+codes and modifiers.
 
 Kscan Compatibility
 *******************
@@ -78,6 +86,15 @@ compatibility device node, for example:
         };
     };
 
+Driver Documentation
+********************
+
+.. toctree::
+   :maxdepth: 1
+
+   gpio-kbd.rst
+
+
 API Reference
 *************
 
@@ -87,3 +104,8 @@ Input Event Definitions
 ***********************
 
 .. doxygengroup:: input_events
+
+Analog Axis API Reference
+*************************
+
+.. doxygengroup:: input_analog_axis

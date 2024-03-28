@@ -12,15 +12,15 @@
 #include <zephyr/bluetooth/iso.h>
 
 typedef enum __packed {
-	BT_CONN_DISCONNECTED,
-	BT_CONN_DISCONNECT_COMPLETE,
-	BT_CONN_CONNECTING_SCAN,
-	BT_CONN_CONNECTING_AUTO,
-	BT_CONN_CONNECTING_ADV,
-	BT_CONN_CONNECTING_DIR_ADV,
-	BT_CONN_CONNECTING,
-	BT_CONN_CONNECTED,
-	BT_CONN_DISCONNECTING,
+	BT_CONN_DISCONNECTED,         /* Disconnected, conn is completely down */
+	BT_CONN_DISCONNECT_COMPLETE,  /* Received disconn comp event, transition to DISCONNECTED */
+	BT_CONN_CONNECTING_SCAN,      /* Central passive scanning */
+	BT_CONN_CONNECTING_AUTO,      /* Central connection establishment w/ filter */
+	BT_CONN_CONNECTING_ADV,       /* Peripheral connectable advertising */
+	BT_CONN_CONNECTING_DIR_ADV,   /* Peripheral directed advertising */
+	BT_CONN_CONNECTING,           /* Central connection establishment */
+	BT_CONN_CONNECTED,            /* Peripheral or Central connected */
+	BT_CONN_DISCONNECTING,        /* Peripheral or Central issued disconnection command */
 } bt_conn_state_t;
 
 /* bt_conn flags: the flags defined here represent connection parameters */
@@ -86,7 +86,7 @@ struct bt_conn_le {
 #endif
 };
 
-#if defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_CLASSIC)
 /* For now reserve space for 2 pages of LMP remote features */
 #define LMP_MAX_PAGES 2
 
@@ -104,7 +104,13 @@ struct bt_conn_br {
 struct bt_conn_sco {
 	/* Reference to ACL Connection */
 	struct bt_conn          *acl;
+
+	/* Reference to the struct bt_sco_chan */
+	struct bt_sco_chan      *chan;
+
 	uint16_t                pkt_type;
+	uint8_t                 dev_class[3];
+	uint8_t                 link_type;
 };
 #endif
 
@@ -159,7 +165,7 @@ struct acl_data {
 
 struct bt_conn {
 	uint16_t			handle;
-	uint8_t			type;
+	enum bt_conn_type	type;
 	uint8_t			role;
 
 	ATOMIC_DEFINE(flags, BT_CONN_NUM_FLAGS);
@@ -167,11 +173,11 @@ struct bt_conn {
 	/* Which local identity address this connection uses */
 	uint8_t                    id;
 
-#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_CLASSIC)
 	bt_security_t		sec_level;
 	bt_security_t		required_sec_level;
 	uint8_t			encrypt;
-#endif /* CONFIG_BT_SMP || CONFIG_BT_BREDR */
+#endif /* CONFIG_BT_SMP || CONFIG_BT_CLASSIC */
 
 #if defined(CONFIG_BT_DF_CONNECTION_CTE_RX)
 	/**
@@ -217,7 +223,7 @@ struct bt_conn {
 
 	union {
 		struct bt_conn_le	le;
-#if defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_CLASSIC)
 		struct bt_conn_br	br;
 		struct bt_conn_sco	sco;
 #endif
@@ -293,6 +299,9 @@ struct bt_conn *bt_conn_add_br(const bt_addr_t *peer);
 /* Add a new SCO connection */
 struct bt_conn *bt_conn_add_sco(const bt_addr_t *peer, int link_type);
 
+/* Cleanup SCO ACL reference */
+void bt_sco_cleanup_acl(struct bt_conn *sco_conn);
+
 /* Cleanup SCO references */
 void bt_sco_cleanup(struct bt_conn *sco_conn);
 
@@ -308,7 +317,7 @@ void bt_conn_disconnect_all(uint8_t id);
 struct bt_conn *bt_conn_new(struct bt_conn *conns, size_t size);
 
 /* Look up an existing connection */
-struct bt_conn *bt_conn_lookup_handle(uint16_t handle);
+struct bt_conn *bt_conn_lookup_handle(uint16_t handle, enum bt_conn_type type);
 
 static inline bool bt_conn_is_handle_valid(struct bt_conn *conn)
 {
@@ -364,6 +373,9 @@ void notify_le_phy_updated(struct bt_conn *conn);
 
 bool le_param_req(struct bt_conn *conn, struct bt_le_conn_param *param);
 
+void notify_tx_power_report(struct bt_conn *conn,
+			    struct bt_conn_le_tx_power_report report);
+
 #if defined(CONFIG_BT_SMP)
 /* If role specific LTK is present */
 bool bt_conn_ltk_present(const struct bt_conn *conn);
@@ -376,11 +388,11 @@ int bt_conn_le_start_encryption(struct bt_conn *conn, uint8_t rand[8],
 void bt_conn_identity_resolved(struct bt_conn *conn);
 #endif /* CONFIG_BT_SMP */
 
-#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_BREDR)
+#if defined(CONFIG_BT_SMP) || defined(CONFIG_BT_CLASSIC)
 /* Notify higher layers that connection security changed */
 void bt_conn_security_changed(struct bt_conn *conn, uint8_t hci_err,
 			      enum bt_security_err err);
-#endif /* CONFIG_BT_SMP || CONFIG_BT_BREDR */
+#endif /* CONFIG_BT_SMP || CONFIG_BT_CLASSIC */
 
 /* Prepare a PDU to be sent over a connection */
 #if defined(CONFIG_NET_BUF_LOG)
@@ -394,7 +406,7 @@ struct net_buf *bt_conn_create_pdu_timeout_debug(struct net_buf_pool *pool,
 
 #define bt_conn_create_pdu(_pool, _reserve) \
 	bt_conn_create_pdu_timeout_debug(_pool, _reserve, K_FOREVER, \
-					 __func__, __line__)
+					 __func__, __LINE__)
 #else
 struct net_buf *bt_conn_create_pdu_timeout(struct net_buf_pool *pool,
 					   size_t reserve, k_timeout_t timeout);

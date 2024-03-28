@@ -1,7 +1,8 @@
-.. _usb_hid-cdc:
+.. zephyr:code-sample:: usb-hid-cdc
+   :name: USB HID and CDC ACM
+   :relevant-api: _usb_device_core_api usb_hid_class input_interface
 
-USB HID CDC ACM Application
-###########################
+   Expose multiple USB HID and CDC ACM instances.
 
 Overview
 ********
@@ -41,7 +42,7 @@ for the :ref:`nrf52840dk_nrf52840` board:
 
 .. zephyr-app-commands::
 	:zephyr-app: samples/subsys/usb/hid-cdc
-	:board: nrf52840dk_nrf52840
+	:board: nrf52840dk/nrf52840
 	:goals: build flash
 	:compact:
 

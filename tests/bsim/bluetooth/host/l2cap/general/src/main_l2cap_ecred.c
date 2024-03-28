@@ -33,8 +33,10 @@ static const struct bt_data ad[] = {
 #define SHORT_MSG_CHAN_IDX 1
 
 NET_BUF_POOL_FIXED_DEFINE(rx_data_pool, L2CAP_CHANNELS, BT_L2CAP_BUF_SIZE(DATA_BUF_SIZE), 8, NULL);
-NET_BUF_POOL_FIXED_DEFINE(tx_data_pool_0, 1, BT_L2CAP_BUF_SIZE(DATA_MTU), 8, NULL);
-NET_BUF_POOL_FIXED_DEFINE(tx_data_pool_1, 1, BT_L2CAP_BUF_SIZE(DATA_MTU), 8, NULL);
+NET_BUF_POOL_FIXED_DEFINE(tx_data_pool_0, 1, BT_L2CAP_SDU_BUF_SIZE(DATA_MTU),
+			  CONFIG_BT_CONN_TX_USER_DATA_SIZE, NULL);
+NET_BUF_POOL_FIXED_DEFINE(tx_data_pool_1, 1, BT_L2CAP_SDU_BUF_SIZE(DATA_MTU),
+			  CONFIG_BT_CONN_TX_USER_DATA_SIZE, NULL);
 
 static struct bt_l2cap_server servers[SERVERS];
 void send_sdu_chan_worker(struct k_work *item);
@@ -81,7 +83,9 @@ static struct net_buf *chan_alloc_buf_cb(struct bt_l2cap_chan *chan)
 
 static int chan_recv_cb(struct bt_l2cap_chan *l2cap_chan, struct net_buf *buf)
 {
-	struct channel *chan = CONTAINER_OF(l2cap_chan, struct channel, le);
+	struct bt_l2cap_le_chan *l2cap_le_chan = CONTAINER_OF(
+			l2cap_chan, struct bt_l2cap_le_chan, chan);
+	struct channel *chan = CONTAINER_OF(l2cap_le_chan, struct channel, le);
 	const uint32_t received_iterration = net_buf_pull_le32(buf);
 
 	LOG_DBG("received_iterration %i sdus_received %i, chan_id: %d, data_length: %d",
@@ -112,7 +116,9 @@ static int chan_recv_cb(struct bt_l2cap_chan *l2cap_chan, struct net_buf *buf)
 
 static void chan_sent_cb(struct bt_l2cap_chan *l2cap_chan)
 {
-	struct channel *chan = CONTAINER_OF(l2cap_chan, struct channel, le);
+	struct bt_l2cap_le_chan *l2cap_le_chan = CONTAINER_OF(
+			l2cap_chan, struct bt_l2cap_le_chan, chan);
+	struct channel *chan = CONTAINER_OF(l2cap_le_chan, struct channel, le);
 
 	chan->buf = 0;
 	k_sem_give(&sent_sem);
@@ -122,7 +128,9 @@ static void chan_sent_cb(struct bt_l2cap_chan *l2cap_chan)
 
 static void chan_connected_cb(struct bt_l2cap_chan *l2cap_chan)
 {
-	struct channel *chan = CONTAINER_OF(l2cap_chan, struct channel, le);
+	struct bt_l2cap_le_chan *l2cap_le_chan = CONTAINER_OF(
+			l2cap_chan, struct bt_l2cap_le_chan, chan);
+	struct channel *chan = CONTAINER_OF(l2cap_le_chan, struct channel, le);
 
 	LOG_DBG("chan_id: %d", chan->chan_id);
 
@@ -140,7 +148,9 @@ static void chan_connected_cb(struct bt_l2cap_chan *l2cap_chan)
 
 static void chan_disconnected_cb(struct bt_l2cap_chan *l2cap_chan)
 {
-	struct channel *chan = CONTAINER_OF(l2cap_chan, struct channel, le);
+	struct bt_l2cap_le_chan *l2cap_le_chan = CONTAINER_OF(
+			l2cap_chan, struct bt_l2cap_le_chan, chan);
+	struct channel *chan = CONTAINER_OF(l2cap_le_chan, struct channel, le);
 
 	LOG_DBG("chan_id: %d", chan->chan_id);
 
@@ -155,21 +165,27 @@ static void chan_disconnected_cb(struct bt_l2cap_chan *l2cap_chan)
 
 static void chan_status_cb(struct bt_l2cap_chan *l2cap_chan, atomic_t *status)
 {
-	struct channel *chan = CONTAINER_OF(l2cap_chan, struct channel, le);
+	struct bt_l2cap_le_chan *l2cap_le_chan = CONTAINER_OF(
+			l2cap_chan, struct bt_l2cap_le_chan, chan);
+	struct channel *chan = CONTAINER_OF(l2cap_le_chan, struct channel, le);
 
 	LOG_DBG("chan_id: %d, status: %ld", chan->chan_id, *status);
 }
 
 static void chan_released_cb(struct bt_l2cap_chan *l2cap_chan)
 {
-	struct channel *chan = CONTAINER_OF(l2cap_chan, struct channel, le);
+	struct bt_l2cap_le_chan *l2cap_le_chan = CONTAINER_OF(
+			l2cap_chan, struct bt_l2cap_le_chan, chan);
+	struct channel *chan = CONTAINER_OF(l2cap_le_chan, struct channel, le);
 
 	LOG_DBG("chan_id: %d", chan->chan_id);
 }
 
 static void chan_reconfigured_cb(struct bt_l2cap_chan *l2cap_chan)
 {
-	struct channel *chan = CONTAINER_OF(l2cap_chan, struct channel, le);
+	struct bt_l2cap_le_chan *l2cap_le_chan = CONTAINER_OF(
+			l2cap_chan, struct bt_l2cap_le_chan, chan);
+	struct channel *chan = CONTAINER_OF(l2cap_le_chan, struct channel, le);
 
 	LOG_DBG("chan_id: %d", chan->chan_id);
 }
@@ -247,7 +263,8 @@ static void disconnect_all_channels(void)
 	}
 }
 
-static int accept(struct bt_conn *conn, struct bt_l2cap_chan **l2cap_chan)
+static int accept(struct bt_conn *conn, struct bt_l2cap_server *server,
+		  struct bt_l2cap_chan **l2cap_chan)
 {
 	struct channel *chan;
 
@@ -362,7 +379,7 @@ static void send_sdu(int iteration, int chan_idx, int bytes)
 	}
 
 	channels[chan_idx].buf = buf;
-	net_buf_reserve(buf, BT_L2CAP_CHAN_SEND_RESERVE);
+	net_buf_reserve(buf, BT_L2CAP_SDU_CHAN_SEND_RESERVE);
 	net_buf_add_mem(buf, channels[chan_idx].payload, bytes);
 
 	LOG_DBG("bt_l2cap_chan_sending ch: %i bytes: %i iteration: %i", chan_idx, bytes, iteration);

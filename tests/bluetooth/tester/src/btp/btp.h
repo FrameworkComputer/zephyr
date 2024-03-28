@@ -24,6 +24,19 @@
 #include "btp_ascs.h"
 #include "btp_bap.h"
 #include "btp_has.h"
+#include "btp_csis.h"
+#include "btp_micp.h"
+#include "btp_mics.h"
+#include "btp_ccp.h"
+#include "btp_vcp.h"
+#include "btp_cas.h"
+#include "btp_mcp.h"
+#include "btp_mcs.h"
+#include "btp_hap.h"
+#include "btp_csip.h"
+#include "btp_cap.h"
+#include "btp_tbs.h"
+#include "btp_tmap.h"
 
 #define BTP_MTU 1024
 #define BTP_DATA_MAX_SIZE (BTP_MTU - sizeof(struct btp_hdr))
@@ -47,13 +60,28 @@
 #define BTP_SERVICE_ID_ASCS	13
 #define BTP_SERVICE_ID_BAP	14
 #define BTP_SERVICE_ID_HAS	15
+#define BTP_SERVICE_ID_MICP	16
+#define BTP_SERVICE_ID_CSIS	17
+#define BTP_SERVICE_ID_MICS	18
+#define BTP_SERVICE_ID_CCP	19
+#define BTP_SERVICE_ID_VCP	20
+#define BTP_SERVICE_ID_CAS	21
+#define BTP_SERVICE_ID_MCP	22
+#define BTP_SERVICE_ID_GMCS	23
+#define BTP_SERVICE_ID_HAP	24
+#define BTP_SERVICE_ID_CSIP	25
+#define BTP_SERVICE_ID_CAP	26
+#define BTP_SERVICE_ID_TBS	27
+#define BTP_SERVICE_ID_TMAP	28
 
-#define BTP_SERVICE_ID_MAX	BTP_SERVICE_ID_HAS
+#define BTP_SERVICE_ID_MAX	BTP_SERVICE_ID_TMAP
 
 #define BTP_STATUS_SUCCESS	0x00
 #define BTP_STATUS_FAILED	0x01
 #define BTP_STATUS_UNKNOWN_CMD	0x02
 #define BTP_STATUS_NOT_READY	0x03
+
+#define BTP_STATUS_VAL(err) (err) ? BTP_STATUS_FAILED : BTP_STATUS_SUCCESS
 
 /* TODO indicate delay response, should be removed when all commands are
  * converted to cmd+status+ev pattern

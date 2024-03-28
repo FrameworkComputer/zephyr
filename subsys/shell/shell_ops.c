@@ -161,15 +161,15 @@ void z_shell_op_cursor_word_move(const struct shell *sh, int16_t val)
 
 void z_shell_op_word_remove(const struct shell *sh)
 {
-	char *str = &sh->ctx->cmd_buff[sh->ctx->cmd_buff_pos - 1];
-	char *str_start = &sh->ctx->cmd_buff[0];
-	uint16_t chars_to_delete;
-
 	/* Line must not be empty and cursor must not be at 0 to continue. */
 	if ((sh->ctx->cmd_buff_len == 0) ||
 	    (sh->ctx->cmd_buff_pos == 0)) {
 		return;
 	}
+
+	char *str = &sh->ctx->cmd_buff[sh->ctx->cmd_buff_pos - 1];
+	char *str_start = &sh->ctx->cmd_buff[0];
+	uint16_t chars_to_delete;
 
 	/* Start at the current position. */
 	chars_to_delete = 0U;
@@ -367,7 +367,29 @@ static void print_prompt(const struct shell *sh)
 
 void z_shell_print_cmd(const struct shell *sh)
 {
-	z_shell_raw_fprintf(sh->fprintf_ctx, "%s", sh->ctx->cmd_buff);
+	int beg_offset = 0;
+	int end_offset = 0;
+	int cmd_width = z_shell_strlen(sh->ctx->cmd_buff);
+	int adjust = sh->ctx->vt100_ctx.cons.name_len;
+	char ch;
+
+	while (cmd_width > sh->ctx->vt100_ctx.cons.terminal_wid - adjust) {
+		end_offset += sh->ctx->vt100_ctx.cons.terminal_wid - adjust;
+		ch = sh->ctx->cmd_buff[end_offset];
+		sh->ctx->cmd_buff[end_offset] = '\0';
+
+		z_shell_raw_fprintf(sh->fprintf_ctx, "%s\n",
+				&sh->ctx->cmd_buff[beg_offset]);
+
+		sh->ctx->cmd_buff[end_offset] = ch;
+		cmd_width -= (sh->ctx->vt100_ctx.cons.terminal_wid - adjust);
+		beg_offset = end_offset;
+		adjust = 0;
+	}
+	if (cmd_width > 0) {
+		z_shell_raw_fprintf(sh->fprintf_ctx, "%s",
+				&sh->ctx->cmd_buff[beg_offset]);
+	}
 }
 
 void z_shell_print_prompt_and_cmd(const struct shell *sh)

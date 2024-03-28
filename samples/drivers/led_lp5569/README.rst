@@ -1,7 +1,8 @@
-.. _lp5569:
+.. zephyr:code-sample:: lp5569
+   :name: LP5569 9-channel LED controller
+   :relevant-api: led_interface
 
-LP5569: 9-Channel LED Controller
-################################
+   Control 9 LEDs connected to an LP5569 driver chip.
 
 Overview
 ********
@@ -17,7 +18,7 @@ a LP5569 LED controller on the bus I2C0 at the address 0x32.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/drivers/led_lp5569
-   :board: nrf52840dk_nrf52840
+   :board: nrf52840dk/nrf52840
    :goals: build
    :compact:
 

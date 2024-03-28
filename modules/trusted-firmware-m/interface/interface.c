@@ -8,8 +8,7 @@
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
-#include <zephyr/arch/arm/aarch32/cortex_m/cmsis.h>
-#include <zephyr/arch/arm/aarch32/cortex_m/fpu.h>
+#include <zephyr/arch/arm/cortex_m/fpu.h>
 
 #include <tfm_ns_interface.h>
 
@@ -36,7 +35,7 @@ int32_t tfm_ns_interface_dispatch(veneer_fn fn,
 	if (!is_pre_kernel) {
 		/* TF-M request protected by NS lock */
 		if (k_mutex_lock(&tfm_mutex, K_FOREVER) != 0) {
-			return (int32_t)TFM_ERROR_GENERIC;
+			return (int32_t)PSA_ERROR_GENERIC_ERROR;
 		}
 
 #if !defined(CONFIG_ARM_NONSECURE_PREEMPTIBLE_SECURE_CALLS)
@@ -74,13 +73,13 @@ int32_t tfm_ns_interface_dispatch(veneer_fn fn,
 	return result;
 }
 
-enum tfm_status_e tfm_ns_interface_init(void)
+uint32_t tfm_ns_interface_init(void)
 {
 	/*
 	 * The static K_MUTEX_DEFINE handles mutex initialization,
 	 * so this function may be implemented as no-op.
 	 */
-	return TFM_SUCCESS;
+	return PSA_SUCCESS;
 }
 
 
@@ -91,7 +90,7 @@ enum tfm_status_e tfm_ns_interface_init(void)
 static int ns_interface_init(void)
 {
 
-	__ASSERT(tfm_ns_interface_init() == TFM_SUCCESS,
+	__ASSERT(tfm_ns_interface_init() == PSA_SUCCESS,
 		"TF-M NS interface init failed");
 
 	return 0;

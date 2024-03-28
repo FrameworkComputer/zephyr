@@ -4,7 +4,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "zephyr/devicetree.h"
+#include <zephyr/devicetree.h>
 #define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(spi_rtio_loopback);
@@ -37,7 +37,7 @@ RTIO_DEFINE(r, 8, 8);
 
 /* to run this test, connect MOSI pin to the MISO of the SPI */
 
-#define STACK_SIZE 512
+#define STACK_SIZE (512 + CONFIG_TEST_EXTRA_STACK_SIZE)
 #define BUF_SIZE 17
 #define BUF2_SIZE 36
 

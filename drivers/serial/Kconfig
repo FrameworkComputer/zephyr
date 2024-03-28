@@ -76,6 +76,21 @@ config UART_INTERRUPT_DRIVEN
 	  This option enables interrupt support for UART allowing console
 	  input and other UART based drivers.
 
+config UART_EXCLUSIVE_API_CALLBACKS
+	bool "Use exclusive callbacks for multiple APIs"
+	depends on UART_ASYNC_API && UART_INTERRUPT_DRIVEN
+	default y
+	help
+	  When multiple set of APIs support callbacks, enabling this
+	  option will result in only the callbacks of one set of API
+	  being active at a time. Setting a new callback to one set of
+	  API will remove callbacks to other set of APIs. For example,
+	  calling uart_callback_set() would disable the callback
+	  previously set via uart_irq_callback_set().
+
+	  Says yes unless you are absolutely sure you know what you are
+	  doing and promise not to file bug when things do not work out.
+
 config UART_LINE_CTRL
 	bool "Serial Line Control API"
 	help
@@ -109,6 +124,29 @@ config UART_PIPE
 	  over UART with custom defined protocol. Driver doesn't inspect received
 	  data (as contrary to console UART driver) and all aspects of received
 	  protocol data are handled by application provided callback.
+
+config UART_ASYNC_RX_HELPER
+	bool "Helper for UART asynchronous reception"
+	help
+	  Module implements handling of reception of variable length data using
+	  Asynchronous UART API. It can be used in cases where received data processing
+	  is delayed. Module implements zero-copy approach with multiple reception
+	  buffers.
+
+config UART_ASYNC_TO_INT_DRIVEN_API
+	bool
+	select UART_ASYNC_RX_HELPER
+	help
+	  Asynchronous to Interrupt driven adaptation layer. When enabled device
+	  which implements only asynchronous API can be used with interrupt driven
+	  API implemented by the generic adaptation layer.
+
+config UART_ASYNC_TO_INT_DRIVEN_RX_TIMEOUT
+	int "Receiver timeout (in bauds)"
+	depends on UART_ASYNC_TO_INT_DRIVEN_API
+	default 100
+	help
+	  Receiver inactivity timeout. It is used to calculate timeout in microseconds.
 
 comment "Serial Drivers"
 
@@ -221,5 +259,19 @@ source "drivers/serial/Kconfig.emul"
 source "drivers/serial/Kconfig.native_tty"
 
 source "drivers/serial/Kconfig.numaker"
+
+source "drivers/serial/Kconfig.efinix_sapphire"
+
+source "drivers/serial/Kconfig.sedi"
+
+source "drivers/serial/Kconfig.bcm2711"
+
+source "drivers/serial/Kconfig.intel_lw"
+
+source "drivers/serial/Kconfig.renesas_ra"
+
+source "drivers/serial/Kconfig.ene"
+
+source "drivers/serial/Kconfig.rzt2m"
 
 endif # SERIAL

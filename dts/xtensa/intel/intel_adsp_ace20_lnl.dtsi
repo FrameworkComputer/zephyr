@@ -49,23 +49,22 @@
 			cpu-power-states = <&d0i3 &d3>;
 		};
 
-	};
-
-	power-states {
-		d0i3: idle {
-			compatible = "zephyr,power-state";
-			power-state-name = "runtime-idle";
-			min-residency-us = <200>;
-			exit-latency-us = <100>;
-		};
-		/* PM_STATE_SOFT_OFF can be entered only by calling pm_state_force.
-		 * The procedure is triggered by IPC from the HOST (SET_DX).
-		 */
-		d3: off {
-			compatible = "zephyr,power-state";
-			power-state-name = "soft-off";
-			min-residency-us = <2147483647>;
-			exit-latency-us = <0>;
+		power-states {
+			d0i3: idle {
+				compatible = "zephyr,power-state";
+				power-state-name = "runtime-idle";
+				min-residency-us = <200>;
+				exit-latency-us = <100>;
+			};
+			/* PM_STATE_SOFT_OFF can be entered only by calling pm_state_force.
+			 * The procedure is triggered by IPC from the HOST (SET_DX).
+			 */
+			d3: off {
+				compatible = "zephyr,power-state";
+				power-state-name = "soft-off";
+				min-residency-us = <2147483647>;
+				exit-latency-us = <0>;
+			};
 		};
 	};
 
@@ -96,11 +95,10 @@
 	clkctl: clkctl {
 		compatible = "intel,adsp-shim-clkctl";
 		adsp-clkctl-clk-wovcro = <0>;
-		adsp-clkctl-clk-lpro = <1>;
-		adsp-clkctl-clk-hpro = <2>;
-		adsp-clkctl-freq-enc = <0xc 0x0 0x4>;
-		adsp-clkctl-freq-mask = <0x0 0x0 0x0>;
-		adsp-clkctl-freq-default = <2>;
+		adsp-clkctl-clk-ipll = <1>;
+		adsp-clkctl-freq-enc = <0xc 0x4>;
+		adsp-clkctl-freq-mask = <0x0 0x0>;
+		adsp-clkctl-freq-default = <1>;
 		adsp-clkctl-freq-lowest = <0>;
 		wovcro-supported;
 	};
@@ -322,37 +320,25 @@
 				compatible = "intel,adsp-power-domain";
 				bit-position = <15>;
 			};
-			hub_hp_domain: hub_hpp_domain {
+			ml0_domain: ml0_domain {
 				compatible = "intel,adsp-power-domain";
-				bit-position = <6>;
-			};
-			io0_domain: io0_domain {
-				compatible = "intel,adsp-power-domain";
-				bit-position = <8>;
+				bit-position = <12>;
 			};
 			io1_domain: io1_domain {
 				compatible = "intel,adsp-power-domain";
 				bit-position = <9>;
 			};
-			io2_domain: io2_domain {
+			io0_domain: io0_domain {
 				compatible = "intel,adsp-power-domain";
-				bit-position = <10>;
+				bit-position = <8>;
 			};
-			io3_domain: io3_domain {
+			hub_hp_domain: hub_hp_domain {
 				compatible = "intel,adsp-power-domain";
-				bit-position = <11>;
+				bit-position = <6>;
 			};
 			hst_domain: hst_domain {
 				compatible = "intel,adsp-power-domain";
-				bit-position = <4>;
-			};
-			ml0_domain: ml0_domain {
-				compatible = "intel,adsp-power-domain";
-				bit-position = <12>;
-			};
-			ml1_domain: ml1_domain {
-				compatible = "intel,adsp-power-domain";
-				bit-position = <13>;
+				bit-position = <5>;
 			};
 		};
 
@@ -386,6 +372,8 @@
 			dma-buf-addr-alignment = <128>;
 			dma-buf-size-alignment = <32>;
 			dma-copy-alignment = <32>;
+			interrupts = <13 0 0>;
+			interrupt-parent = <&ace_intc>;
 			status = "okay";
 		};
 
@@ -397,6 +385,8 @@
 			dma-buf-addr-alignment = <128>;
 			dma-buf-size-alignment = <32>;
 			dma-copy-alignment = <32>;
+			interrupts = <12 0 0>;
+			interrupt-parent = <&ace_intc>;
 			status = "okay";
 		};
 

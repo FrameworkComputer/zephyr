@@ -40,8 +40,8 @@ endif
 
 config SHELL_STACK_SIZE
 	int "Shell thread stack size"
-	default 3168 if OPENTHREAD_SHELL && OPENTHREAD_JOINER
-	default 2616 if OPENTHREAD_SHELL
+	default 3168 if OPENTHREAD_SHELL
+	default 3072 if 64BIT
 	default 2048 if MULTITHREADING
 	default 0 if !MULTITHREADING
 	help
@@ -104,12 +104,32 @@ config SHELL_TAB_AUTOCOMPLETION
 	  Enable commands and subcommands autocompletion with the Tab
 	  key. This function can be deactivated to save some flash.
 
+config SHELL_ASCII_FILTER
+	bool "Filter incoming ASCII characters"
+	default y
+	help
+	  Shell will not collect characters that are not in
+	  ASCII range: <0, 127>. As a result filtered characters will not be
+	  printed on the terminal and passed to the command handler.
+
 config SHELL_WILDCARD
 	bool "Wildcard support in shell"
 	select FNMATCH
 	default y if !SHELL_MINIMAL
 	help
 	  Enables using wildcards: * and ? in the shell.
+
+config SHELL_MSG_CMD_NOT_FOUND
+	bool "': command not found' message in the shell"
+	default y
+	help
+	  If enabled, the shell prints out this message.
+
+config SHELL_MSG_SPECIFY_SUBCOMMAND
+	bool "'Please specify a subcommand.' message in the shell"
+	default y
+	help
+	  If enabled, the shell prints out this message.
 
 config SHELL_ECHO_STATUS
 	bool "Echo on shell"

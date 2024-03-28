@@ -17,9 +17,10 @@
 #include <stdarg.h>
 #include <zephyr/toolchain.h>
 #include <zephyr/linker/sections.h>
-#include <zephyr/syscall_handler.h>
+#include <zephyr/internal/syscall_handler.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/sys/cbprintf.h>
+#include <zephyr/llext/symbol.h>
 #include <sys/types.h>
 
 /* Option present only when CONFIG_USERSPACE enabled. */
@@ -106,7 +107,7 @@ static int buf_char_out(int c, void *ctx_p)
 
 static int char_out(int c, void *ctx_p)
 {
-	(void) ctx_p;
+	ARG_UNUSED(ctx_p);
 	return _char_out(c);
 }
 
@@ -153,6 +154,7 @@ void vprintk(const char *fmt, va_list ap)
 #endif
 	}
 }
+EXPORT_SYMBOL(vprintk);
 
 void z_impl_k_str_out(char *c, size_t n)
 {
@@ -173,7 +175,7 @@ void z_impl_k_str_out(char *c, size_t n)
 #ifdef CONFIG_USERSPACE
 static inline void z_vrfy_k_str_out(char *c, size_t n)
 {
-	Z_OOPS(Z_SYSCALL_MEMORY_READ(c, n));
+	K_OOPS(K_SYSCALL_MEMORY_READ(c, n));
 	z_impl_k_str_out((char *)c, n);
 }
 #include <syscalls/k_str_out_mrsh.c>
@@ -210,6 +212,7 @@ void printk(const char *fmt, ...)
 
 	va_end(ap);
 }
+EXPORT_SYMBOL(printk);
 #endif /* defined(CONFIG_PRINTK) */
 
 #ifndef CONFIG_PICOLIBC

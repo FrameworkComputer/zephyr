@@ -1,7 +1,8 @@
-.. _input-dump-sample:
+.. zephyr:code-sample:: input-dump
+   :name: Input dump
+   :relevant-api: input_events
 
-Input Dump
-##########
+   Print all input events.
 
 Overview
 ********
@@ -16,11 +17,11 @@ The samples works on any board with an input driver defined in the board devicet
 Building and Running
 ********************
 
-Build and flash as follows, changing ``nrf52dk_nrf52832`` for your board:
+Build and flash as follows, changing ``nrf52dk/nrf52832`` for your board:
 
 .. zephyr-app-commands::
    :zephyr-app: samples/subsys/input/input_dump
-   :board: nrf52dk_nrf52832
+   :board: nrf52dk/nrf52832
    :goals: build flash
    :compact:
 

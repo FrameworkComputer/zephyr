@@ -1,7 +1,7 @@
 .. _external-contributions:
 
 Contributing External Components
-********************************
+################################
 
 In some cases it is desirable to leverage existing, external source code in
 order to avoid re-implementing basic functionality or features that are readily
@@ -21,7 +21,7 @@ code analysis, testing or simulation please refer to the
 :ref:`external-tooling` section at the end of the page.
 
 Software License
-================
+****************
 
 .. note::
 
@@ -49,7 +49,7 @@ for contributed code, we ensure that the Zephyr community can develop products
 with the Zephyr Project without concerns over patent or copyright issues.
 
 Merit
-=====
+*****
 
 Just like with any other regular contribution, one that contains external code
 needs to be evaluated for merit. However, in the particular case of code that
@@ -68,14 +68,14 @@ into the project:
   Are there other open source project that implement the same functionality?
 
 Mode of integration
-===================
+*******************
 
 There are two ways of integrating external source code into the Zephyr Project,
 and careful consideration must be taken to choose the appropriate one for each
 particular case.
 
 Integration in the main tree
-----------------------------
+============================
 
 The first way to integrate external source code into the project is to simply
 import the source code files into the main ``zephyr`` repository. This
@@ -94,7 +94,7 @@ This mode of integration can be applicable to both small and large external
 codebases, but it is typically used more commonly with the former.
 
 Integration as a module
------------------------
+=======================
 
 The second way of integrating external source code into the project is to import
 the whole or parts of the third-party open source project into a separate
@@ -103,8 +103,49 @@ With this approach the code is considered as being developed externally, and
 thus it is not automatically subject to the requirements of the previous
 section.
 
+Integration in main manifest file (west.yaml)
+---------------------------------------------
+
+Integrating external code into the main :file:`west.yml` manifest file is
+limited to code that is used by a Zephyr subsystem (libraries), by a platform,
+drivers (HAL) or tooling needed to test or build Zephyr components.
+
+The integration of modules in this group is validated by the Zephyr project CI,
+and verified to be working with each Zephyr release.
+
+Integrated modules will not be removed from the tree without a detailed
+migration plan.
+
+Integration as optional modules
+-------------------------------
+
+Standalone or loose integration of modules/projects without any incoming
+dependencies shall be made optional and shall be kept standalone. Optional
+projects that provide value to users directly and through a Zephyr subsystem or
+platform shall be added to an optional manifest file that is filtered by
+default. (:file:`submanifests/optional.yml`).
+
+Such optional projects might include samples and tests in their own repositories.
+
+There shall not be any direct dependency added in the Zephyr code tree (Git
+repository) and all sample or test code shall be maintained as part of the module.
+
+.. note::
+
+   This is valid for all new optional modules. Existing optional modules with
+   samples and test code in the Zephyr Git repository will be transitioned out
+   over time.
+
+Integration as external modules
+-------------------------------
+
+Similar to optional modules, but added to the Zephyr project as an entry in the
+documentation using a pre-defined template. This type of modules exists outside the
+Zephyr project manifest with documentation instructing users and developers how
+to integrate the functionality.
+
 Ongoing maintenance
-===================
+*******************
 
 Regardless of the mode of integration, external source code that is integrated
 in Zephyr requires regular ongoing maintenance. The submitter of the proposal to
@@ -116,7 +157,7 @@ process.
 .. _external-src-process:
 
 Submission and review process
-=============================
+*****************************
 
 Before external source code can be included in the project, it must be reviewed
 and accepted by the Technical Steering Committee (TSC) and, in some cases, by

@@ -33,6 +33,8 @@ Configuration that needs to be sent to the python script.
   ignored.
 - COPY/NOCOPY defines whether the script should generate the relocation code in
   code_relocation.c or not
+- NOKEEP will suppress the default behavior of marking every relocated symbol
+  with KEEP() in the generated linker script.
 
 Multiple regions can be appended together like SRAM2_DATA_BSS
 this will place data and bss inside SRAM2.
@@ -94,10 +96,15 @@ class SectionKind(Enum):
 class OutputSection(NamedTuple):
     obj_file_name: str
     section_name: str
+    keep: bool = True
 
 
 PRINT_TEMPLATE = """
                 KEEP(*{obj_file_name}({section_name}))
+"""
+
+PRINT_TEMPLATE_NOKEEP = """
+                *{obj_file_name}({section_name})
 """
 
 SECTION_LOAD_MEMORY_SEQ = """
@@ -274,10 +281,16 @@ def assign_to_correct_mem_region(
     if align_size:
         mpu_align[memory_region] = int(align_size)
 
+    keep_sections = '|NOKEEP' not in memory_region
+    memory_region = memory_region.replace('|NOKEEP', '')
+
     output_sections = {}
     for used_kind in use_section_kinds:
         # Pass through section kinds that go into this memory region
-        output_sections[used_kind] = full_list_of_sections[used_kind]
+        output_sections[used_kind] = [
+            section._replace(keep=keep_sections)
+            for section in full_list_of_sections[used_kind]
+        ]
 
     return {MemoryRegion(memory_region): output_sections}
 
@@ -308,10 +321,12 @@ def section_kinds_from_memory_region(memory_region: str) -> 'Tuple[set[SectionKi
 
 
 def print_linker_sections(list_sections: 'list[OutputSection]'):
-    return ''.join(PRINT_TEMPLATE.format(obj_file_name=section.obj_file_name,
-                                         section_name=section.section_name)
-                   for section in sorted(list_sections))
-
+    out = ''
+    for section in sorted(list_sections):
+        template = PRINT_TEMPLATE if section.keep else PRINT_TEMPLATE_NOKEEP
+        out += template.format(obj_file_name=section.obj_file_name,
+                               section_name=section.section_name)
+    return out
 
 def add_phdr(memory_type, phdrs):
     return f'{memory_type} {phdrs[memory_type] if memory_type in phdrs else ""}'
@@ -456,8 +471,8 @@ def parse_args():
         formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False)
     parser.add_argument("-d", "--directory", required=True,
                         help="obj file's directory")
-    parser.add_argument("-i", "--input_rel_dict", required=True,
-                        help="input src:memory type(sram2 or ccm or aon etc) string")
+    parser.add_argument("-i", "--input_rel_dict", required=True, type=argparse.FileType('r'),
+                        help="input file with dict src:memory type(sram2 or ccm or aon etc)")
     parser.add_argument("-o", "--output", required=False, help="Output ld file")
     parser.add_argument("-s", "--output_sram_data", required=False,
                         help="Output sram data ld file")
@@ -485,20 +500,23 @@ def get_obj_filename(searchpath, filename):
                     return fullname
 
 
-# Extracts all possible components for the input strin:
-# <mem_region>[\ :program_header]:<flag>:<file_name>
-# Returns a 4-tuple with them: (mem_region, program_header, flag, file_name)
+# Extracts all possible components for the input string:
+# <mem_region>[\ :program_header]:<flag_1>[;<flag_2>...]:<file_1>[;<file_2>...]
+# Returns a 4-tuple with them: (mem_region, program_header, flags, files)
 # If no `program_header` is defined, returns an empty string
 def parse_input_string(line):
-    line = line.replace('\\ :', ':')
+    # Be careful when splitting by : to avoid breaking absolute paths on Windows
+    mem_region, rest = line.split(':', 1)
 
-    flag_sep = ':NOCOPY:' if ':NOCOPY' in line else ':COPY:'
-    mem_region_phdr, copy_flag, file_name = line.partition(flag_sep)
-    copy_flag = copy_flag.replace(':', '')
+    phdr = ''
+    if mem_region.endswith(' '):
+        mem_region = mem_region.rstrip()
+        phdr, rest = rest.split(':', 1)
 
-    mem_region, _, phdr = mem_region_phdr.partition(':')
+    # Split lists by semicolons, in part to support generator expressions
+    flag_list, file_list = (lst.split(';') for lst in rest.split(':', 1))
 
-    return mem_region, phdr, copy_flag, file_name
+    return mem_region, phdr, flag_list, file_list
 
 
 # Create a dict with key as memory type and files as a list of values.
@@ -508,23 +526,22 @@ def create_dict_wrt_mem():
     rel_dict = dict()
     phdrs = dict()
 
-    if args.input_rel_dict == '':
+    input_rel_dict = args.input_rel_dict.read()
+    if input_rel_dict == '':
         sys.exit("Disable CONFIG_CODE_DATA_RELOCATION if no file needs relocation")
-    for line in args.input_rel_dict.split('|'):
+    for line in input_rel_dict.split('|'):
         if ':' not in line:
             continue
 
-        mem_region, phdr, copy_flag, file_list = parse_input_string(line)
+        mem_region, phdr, flag_list, file_list = parse_input_string(line)
 
         # Handle any program header
         if phdr != '':
             phdrs[mem_region] = f':{phdr}'
 
-        # Split file names by semicolons, to support generator expressions
-        file_glob_list = file_list.split(';')
         file_name_list = []
         # Use glob matching on each file in the list
-        for file_glob in file_glob_list:
+        for file_glob in file_list:
             glob_results = glob.glob(file_glob)
             if not glob_results:
                 warnings.warn("File: "+file_glob+" Not found")
@@ -533,14 +550,13 @@ def create_dict_wrt_mem():
                 warnings.warn("Regex in file lists is deprecated, please use file(GLOB) instead")
             file_name_list.extend(glob_results)
         if len(file_name_list) == 0:
-            warnings.warn("No files in string: "+file_list+" found")
             continue
         if mem_region == '':
             continue
         if args.verbose:
             print("Memory region ", mem_region, " Selected for files:", file_name_list)
 
-        mem_region = "|".join((mem_region, copy_flag))
+        mem_region = "|".join((mem_region, *flag_list))
 
         if mem_region in rel_dict:
             rel_dict[mem_region].extend(file_name_list)

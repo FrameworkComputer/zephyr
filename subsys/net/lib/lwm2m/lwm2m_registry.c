@@ -50,6 +50,41 @@ void lwm2m_registry_unlock(void)
 {
 	(void)k_mutex_unlock(&registry_lock);
 }
+
+/* Default core object version */
+struct default_obj_version {
+	uint16_t obj_id;
+	uint8_t version_major;
+	uint8_t version_minor;
+};
+
+/* Based on Appendix E of the respective LwM2M specification. */
+static const struct default_obj_version default_obj_versions[] = {
+#if defined(CONFIG_LWM2M_VERSION_1_0)
+	{ LWM2M_OBJECT_SECURITY_ID, 1, 0 },
+	{ LWM2M_OBJECT_SERVER_ID, 1, 0 },
+	{ LWM2M_OBJECT_ACCESS_CONTROL_ID, 1, 0 },
+	{ LWM2M_OBJECT_DEVICE_ID, 1, 0 },
+	{ LWM2M_OBJECT_CONNECTIVITY_MONITORING_ID, 1, 0 },
+	{ LWM2M_OBJECT_FIRMWARE_ID, 1, 0 },
+	{ LWM2M_OBJECT_LOCATION_ID, 1, 0 },
+	{ LWM2M_OBJECT_CONNECTIVITY_STATISTICS_ID, 1, 0 },
+#elif defined(CONFIG_LWM2M_VERSION_1_1)
+	{ LWM2M_OBJECT_SECURITY_ID, 1, 1 },
+	{ LWM2M_OBJECT_SERVER_ID, 1, 1 },
+	{ LWM2M_OBJECT_ACCESS_CONTROL_ID, 1, 0 },
+	{ LWM2M_OBJECT_DEVICE_ID, 1, 1 },
+	{ LWM2M_OBJECT_CONNECTIVITY_MONITORING_ID, 1, 2 },
+	{ LWM2M_OBJECT_FIRMWARE_ID, 1, 0 },
+	{ LWM2M_OBJECT_LOCATION_ID, 1, 0 },
+	{ LWM2M_OBJECT_CONNECTIVITY_STATISTICS_ID, 1, 0 },
+	/* OSCORE object not implemented yet, but include it for completeness */
+	{ LWM2M_OBJECT_OSCORE_ID, 1, 0 },
+#else
+#error "Default core object versions not defined for LwM2M version"
+#endif
+};
+
 /* Resources */
 static sys_slist_t engine_obj_list;
 static sys_slist_t engine_obj_inst_list;
@@ -626,7 +661,7 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 		return ret;
 	}
 
-	if (memcmp(data_ptr, value, len) != 0) {
+	if (memcmp(data_ptr, value, len) != 0 || res_inst->data_len != len) {
 		changed = true;
 	}
 
@@ -644,12 +679,18 @@ static int lwm2m_engine_set(const struct lwm2m_obj_path *path, const void *value
 	switch (obj_field->data_type) {
 
 	case LWM2M_RES_TYPE_OPAQUE:
-		memcpy((uint8_t *)data_ptr, value, len);
+		if (len) {
+			memcpy((uint8_t *)data_ptr, value, len);
+		}
 		break;
 
 	case LWM2M_RES_TYPE_STRING:
-		strncpy(data_ptr, value, len - 1);
-		((char *)data_ptr)[len - 1] = '\0';
+		if (len) {
+			strncpy(data_ptr, value, len - 1);
+			((char *)data_ptr)[len - 1] = '\0';
+		} else {
+			((char *)data_ptr)[0] = '\0';
+		}
 		break;
 
 	case LWM2M_RES_TYPE_U32:
@@ -849,7 +890,7 @@ int lwm2m_engine_set_u64(const char *pathstr, uint64_t value)
 	if (ret < 0) {
 		return ret;
 	}
-	return lwm2m_set_u64(&path, value);
+	return lwm2m_set_s64(&path, (int64_t) value);
 }
 
 int lwm2m_set_s8(const struct lwm2m_obj_path *path, int8_t value)
@@ -1150,8 +1191,8 @@ static int lwm2m_engine_get(const struct lwm2m_obj_path *path, void *buf, uint16
 			break;
 
 		case LWM2M_RES_TYPE_STRING:
-			strncpy(buf, data_ptr, buflen - 1);
-			((char *)buf)[buflen - 1] = '\0';
+			strncpy(buf, data_ptr, data_len - 1);
+			((char *)buf)[data_len - 1] = '\0';
 			break;
 
 		case LWM2M_RES_TYPE_U32:
@@ -1224,6 +1265,9 @@ static int lwm2m_engine_get(const struct lwm2m_obj_path *path, void *buf, uint16
 			k_mutex_unlock(&registry_lock);
 			return -EINVAL;
 		}
+	} else if (obj_field->data_type == LWM2M_RES_TYPE_STRING) {
+		/* Ensure empty string when there is no data */
+		((char *)buf)[0] = '\0';
 	}
 	k_mutex_unlock(&registry_lock);
 	return 0;
@@ -1334,7 +1378,7 @@ int lwm2m_engine_get_u64(const char *pathstr, uint64_t *value)
 	if (ret < 0) {
 		return ret;
 	}
-	return lwm2m_get_u64(&path, value);
+	return lwm2m_get_s64(&path, (int64_t *) value);
 }
 
 int lwm2m_get_s8(const struct lwm2m_obj_path *path, int8_t *value)
@@ -1966,12 +2010,22 @@ struct lwm2m_engine_res_inst *lwm2m_engine_get_res_inst(const struct lwm2m_obj_p
 
 bool lwm2m_engine_shall_report_obj_version(const struct lwm2m_engine_obj *obj)
 {
-	if (obj->is_core) {
-		return obj->version_major != LWM2M_PROTOCOL_VERSION_MAJOR ||
-		       obj->version_minor != LWM2M_PROTOCOL_VERSION_MINOR;
+	/* For non-core objects, report version other than 1.0 */
+	if (!obj->is_core) {
+		return obj->version_major != 1 || obj->version_minor != 0;
 	}
 
-	return obj->version_major != 1 || obj->version_minor != 0;
+	/* For core objects, report version based on default version array. */
+	for (size_t i = 0; i < ARRAY_SIZE(default_obj_versions); i++) {
+		if (obj->obj_id != default_obj_versions[i].obj_id) {
+			continue;
+		}
+
+		return obj->version_major != default_obj_versions[i].version_major ||
+		       obj->version_minor != default_obj_versions[i].version_minor;
+	}
+
+	return true;
 }
 
 #if defined(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)
@@ -2180,9 +2234,9 @@ int lwm2m_engine_enable_cache(const char *resource_path, struct lwm2m_time_serie
 #endif /* CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT */
 }
 
-int lwm2m_engine_data_cache_init(void)
-{
 #if defined(CONFIG_LWM2M_RESOURCE_DATA_CACHE_SUPPORT)
+static int lwm2m_engine_data_cache_init(void)
+{
 	int i;
 
 	sys_slist_init(&lwm2m_timed_cache_list);
@@ -2190,9 +2244,10 @@ int lwm2m_engine_data_cache_init(void)
 	for (i = 0; i < ARRAY_SIZE(lwm2m_cache_entries); i++) {
 		lwm2m_cache_entries[i].path.level = LWM2M_PATH_LEVEL_NONE;
 	}
-#endif
 	return 0;
 }
+LWM2M_ENGINE_INIT(lwm2m_engine_data_cache_init);
+#endif
 
 bool lwm2m_cache_write(struct lwm2m_time_series_resource *cache_entry,
 		       struct lwm2m_time_series_elem *buf)
@@ -2276,4 +2331,23 @@ size_t lwm2m_cache_size(const struct lwm2m_time_series_resource *cache_entry)
 #else
 	return 0;
 #endif
+}
+
+int lwm2m_set_bulk(const struct lwm2m_res_item res_list[], size_t res_list_size)
+{
+	int ret;
+
+	k_mutex_lock(&registry_lock, K_FOREVER);
+	for (int i = 0; i < res_list_size; i++) {
+
+		ret = lwm2m_engine_set(res_list[i].path, res_list[i].value, res_list[i].size);
+
+		if (ret) {
+			k_mutex_unlock(&registry_lock);
+			return ret;
+		}
+	}
+	k_mutex_unlock(&registry_lock);
+
+	return 0;
 }

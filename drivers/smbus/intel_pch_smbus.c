@@ -143,33 +143,7 @@ static void smbalert_work(struct k_work *work)
 					     smb_alert_work);
 	const struct device *dev = data->dev;
 
-	/**
-	 * There might be several peripheral devices and the he highest
-	 * priority (lowest address) device wins arbitration, we need to
-	 * read them all.
-	 *
-	 * The format of the transaction is:
-	 *
-	 *  0                   1                   2
-	 *  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0
-	 *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	 *  |S|  Alert Addr |R|A|   Address   |X|N|P|
-	 *  +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-	 */
-	do {
-		uint8_t addr;
-		int ret;
-
-		ret = smbus_byte_read(dev, SMBUS_ADDRESS_ARA, &addr);
-		if (ret < 0) {
-			LOG_DBG("Cannot read peripheral address (anymore)");
-			return;
-		}
-
-		LOG_DBG("Read addr 0x%02x, ret %d", addr, ret);
-
-		smbus_fire_callbacks(&data->smbalert_cbs, dev, addr);
-	} while (true);
+	smbus_loop_alert_devices(dev, &data->smbalert_cbs);
 }
 
 static int pch_smbus_smbalert_set_sb(const struct device *dev,
@@ -1005,10 +979,10 @@ static void smbus_isr(const struct device *dev)
 
 /* Device macro initialization  / DTS hackery */
 
-#define SMBUS_PCH_IRQ_FLAGS_SENSE0(n) 0
-#define SMBUS_PCH_IRQ_FLAGS_SENSE1(n) DT_INST_IRQ(n, sense)
-#define SMBUS_PCH_IRQ_FLAGS(n) \
-	_CONCAT(SMBUS_PCH_IRQ_FLAGS_SENSE, DT_INST_IRQ_HAS_CELL(n, sense))(n)
+#define SMBUS_PCH_IRQ_FLAGS(n)                                                 \
+	COND_CODE_1(DT_INST_IRQ_HAS_CELL(n, sense),                            \
+		    (DT_INST_IRQ(n, sense)),                                   \
+		    (0))
 
 #define SMBUS_IRQ_CONFIG(n)                                                    \
 	BUILD_ASSERT(IS_ENABLED(CONFIG_DYNAMIC_INTERRUPTS),                    \

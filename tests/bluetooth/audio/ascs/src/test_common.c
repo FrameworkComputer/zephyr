@@ -68,6 +68,7 @@ void test_conn_init(struct bt_conn *conn)
 	conn->info.security.level = BT_SECURITY_L2;
 	conn->info.security.enc_key_size = BT_ENC_KEY_SIZE_MAX;
 	conn->info.security.flags = BT_SECURITY_FLAG_OOB | BT_SECURITY_FLAG_SC;
+	conn->info.le.interval = BT_GAP_INIT_CONN_INT_MIN;
 }
 
 const struct bt_gatt_attr *test_ase_control_point_get(void)
@@ -116,31 +117,24 @@ uint8_t test_ase_get(const struct bt_uuid *uuid, int num_ase, ...)
 
 uint8_t test_ase_id_get(const struct bt_gatt_attr *ase)
 {
-	const struct test_ase_chrc_value_hdr *hdr;
+	struct test_ase_chrc_value_hdr hdr = { 0 };
 	ssize_t ret;
 
-	ret = ase->read(NULL, ase, NULL, 0, 0);
+	ret = ase->read(NULL, ase, &hdr, sizeof(hdr), 0);
 	zassert_false(ret < 0, "ase->read returned unexpected (err 0x%02x)", BT_GATT_ERR(ret));
 
-	expect_bt_gatt_attr_read_called_once(NULL, ase, EMPTY, EMPTY, 0, EMPTY, sizeof(*hdr));
-
-	hdr = bt_gatt_attr_read_fake.arg5_val;
-
-	/* Reset the mock state */
-	bt_gatt_attr_read_reset();
-
-	return hdr->ase_id;
+	return hdr.ase_id;
 }
 
 static struct bt_bap_stream *stream_allocated;
-static const struct bt_codec_qos_pref qos_pref = BT_CODEC_QOS_PREF(true, BT_GAP_LE_PHY_2M,
-								   0x02, 10, 40000, 40000,
-								   40000, 40000);
+static const struct bt_audio_codec_qos_pref qos_pref =
+	BT_AUDIO_CODEC_QOS_PREF(true, BT_GAP_LE_PHY_2M, 0x02, 10, 40000, 40000, 40000, 40000);
 
 static int unicast_server_cb_config_custom_fake(struct bt_conn *conn, const struct bt_bap_ep *ep,
-						enum bt_audio_dir dir, const struct bt_codec *codec,
+						enum bt_audio_dir dir,
+						const struct bt_audio_codec_cfg *codec_cfg,
 						struct bt_bap_stream **stream,
-						struct bt_codec_qos_pref *const pref,
+						struct bt_audio_codec_qos_pref *const pref,
 						struct bt_bap_ascs_rsp *rsp)
 {
 	*stream = stream_allocated;
@@ -235,7 +229,7 @@ void test_ase_control_client_release(struct bt_conn *conn, uint8_t ase_id)
 {
 	const struct bt_gatt_attr *attr = test_ase_control_point_get();
 	const uint8_t buf[] = {
-		0x08,                   /* Opcode = Disable */
+		0x08,                   /* Opcode = Release */
 		0x01,                   /* Number_of_ASEs */
 		ase_id,                 /* ASE_ID[0] */
 	};
@@ -252,8 +246,8 @@ void test_ase_control_client_update_metadata(struct bt_conn *conn, uint8_t ase_i
 		0x07,                   /* Opcode = Update Metadata */
 		0x01,                   /* Number_of_ASEs */
 		ase_id,                 /* ASE_ID[0] */
-		0x03,                   /* Metadata_Length[0] */
-		0x02, 0x02, 0x04,       /* Metadata[0] = Streaming Context (Media) */
+		0x04,                   /* Metadata_Length[0] */
+		0x03, 0x02, 0x04, 0x00, /* Metadata[0] = Streaming Context (Media) */
 	};
 	ssize_t ret;
 
@@ -337,20 +331,39 @@ void test_preamble_state_streaming(struct bt_conn *conn, uint8_t ase_id,
 }
 
 void test_preamble_state_disabling(struct bt_conn *conn, uint8_t ase_id,
-				   struct bt_bap_stream *stream)
+				   struct bt_bap_stream *stream, struct bt_iso_chan **chan)
 {
-	struct bt_iso_chan *chan;
 	int err;
 
 	test_ase_control_client_config_codec(conn, ase_id, stream);
 	test_ase_control_client_config_qos(conn, ase_id);
 	test_ase_control_client_enable(conn, ase_id);
 
-	err = mock_bt_iso_accept(conn, 0x01, 0x01, &chan);
+	err = mock_bt_iso_accept(conn, 0x01, 0x01, chan);
 	zassert_equal(0, err, "Failed to connect iso: err %d", err);
 
 	test_ase_control_client_receiver_start_ready(conn, ase_id);
 	test_ase_control_client_disable(conn, ase_id);
 
 	test_mocks_reset();
+}
+
+void test_preamble_state_releasing(struct bt_conn *conn, uint8_t ase_id,
+				   struct bt_bap_stream *stream, struct bt_iso_chan **chan,
+				   bool source)
+{
+	test_preamble_state_streaming(conn, ase_id, stream, chan, source);
+	test_ase_control_client_release(conn, ase_id);
+
+	/* Reset the mocks espacially the function call count */
+	mock_bap_unicast_server_cleanup();
+	mock_bt_iso_cleanup();
+	mock_bap_stream_cleanup();
+	mock_bt_gatt_cleanup();
+	mock_bap_unicast_server_init();
+	mock_bt_iso_init();
+	mock_bap_stream_init();
+	mock_bt_gatt_init();
+
+	/* At this point, ISO is still connected, thus ASE is in releasing state */
 }

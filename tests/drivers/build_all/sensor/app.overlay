@@ -32,6 +32,24 @@
 				zephyr,resolution = <12>;
 			};
 
+			channel@1 {
+				reg = <1>;
+				zephyr,gain = "ADC_GAIN_1_6";
+				zephyr,reference = "ADC_REF_INTERNAL";
+				zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+				zephyr,input-positive = <0>;
+				zephyr,resolution = <12>;
+			};
+
+			channel@2 {
+				reg = <2>;
+				zephyr,gain = "ADC_GAIN_1_6";
+				zephyr,reference = "ADC_REF_INTERNAL";
+				zephyr,acquisition-time = <ADC_ACQ_TIME_DEFAULT>;
+				zephyr,input-positive = <0>;
+				zephyr,resolution = <12>;
+			};
+
 			#include "adc.dtsi"
 		};
 
@@ -48,7 +66,7 @@
 		test_i2c: i2c@11112222 {
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "vnd,i2c";
+			compatible = "zephyr,i2c-emul-controller";
 			reg = <0x11112222 0x1000>;
 			status = "okay";
 			clock-frequency = <100000>;
@@ -59,7 +77,7 @@
 		test_spi: spi@33334444 {
 			#address-cells = <1>;
 			#size-cells = <0>;
-			compatible = "vnd,spi";
+			compatible = "zephyr,spi-emul-controller";
 			reg = <0x33334444 0x1000>;
 			status = "okay";
 			clock-frequency = <2000000>;
@@ -102,34 +120,13 @@
 				   <&test_gpio 0 0>,
 				   <&test_gpio 0 0>,
 				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,	/* 0x30 */
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>,
-				   <&test_gpio 0 0>;	/* 0x40 */
+				   <&test_gpio 0 0>,	/* 0x25 */
+				   <&test_gpio 0 0>,	/* 0x26 */
+				   <&test_gpio 0 0>,	/* 0x27 */
+				   <&test_gpio 0 0>,	/* 0x28 */
+				   <&test_gpio 0 0>,	/* 0x29 */
+				   <&test_gpio 0 0>,	/* 0x2A */
+				   <&test_gpio 0 0>;	/* 0x2B */
 
 			#include "spi.dtsi"
 		};
@@ -152,12 +149,16 @@
 			#include "w1.dtsi"
 		};
 
-		dht22 {
-			compatible = "aosong,dht";
+		test_i3c: i3c@f0cacc1a {
+			#address-cells = <3>;
+			#size-cells = <0>;
+			compatible = "vnd,i3c";
+			reg = <0xf0cacc1a 0x1000>;
 			status = "okay";
-			dio-gpios = <&test_gpio 0 0>;
-			/* dht22; */
+
+			#include "i3c.dtsi"
 		};
+
 	};
 };
 

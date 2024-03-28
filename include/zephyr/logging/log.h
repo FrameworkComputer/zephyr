@@ -18,6 +18,8 @@ extern "C" {
 /**
  * @brief Logging
  * @defgroup logging Logging
+ * @since 1.13
+ * @version 1.0.0
  * @ingroup os_services
  * @{
  * @}
@@ -71,6 +73,24 @@ extern "C" {
  * followed by as many values as specifiers.
  */
 #define LOG_DBG(...)    Z_LOG(LOG_LEVEL_DBG, __VA_ARGS__)
+
+/**
+ * @brief Writes a WARNING level message to the log on the first execution only.
+ *
+ * @details It's meant for situations that warrant investigation but could clutter
+ * the logs if output on every execution.
+ *
+ * @param ... A string optionally containing printk valid conversion specifier,
+ * followed by as many values as specifiers.
+ */
+#define LOG_WRN_ONCE(...)					\
+	do {							\
+		static uint8_t __warned;			\
+		if (unlikely(__warned == 0)) {			\
+			Z_LOG(LOG_LEVEL_WRN, __VA_ARGS__);	\
+			__warned = 1;				\
+		}						\
+	} while (0)
 
 /**
  * @brief Unconditionally print raw log message.
@@ -290,7 +310,7 @@ void z_log_vprintk(const char *fmt, va_list ap);
 #define _LOG_LEVEL_RESOLVE(...) LOG_LEVEL_NONE
 #else
 #define _LOG_LEVEL_RESOLVE(...) \
-	Z_LOG_EVAL(LOG_LEVEL, \
+	Z_LOG_EVAL(COND_CODE_0(LOG_LEVEL, (1), (LOG_LEVEL)), \
 		  (GET_ARG_N(2, __VA_ARGS__, LOG_LEVEL)), \
 		  (GET_ARG_N(2, __VA_ARGS__, CONFIG_LOG_DEFAULT_LEVEL)))
 #endif
@@ -298,14 +318,19 @@ void z_log_vprintk(const char *fmt, va_list ap);
 /* Return first argument */
 #define _LOG_ARG1(arg1, ...) arg1
 
-#define _LOG_MODULE_CONST_DATA_CREATE(_name, _level)			       \
-	IF_ENABLED(LOG_IN_CPLUSPLUS, (extern))				       \
-	const STRUCT_SECTION_ITERABLE_ALTERNATE(log_const,		       \
-		log_source_const_data,					       \
-		Z_LOG_ITEM_CONST_DATA(_name)) =				       \
-	{								       \
-		.name = STRINGIFY(_name),				       \
-		.level = _level						       \
+#define _LOG_MODULE_CONST_DATA_CREATE(_name, _level)						\
+	IF_ENABLED(CONFIG_LOG_FMT_SECTION, (							\
+		static const char UTIL_CAT(_name, _str)[]					\
+		     __in_section(_log_strings, static, _CONCAT(_name, _)) __used __noasan =	\
+		     STRINGIFY(_name);))							\
+	IF_ENABLED(LOG_IN_CPLUSPLUS, (extern))							\
+	const STRUCT_SECTION_ITERABLE_ALTERNATE(log_const,					\
+		log_source_const_data,								\
+		Z_LOG_ITEM_CONST_DATA(_name)) =							\
+	{											\
+		.name = COND_CODE_1(CONFIG_LOG_FMT_SECTION,					\
+				(UTIL_CAT(_name, _str)), (STRINGIFY(_name))),			\
+		.level = _level									\
 	}
 
 #define _LOG_MODULE_DYNAMIC_DATA_CREATE(_name)					\
@@ -324,10 +349,11 @@ void z_log_vprintk(const char *fmt, va_list ap);
  * is enabled, override level is set or module specific level is set (not off).
  */
 #define Z_DO_LOG_MODULE_REGISTER(...) \
-	Z_LOG_EVAL(CONFIG_LOG_OVERRIDE_LEVEL, \
+	COND_CODE_1(CONFIG_LOG, \
+		(Z_LOG_EVAL(CONFIG_LOG_OVERRIDE_LEVEL, \
 		   (1), \
 		   (Z_LOG_EVAL(_LOG_LEVEL_RESOLVE(__VA_ARGS__), (1), (0))) \
-		  )
+		  )), (0))
 
 /**
  * @brief Create module-specific state and register the module with Logger.

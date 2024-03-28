@@ -36,4 +36,37 @@ struct vcs_control_vol {
 	uint8_t volume;
 } __packed;
 
+struct bt_vcp_vol_ctlr {
+	struct vcs_state state;
+	uint8_t flags;
+
+	uint16_t start_handle;
+	uint16_t end_handle;
+	uint16_t state_handle;
+	uint16_t control_handle;
+	uint16_t flag_handle;
+	struct bt_gatt_subscribe_params state_sub_params;
+	struct bt_gatt_discover_params state_sub_disc_params;
+	struct bt_gatt_subscribe_params flag_sub_params;
+	struct bt_gatt_discover_params flag_sub_disc_params;
+	bool cp_retried;
+
+	bool busy;
+	struct vcs_control_vol cp_val;
+	struct bt_gatt_write_params write_params;
+	struct bt_gatt_read_params read_params;
+	struct bt_gatt_discover_params discover_params;
+	struct bt_uuid_16 uuid;
+	struct bt_conn *conn;
+
+#if defined(CONFIG_BT_VCP_VOL_CTLR_VOCS)
+	uint8_t vocs_inst_cnt;
+	struct bt_vocs *vocs[CONFIG_BT_VCP_VOL_CTLR_MAX_VOCS_INST];
+#endif /* CONFIG_BT_VCP_VOL_CTLR_VOCS */
+#if defined(CONFIG_BT_VCP_VOL_CTLR_AICS)
+	uint8_t aics_inst_cnt;
+	struct bt_aics *aics[CONFIG_BT_VCP_VOL_CTLR_MAX_AICS_INST];
+#endif /* CONFIG_BT_VCP_VOL_CTLR_AICS */
+};
+
 #endif /* ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_VCP_INTERNAL_*/

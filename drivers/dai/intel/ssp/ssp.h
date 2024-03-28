@@ -29,7 +29,7 @@
 #define DAI_INTEL_SSP_DEFAULT_IDX		1
 
 /* the SSP port fifo depth */
-#define DAI_INTEL_SSP_FIFO_DEPTH		16
+#define DAI_INTEL_SSP_FIFO_DEPTH		32
 
 /* the watermark for the SSP fifo depth setting */
 #define DAI_INTEL_SSP_FIFO_WATERMARK		8
@@ -236,7 +236,7 @@
 #define SHIM_CLKCTL_I2SFDCGB(x)		BIT(20 + x)
 #define SHIM_CLKCTL_I2SEFDCGB(x)	BIT(18 + x)
 
-#ifdef CONFIG_SOC_SERIES_INTEL_ACE
+#ifdef CONFIG_SOC_SERIES_INTEL_ADSP_ACE
 /** \brief Offset of MCLK Divider Control Register. */
 #define MN_MDIVCTRL 0x100
 

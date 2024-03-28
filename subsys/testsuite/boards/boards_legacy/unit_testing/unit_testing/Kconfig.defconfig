@@ -1,0 +1,8 @@
+# SPDX-License-Identifier: Apache-2.0
+#
+# Copyright (c) 2022 Nordic Semiconductor
+
+# Bluetooth unit tests expect this backend
+choice BT_HCI_BUS_TYPE
+	default BT_NO_DRIVER
+endchoice

@@ -9,6 +9,7 @@
 
 #include <soc.h>
 #include <zephyr/sys/byteorder.h>
+#include <zephyr/sys/util.h>
 
 #include "hal/cpu.h"
 #include "hal/ccm.h"
@@ -201,6 +202,7 @@ static int prepare_cb_common(struct lll_prepare_param *p)
 	struct ull_hdr *ull;
 	uint32_t remainder;
 	uint32_t hcto;
+	uint32_t ret;
 	uint8_t phy;
 
 	DEBUG_RADIO_START_O(1);
@@ -253,7 +255,6 @@ static int prepare_cb_common(struct lll_prepare_param *p)
 					   lll->data_chan_count,
 					   &lll->data_chan_prn_s,
 					   &lll->data_chan_remap_idx);
-	lll->ctrl_chan_use = data_chan_use;
 
 	/* Initialize stream current */
 	lll->stream_curr = 0U;
@@ -319,8 +320,9 @@ static int prepare_cb_common(struct lll_prepare_param *p)
 						 RADIO_PKT_CONF_CTE_DISABLED);
 		radio_pkt_configure(RADIO_PKT_CONF_LENGTH_8BIT,
 				    (lll->max_pdu + PDU_MIC_SIZE), pkt_flags);
-		radio_pkt_rx_set(radio_ccm_rx_pkt_set(&lll->ccm_rx, phy,
-						      node_rx->pdu));
+		radio_pkt_rx_set(radio_ccm_iso_rx_pkt_set(&lll->ccm_rx, phy,
+							  RADIO_PKT_CONF_PDU_TYPE_BIS,
+							  node_rx->pdu));
 	} else {
 		uint8_t pkt_flags;
 
@@ -368,24 +370,25 @@ static int prepare_cb_common(struct lll_prepare_param *p)
 				 HAL_RADIO_GPIO_LNA_OFFSET);
 #endif /* HAL_RADIO_GPIO_HAVE_LNA_PIN */
 
-	if (0) {
 #if defined(CONFIG_BT_CTLR_XTAL_ADVANCED) && \
 	(EVENT_OVERHEAD_PREEMPT_US <= EVENT_OVERHEAD_PREEMPT_MIN_US)
+	uint32_t overhead;
+
+	overhead = lll_preempt_calc(ull, (TICKER_ID_SCAN_SYNC_ISO_BASE +
+					  ull_sync_iso_lll_handle_get(lll)), ticks_at_event);
 	/* check if preempt to start has changed */
-	} else if (lll_preempt_calc(ull, (TICKER_ID_SCAN_SYNC_ISO_BASE +
-					  ull_sync_iso_lll_handle_get(lll)),
-				    ticks_at_event)) {
+	if (overhead) {
+		LL_ASSERT_OVERHEAD(overhead);
+
 		radio_isr_set(lll_isr_abort, lll);
 		radio_disable();
 
 		return -ECANCELED;
-#endif /* CONFIG_BT_CTLR_XTAL_ADVANCED */
-	} else {
-		uint32_t ret;
-
-		ret = lll_prepare_done(lll);
-		LL_ASSERT(!ret);
 	}
+#endif /* CONFIG_BT_CTLR_XTAL_ADVANCED */
+
+	ret = lll_prepare_done(lll);
+	LL_ASSERT(!ret);
 
 	/* Calculate ahead the next subevent channel index */
 	next_chan_calc(lll, event_counter, data_chan_id);
@@ -486,7 +489,6 @@ static void isr_rx(void *param)
 	uint8_t access_addr[4];
 	uint16_t data_chan_id;
 	uint8_t data_chan_use;
-	uint8_t payload_index;
 	uint8_t crc_init[3];
 	uint8_t rssi_ready;
 	uint32_t start_us;
@@ -527,14 +529,14 @@ static void isr_rx(void *param)
 
 	/* Save the AA captured for the first anchor point sync */
 	if (!radio_tmr_aa_restore()) {
-		const struct lll_sync_iso_stream *stream;
+		const struct lll_sync_iso_stream *sync_stream;
 		uint32_t se_offset_us;
 		uint8_t se;
 
 		crc_ok_anchor = crc_ok;
 
-		stream = ull_sync_iso_lll_stream_get(lll->stream_handle[0]);
-		se = ((lll->bis_curr - stream->bis_index) *
+		sync_stream = ull_sync_iso_lll_stream_get(lll->stream_handle[0]);
+		se = ((lll->bis_curr - sync_stream->bis_index) *
 		      ((lll->bn * lll->irc) + lll->ptc)) +
 		     ((lll->irc_curr - 1U) * lll->bn) + (lll->bn_curr - 1U) +
 		     lll->ptc_curr + lll->ctrl;
@@ -551,8 +553,10 @@ static void isr_rx(void *param)
 
 	/* Check CRC and generate ISO Data PDU */
 	if (crc_ok) {
-		struct lll_sync_iso_stream *stream;
+		struct lll_sync_iso_stream *sync_stream;
 		uint16_t stream_handle;
+		uint8_t payload_offset;
+		uint8_t payload_index;
 		struct pdu_bis *pdu;
 
 		/* Check if Control Subevent being received */
@@ -590,21 +594,28 @@ static void isr_rx(void *param)
 			/* TODO: check same CSSN is used in every subevent */
 		}
 
-		/* calculate the payload index in the sliding window */
-		payload_index = lll->payload_tail + (lll->bn_curr - 1U) +
-				(lll->ptc_curr * lll->pto);
+		/* Check payload buffer overflow */
+		payload_offset = (lll->bn_curr - 1U) +
+				 (lll->ptc_curr * lll->pto);
+		if (payload_offset > lll->payload_count_max) {
+			goto isr_rx_done;
+		}
+
+		/* Calculate the payload index in the sliding window */
+		payload_index = lll->payload_tail + payload_offset;
 		if (payload_index >= lll->payload_count_max) {
 			payload_index -= lll->payload_count_max;
 		}
 
+		/* Get reference to stream context */
 		stream_handle = lll->stream_handle[lll->stream_curr];
-		stream = ull_sync_iso_lll_stream_get(stream_handle);
+		sync_stream = ull_sync_iso_lll_stream_get(stream_handle);
 
-		/* store the received PDU */
-		if ((lll->bis_curr == stream->bis_index) && pdu->len &&
-		    !lll->payload[bis_idx][payload_index] &&
-		    ((payload_index >= lll->payload_tail) ||
-		     (payload_index < lll->payload_head))) {
+		/* Store the received PDU if selected stream and not already
+		 * received (say in previous event as pre-transmitted PDU.
+		 */
+		if ((lll->bis_curr == sync_stream->bis_index) && pdu->len &&
+		    !lll->payload[bis_idx][payload_index]) {
 			uint16_t handle;
 
 			if (lll->enc) {
@@ -641,10 +652,23 @@ isr_rx_find_subevent:
 
 	/* Find the next (bn_curr)th subevent to receive PDU */
 	while (lll->bn_curr < lll->bn) {
+		uint8_t payload_offset;
+		uint8_t payload_index;
+
+		/* Next burst number to check for reception required */
 		lll->bn_curr++;
 
+		/* Check payload buffer overflow */
+		payload_offset = (lll->bn_curr - 1U);
+		if (payload_offset > lll->payload_count_max) {
+			/* (bn_curr)th Rx PDU skip subevent */
+			skipped++;
+
+			continue;
+		}
+
 		/* Find the index of the (bn_curr)th Rx PDU buffer */
-		payload_index = lll->payload_tail + (lll->bn_curr - 1U);
+		payload_index = lll->payload_tail + payload_offset;
 		if (payload_index >= lll->payload_count_max) {
 			payload_index -= lll->payload_count_max;
 		}
@@ -664,6 +688,11 @@ isr_rx_find_subevent:
 	/* Find the next repetition (irc_curr)th subevent to receive PDU */
 	if (lll->irc_curr < lll->irc) {
 		if (!new_burst) {
+			uint8_t payload_index;
+
+			/* Increment to next repetition count and be at first
+			 * burst count for it.
+			 */
 			lll->bn_curr = 1U;
 			lll->irc_curr++;
 
@@ -712,6 +741,10 @@ isr_rx_find_subevent:
 	if (lll->ptc_curr < lll->ptc) {
 		lll->ptc_curr++;
 
+		/* TODO: optimize to skip pre-transmission subevent in case
+		 * of insufficient buffers in sliding window.
+		 */
+
 		/* Receive the (ptc_curr)th Rx PDU of bis_curr */
 		bis = lll->bis_curr;
 
@@ -721,18 +754,19 @@ isr_rx_find_subevent:
 	/* Next BIS */
 	if (lll->bis_curr < lll->num_bis) {
 		const uint8_t stream_curr = lll->stream_curr + 1U;
-		struct lll_sync_iso_stream *stream;
+		struct lll_sync_iso_stream *sync_stream;
 		uint16_t stream_handle;
 
 		/* Next selected stream */
 		if (stream_curr < lll->stream_count) {
 			lll->stream_curr = stream_curr;
 			stream_handle = lll->stream_handle[lll->stream_curr];
-			stream = ull_sync_iso_lll_stream_get(stream_handle);
-			if (stream->bis_index <= lll->num_bis) {
+			sync_stream = ull_sync_iso_lll_stream_get(stream_handle);
+			if (sync_stream->bis_index <= lll->num_bis) {
+				uint8_t payload_index;
 				uint8_t bis_idx_new;
 
-				lll->bis_curr = stream->bis_index;
+				lll->bis_curr = sync_stream->bis_index;
 				lll->ptc_curr = 0U;
 				lll->irc_curr = 1U;
 				lll->bn_curr = 1U;
@@ -750,7 +784,7 @@ isr_rx_find_subevent:
 				 */
 				if (!lll->payload[bis_idx_new][payload_index]) {
 					/* bn = 1 Rx PDU not received */
-					skipped = (bis_idx_new - bis_idx - 1U) *
+					skipped = (bis_idx_new - bis_idx) *
 						  ((lll->bn * lll->irc) +
 						   lll->ptc);
 
@@ -764,10 +798,12 @@ isr_rx_find_subevent:
 					/* bn = 1 Rx PDU already received, skip
 					 * subevent.
 					 */
-					skipped = ((bis_idx_new - bis_idx -
-						    1U) *
+					skipped = ((bis_idx_new - bis_idx) *
 						   ((lll->bn * lll->irc) +
 						    lll->ptc)) + 1U;
+
+					/* BIS index */
+					bis_idx = lll->bis_curr - 1U;
 
 					/* Find the missing (bn_curr)th Rx PDU
 					 * of bis_curr
@@ -839,7 +875,15 @@ isr_rx_next_subevent:
 
 	/* Set the channel to use */
 	if (!bis) {
-		data_chan_use = lll->ctrl_chan_use;
+		const uint16_t event_counter =
+				(lll->payload_count / lll->bn) - 1U;
+
+		/* Calculate the radio channel to use for ISO event */
+		data_chan_use = lll_chan_iso_event(event_counter, data_chan_id,
+						   lll->data_chan_map,
+						   lll->data_chan_count,
+						   &lll->data_chan_prn_s,
+						   &lll->data_chan_remap_idx);
 	} else if (!skipped) {
 		data_chan_use = lll->next_chan_use;
 	} else {
@@ -860,7 +904,7 @@ isr_rx_next_subevent:
 						&lll->data_chan_prn_s,
 						&lll->data_chan_remap_idx);
 
-			skipped -= (bis_idx_new - bis_idx - 1U) *
+			skipped -= (bis_idx_new - bis_idx) *
 				   ((lll->bn * lll->irc) + lll->ptc);
 		}
 
@@ -903,7 +947,9 @@ isr_rx_next_subevent:
 		(void)memcpy(lll->ccm_rx.iv, lll->giv, 4U);
 		mem_xor_32(lll->ccm_rx.iv, lll->ccm_rx.iv, access_addr);
 
-		radio_pkt_rx_set(radio_ccm_rx_pkt_set(&lll->ccm_rx, lll->phy, pdu));
+		radio_pkt_rx_set(radio_ccm_iso_rx_pkt_set(&lll->ccm_rx, lll->phy,
+							  RADIO_PKT_CONF_PDU_TYPE_BIS,
+							  pdu));
 
 	} else {
 		struct pdu_bis *pdu;
@@ -951,7 +997,7 @@ isr_rx_next_subevent:
 		hcto -= radio_rx_chain_delay_get(lll->phy, PHY_FLAGS_S8);
 		hcto -= addr_us_get(lll->phy);
 		hcto -= radio_rx_ready_delay_get(lll->phy, PHY_FLAGS_S8);
-		hcto -= (EVENT_CLOCK_JITTER_US << 1);
+		hcto -= (EVENT_CLOCK_JITTER_US << 1) * nse;
 
 		start_us = hcto;
 		hcto = radio_tmr_start_us(0U, start_us);
@@ -960,13 +1006,12 @@ isr_rx_next_subevent:
 		 */
 		/* LL_ASSERT(hcto == (start_us + 1U)); */
 
-		/* Add 4 us + 4 us + (4 us * subevents so far), as radio
-		 * was setup to listen 4 us early and subevents could have
-		 * a 4 us drift each until the current subevent we are
-		 * listening.
+		/* Add 8 us * subevents so far, as radio was setup to listen
+		 * 4 us early and subevents could have a 4 us drift each until
+		 * the current subevent we are listening.
 		 */
-		hcto += ((EVENT_CLOCK_JITTER_US << 1) * (2U + nse)) +
-			RANGE_DELAY_US + HCTO_START_DELAY_US;
+		hcto += (((EVENT_CLOCK_JITTER_US << 1) * nse) << 1) +
+			RANGE_DELAY_US + HAL_RADIO_TMR_START_DELAY_US;
 	} else {
 		/* First subevent PDU was not received, hence setup radio packet
 		 * timer header complete timeout from where the first subevent
@@ -1053,8 +1098,7 @@ static void isr_rx_done(void *param)
 		bn = lll->bn;
 		while (bn--) {
 			if (lll->payload[bis_idx][payload_tail]) {
-				node_rx =
-					lll->payload[bis_idx][payload_tail];
+				node_rx = lll->payload[bis_idx][payload_tail];
 				lll->payload[bis_idx][payload_tail] = NULL;
 
 				iso_rx_put(node_rx->hdr.link, node_rx);

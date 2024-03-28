@@ -123,7 +123,7 @@ static int i2c_gpio_recover_bus(const struct device *dev)
 	return rc;
 }
 
-static struct i2c_driver_api api = {
+static const struct i2c_driver_api api = {
 	.configure = i2c_gpio_configure,
 	.transfer = i2c_gpio_transfer,
 	.recover_bus = i2c_gpio_recover_bus,
@@ -136,7 +136,7 @@ static int i2c_gpio_init(const struct device *dev)
 	uint32_t bitrate_cfg;
 	int err;
 
-	if (!device_is_ready(config->scl_gpio.port)) {
+	if (!gpio_is_ready_dt(&config->scl_gpio)) {
 		LOG_ERR("SCL GPIO device not ready");
 		return -ENODEV;
 	}
@@ -147,7 +147,7 @@ static int i2c_gpio_init(const struct device *dev)
 		return err;
 	}
 
-	if (!device_is_ready(config->sda_gpio.port)) {
+	if (!gpio_is_ready_dt(&config->sda_gpio)) {
 		LOG_ERR("SDA GPIO device not ready");
 		return -ENODEV;
 	}

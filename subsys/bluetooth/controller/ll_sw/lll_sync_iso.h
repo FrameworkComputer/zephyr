@@ -7,6 +7,7 @@
 struct lll_sync_iso_stream {
 	uint8_t big_handle;
 	uint8_t bis_index;
+	struct ll_iso_rx_test_mode *test_mode;
 	struct ll_iso_datapath *dp;
 };
 
@@ -65,7 +66,6 @@ struct lll_sync_iso {
 
 	uint8_t term_reason;
 
-	uint8_t ctrl_chan_use;
 	uint16_t ctrl_instant;
 
 	uint8_t stream_count;
@@ -74,7 +74,6 @@ struct lll_sync_iso {
 	struct node_rx_pdu *payload[BT_CTLR_SYNC_ISO_STREAM_MAX]
 				   [PDU_BIG_PAYLOAD_COUNT_MAX];
 	uint8_t payload_count_max;
-	uint8_t payload_head;
 	uint8_t payload_tail;
 
 	uint32_t window_widening_periodic_us;

@@ -10,15 +10,17 @@ from pathlib import Path
 import sys
 import subprocess
 
+from runners.core import _DRY_RUN
 from runners.nrf_common import NrfBinaryRunner
+
 
 class NrfUtilBinaryRunner(NrfBinaryRunner):
     '''Runner front-end for nrfutil.'''
 
     def __init__(self, cfg, family, softreset, dev_id, erase=False,
-                 tool_opt=[], force=False, recover=False):
+                 reset=True, tool_opt=[], force=False, recover=False):
 
-        super().__init__(cfg, family, softreset, dev_id, erase,
+        super().__init__(cfg, family, softreset, dev_id, erase, reset,
                          tool_opt, force, recover)
         self._ops = []
         self._op_id = 1
@@ -35,31 +37,39 @@ class NrfUtilBinaryRunner(NrfBinaryRunner):
     def do_create(cls, cfg, args):
         return NrfUtilBinaryRunner(cfg, args.nrf_family, args.softreset,
                                    args.dev_id, erase=args.erase,
+                                   reset=args.reset,
                                    tool_opt=args.tool_opt, force=args.force,
                                    recover=args.recover)
 
     def _exec(self, args):
-        try:
-            out = self.check_output(['nrfutil', '--json', 'device'] + args)
-        except subprocess.CalledProcessError as e:
-            # https://docs.python.org/3/reference/compound_stmts.html#except-clause
-            cpe = e
-            out = cpe.stdout
-        else:
-            cpe = None
-        finally:
-            # https://github.com/ndjson/ndjson-spec
-            out = [json.loads(s) for s in
-                   out.decode(sys.getdefaultencoding()).split('\n') if len(s)]
-            self.logger.debug(f'output: {out}')
-            if cpe:
-                if 'execute-batch' in args:
-                    for o in out:
-                        if o['type'] == 'batch_end' and o['data']['error']:
-                            cpe.returncode = o['data']['error']['code']
-                raise cpe
+        jout_all = []
 
-        return out
+        cmd = ['nrfutil', '--json', 'device'] + args
+        self._log_cmd(cmd)
+
+        if _DRY_RUN:
+            return {}
+
+        with subprocess.Popen(cmd, stdout=subprocess.PIPE) as p:
+            for line in iter(p.stdout.readline, b''):
+                # https://github.com/ndjson/ndjson-spec
+                jout = json.loads(line.decode(sys.getdefaultencoding()))
+                jout_all.append(jout)
+
+                if 'x-execute-batch' in args:
+                    if jout['type'] == 'batch_update':
+                        pld = jout['data']['data']
+                        if (
+                            pld['type'] == 'task_progress' and
+                            pld['data']['progress']['progressPercentage'] == 0
+                        ):
+                            self.logger.info(pld['data']['progress']['description'])
+                    elif jout['type'] == 'batch_end' and jout['data']['error']:
+                        raise subprocess.CalledProcessError(
+                            jout['data']['error']['code'], cmd
+                        )
+
+        return jout_all
 
     def do_get_boards(self):
         out = self._exec(['list'])
@@ -96,7 +106,7 @@ class NrfUtilBinaryRunner(NrfBinaryRunner):
         self._ops = []
         self._op_id = 1
         self.logger.debug(f'Executing batch in: {json_file}')
-        self._exec(['execute-batch', '--batch-path', f'{json_file}',
+        self._exec(['x-execute-batch', '--batch-path', f'{json_file}',
                     '--serial-number', f'{self.dev_id}'])
 
     def do_exec_op(self, op, force=False):

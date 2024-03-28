@@ -344,6 +344,21 @@ static int test_aics(void)
 	return 0;
 }
 
+static void discover_mics(struct bt_micp_mic_ctlr **mic_ctlr)
+{
+	int err;
+
+	g_discovery_complete = false;
+
+	err = bt_micp_mic_ctlr_discover(default_conn, mic_ctlr);
+	if (err != 0) {
+		FAIL("Failed to discover MICS %d", err);
+		return;
+	}
+
+	WAIT_FOR_COND(g_discovery_complete);
+}
+
 static void test_main(void)
 {
 	int err;
@@ -357,11 +372,13 @@ static void test_main(void)
 		return;
 	}
 
+	bt_le_scan_cb_register(&common_scan_cb);
+
 	bt_micp_mic_ctlr_cb_register(&micp_mic_ctlr_cbs);
 
 	WAIT_FOR_COND(g_bt_init);
 
-	err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, device_found);
+	err = bt_le_scan_start(BT_LE_SCAN_PASSIVE, NULL);
 	if (err != 0) {
 		FAIL("Scanning failed to start (err %d)\n", err);
 		return;
@@ -369,11 +386,8 @@ static void test_main(void)
 	printk("Scanning successfully started\n");
 	WAIT_FOR_FLAG(flag_connected);
 
-	err = bt_micp_mic_ctlr_discover(default_conn, &mic_ctlr);
-	if (err != 0) {
-		FAIL("Failed to discover MICS %d", err);
-	}
-	WAIT_FOR_COND(g_discovery_complete);
+	discover_mics(&mic_ctlr);
+	discover_mics(&mic_ctlr); /* test that we can discover twice */
 
 	err = bt_micp_mic_ctlr_included_get(mic_ctlr, &micp_included);
 	if (err != 0) {
