@@ -138,6 +138,10 @@
 #define MBEDTLS_KEY_EXCHANGE_ECJPAKE_ENABLED
 #endif
 
+#if defined(CONFIG_MBEDTLS_HKDF_C)
+#define MBEDTLS_HKDF_C
+#endif
+
 /* Supported cipher modes */
 
 #if defined(CONFIG_MBEDTLS_CIPHER_AES_ENABLED)
@@ -390,7 +394,7 @@
 #define MBEDTLS_X509_CRT_PARSE_C
 #endif
 
-#if defined (CONFIG_MBEDTLS_PEM_CERTIFICATE_FORMAT) && \
+#if defined(CONFIG_MBEDTLS_PEM_CERTIFICATE_FORMAT) && \
     defined(MBEDTLS_X509_CRT_PARSE_C)
 #define MBEDTLS_PEM_PARSE_C
 #define MBEDTLS_BASE64_C
@@ -425,11 +429,11 @@
 #define MBEDTLS_PK_C
 #endif
 
-#if defined(MBEDTLS_X509_USE_C) || defined(MBEDTLS_ECDSA_C)
+#if defined(MBEDTLS_ECDSA_C) || defined(MBEDTLS_RSA_C) || defined(MBEDTLS_X509_USE_C)
 #define MBEDTLS_ASN1_PARSE_C
 #endif
 
-#if defined(MBEDTLS_ECDSA_C) || defined(MBEDTLS_PK_WRITE_C)
+#if defined(MBEDTLS_ECDSA_C) || defined(MBEDTLS_RSA_C) || defined(MBEDTLS_PK_WRITE_C)
 #define MBEDTLS_ASN1_WRITE_C
 #endif
 
@@ -464,11 +468,18 @@
 #define MBEDTLS_SSL_EXTENDED_MASTER_SECRET
 #endif
 
+#if defined(CONFIG_MBEDTLS_PSA_CRYPTO_EXTERNAL_RNG)
+#define MBEDTLS_PSA_CRYPTO_EXTERNAL_RNG
+#endif
+
 #if defined(CONFIG_MBEDTLS_PSA_CRYPTO_C)
 #define MBEDTLS_PSA_CRYPTO_C
-#define MBEDTLS_USE_PSA_CRYPTO
 
-#if defined(CONFIG_ARCH_POSIX)
+#if defined(CONFIG_MBEDTLS_USE_PSA_CRYPTO)
+#define MBEDTLS_USE_PSA_CRYPTO
+#endif
+
+#if defined(CONFIG_ARCH_POSIX) && !defined(CONFIG_PICOLIBC)
 #define MBEDTLS_PSA_KEY_SLOT_COUNT     64
 #define MBEDTLS_PSA_CRYPTO_STORAGE_C
 #define MBEDTLS_PSA_ITS_FILE_C
@@ -489,6 +500,18 @@
 
 #if defined(CONFIG_MBEDTLS_USER_CONFIG_FILE)
 #include CONFIG_MBEDTLS_USER_CONFIG_FILE
+#endif
+
+#if defined(CONFIG_BUILD_WITH_TFM)
+#undef MBEDTLS_PSA_CRYPTO_C
+#endif /* CONFIG_BUILD_WITH_TFM */
+
+#if defined(CONFIG_MBEDTLS_PSA_CRYPTO_CLIENT)
+#define MBEDTLS_PSA_CRYPTO_CLIENT
+#endif
+
+#if defined(CONFIG_PSA_WANT_ALG_SHA_256)
+#define PSA_WANT_ALG_SHA_256 1
 #endif
 
 #endif /* MBEDTLS_CONFIG_H */

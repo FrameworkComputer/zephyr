@@ -10,15 +10,21 @@ import pykwalify.core
 import sys
 from typing import List
 import yaml
+import re
+
+try:
+    from yaml import CSafeLoader as SafeLoader
+except ImportError:
+    from yaml import SafeLoader
 
 
 SOC_SCHEMA_PATH = str(Path(__file__).parent / 'schemas' / 'soc-schema.yml')
 with open(SOC_SCHEMA_PATH, 'r') as f:
-    soc_schema = yaml.safe_load(f.read())
+    soc_schema = yaml.load(f.read(), Loader=SafeLoader)
 
 ARCH_SCHEMA_PATH = str(Path(__file__).parent / 'schemas' / 'arch-schema.yml')
 with open(ARCH_SCHEMA_PATH, 'r') as f:
-    arch_schema = yaml.safe_load(f.read())
+    arch_schema = yaml.load(f.read(), Loader=SafeLoader)
 
 SOC_YML = 'soc.yml'
 ARCHS_YML_PATH = PurePath('arch/archs.yml')
@@ -34,11 +40,45 @@ class Systems:
             return
 
         try:
-            data = yaml.safe_load(soc_yaml)
+            data = yaml.load(soc_yaml, Loader=SafeLoader)
             pykwalify.core.Core(source_data=data,
                                 schema_data=soc_schema).validate()
         except (yaml.YAMLError, pykwalify.errors.SchemaError) as e:
             sys.exit(f'ERROR: Malformed yaml {soc_yaml.as_posix()}', e)
+
+        # Ensure that any runner configuration matches socs and cpuclusters declared in the same
+        # soc.yml file
+        if 'runners' in data and 'run_once' in data['runners']:
+            for grp in data['runners']['run_once']:
+                for item_data in data['runners']['run_once'][grp]:
+                    for group in item_data['groups']:
+                        for qualifiers in group['qualifiers']:
+                            components = qualifiers.split('/')
+                            soc = components.pop(0)
+                            found_match = False
+
+                            # Allow 'ns' as final qualifier until "virtual" CPUs are ported to soc.yml
+                            # https://github.com/zephyrproject-rtos/zephyr/issues/70721
+                            if len(components) > 0 and components[len(components)-1] == 'ns':
+                                components.pop(len(components)-1)
+
+                            for f in data.get('family', []):
+                                for s in f.get('series', []):
+                                    for socs in s.get('socs', []):
+                                        if re.match(fr'^{soc}$', socs.get('name')) is not None:
+                                            if 'cpuclusters' in socs and len(components) > 0:
+                                                check_string = '/'.join(components)
+                                                for cpucluster in socs.get('cpuclusters', []):
+                                                    if re.match(fr'^{check_string}$', cpucluster.get('name')) is not None:
+                                                        found_match = True
+                                                        break
+                                            elif 'cpuclusters' not in socs and len(components) == 0:
+                                                found_match = True
+                                                break
+
+
+                            if found_match is False:
+                                sys.exit(f'ERROR: SoC qualifier match unresolved: {qualifiers}')
 
         for f in data.get('family', []):
             family = Family(f['name'], folder, [], [])
@@ -141,14 +181,19 @@ class Family:
     socs: List[Soc]
 
 
+def unique_paths(paths):
+    # Using dict keys ensures both uniqueness and a deterministic order.
+    yield from dict.fromkeys(map(Path.resolve, paths)).keys()
+
+
 def find_v2_archs(args):
     ret = {'archs': []}
-    for root in args.arch_roots:
+    for root in unique_paths(args.arch_roots):
         archs_yml = root / ARCHS_YML_PATH
 
         if Path(archs_yml).is_file():
             with Path(archs_yml).open('r') as f:
-                archs = yaml.safe_load(f.read())
+                archs = yaml.load(f.read(), Loader=SafeLoader)
 
             try:
                 pykwalify.core.Core(source_data=archs, schema_data=arch_schema).validate()
@@ -172,7 +217,7 @@ def find_v2_archs(args):
 def find_v2_systems(args):
     yml_files = []
     systems = Systems()
-    for root in args.soc_roots:
+    for root in unique_paths(args.soc_roots):
         yml_files.extend(sorted((root / 'soc').rglob(SOC_YML)))
 
     for soc_yml in yml_files:

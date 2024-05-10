@@ -15,11 +15,7 @@ LOG_MODULE_REGISTER(net_sock, CONFIG_NET_SOCKETS_LOG_LEVEL);
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/socket.h>
 #include <zephyr/net/socket_types.h>
-#ifdef CONFIG_ARCH_POSIX
-#include <fcntl.h>
-#else
 #include <zephyr/posix/fcntl.h>
-#endif
 #include <zephyr/internal/syscall_handler.h>
 #include <zephyr/sys/fdtable.h>
 #include <zephyr/sys/math_extras.h>
@@ -2027,7 +2023,7 @@ fail:
 /* As this is limited function, we don't follow POSIX signature, with
  * "..." instead of last arg.
  */
-int z_impl_zsock_fcntl(int sock, int cmd, int flags)
+int z_impl_zsock_fcntl_impl(int sock, int cmd, int flags)
 {
 	const struct socket_op_vtable *vtable;
 	struct k_mutex *lock;
@@ -2051,14 +2047,14 @@ int z_impl_zsock_fcntl(int sock, int cmd, int flags)
 }
 
 #ifdef CONFIG_USERSPACE
-static inline int z_vrfy_zsock_fcntl(int sock, int cmd, int flags)
+static inline int z_vrfy_zsock_fcntl_impl(int sock, int cmd, int flags)
 {
-	return z_impl_zsock_fcntl(sock, cmd, flags);
+	return z_impl_zsock_fcntl_impl(sock, cmd, flags);
 }
-#include <syscalls/zsock_fcntl_mrsh.c>
+#include <syscalls/zsock_fcntl_impl_mrsh.c>
 #endif
 
-int z_impl_zsock_ioctl(int sock, unsigned long request, va_list args)
+int z_impl_zsock_ioctl_impl(int sock, unsigned long request, va_list args)
 {
 	const struct socket_op_vtable *vtable;
 	struct k_mutex *lock;
@@ -2084,7 +2080,7 @@ int z_impl_zsock_ioctl(int sock, unsigned long request, va_list args)
 }
 
 #ifdef CONFIG_USERSPACE
-static inline int z_vrfy_zsock_ioctl(int sock, unsigned long request, va_list args)
+static inline int z_vrfy_zsock_ioctl_impl(int sock, unsigned long request, va_list args)
 {
 	switch (request) {
 	case ZFD_IOCTL_FIONBIO:
@@ -2104,9 +2100,9 @@ static inline int z_vrfy_zsock_ioctl(int sock, unsigned long request, va_list ar
 		return -1;
 	}
 
-	return z_impl_zsock_ioctl(sock, request, args);
+	return z_impl_zsock_ioctl_impl(sock, request, args);
 }
-#include <syscalls/zsock_ioctl_mrsh.c>
+#include <syscalls/zsock_ioctl_impl_mrsh.c>
 #endif
 
 static int zsock_poll_prepare_ctx(struct net_context *ctx,
@@ -2684,6 +2680,22 @@ int zsock_getsockopt_ctx(struct net_context *ctx, int level, int optname,
 			if (IS_ENABLED(CONFIG_NET_IPV4_MAPPING_TO_IPV6)) {
 				ret = net_context_get_option(ctx,
 							     NET_OPT_IPV6_V6ONLY,
+							     optval,
+							     optlen);
+				if (ret < 0) {
+					errno  = -ret;
+					return -1;
+				}
+
+				return 0;
+			}
+
+			break;
+
+		case IPV6_ADDR_PREFERENCES:
+			if (IS_ENABLED(CONFIG_NET_IPV6)) {
+				ret = net_context_get_option(ctx,
+							     NET_OPT_ADDR_PREFERENCES,
 							     optval,
 							     optlen);
 				if (ret < 0) {
@@ -3280,6 +3292,22 @@ int zsock_setsockopt_ctx(struct net_context *ctx, int level, int optname,
 
 			break;
 
+		case IPV6_ADDR_PREFERENCES:
+			if (IS_ENABLED(CONFIG_NET_IPV6)) {
+				ret = net_context_set_option(ctx,
+							     NET_OPT_ADDR_PREFERENCES,
+							     optval,
+							     optlen);
+				if (ret < 0) {
+					errno  = -ret;
+					return -1;
+				}
+
+				return 0;
+			}
+
+			break;
+
 		case IPV6_TCLASS:
 			if (IS_ENABLED(CONFIG_NET_CONTEXT_DSCP_ECN)) {
 				ret = net_context_set_option(ctx,
@@ -3456,6 +3484,7 @@ int zsock_getsockname_ctx(struct net_context *ctx, struct sockaddr *addr,
 			  socklen_t *addrlen)
 {
 	socklen_t newlen = 0;
+	int ret;
 
 	if (IS_ENABLED(CONFIG_NET_IPV4) && ctx->local.family == AF_INET) {
 		struct sockaddr_in addr4 = { 0 };
@@ -3464,26 +3493,32 @@ int zsock_getsockname_ctx(struct net_context *ctx, struct sockaddr *addr,
 			SET_ERRNO(-EINVAL);
 		}
 
-		addr4.sin_family = AF_INET;
-		addr4.sin_port = net_sin_ptr(&ctx->local)->sin_port;
-		memcpy(&addr4.sin_addr, net_sin_ptr(&ctx->local)->sin_addr,
-		       sizeof(struct in_addr));
 		newlen = sizeof(struct sockaddr_in);
 
+		ret = net_context_get_local_addr(ctx,
+						 (struct sockaddr *)&addr4,
+						 &newlen);
+		if (ret < 0) {
+			SET_ERRNO(-ret);
+		}
+
 		memcpy(addr, &addr4, MIN(*addrlen, newlen));
-	} else if (IS_ENABLED(CONFIG_NET_IPV6) &&
-		   ctx->local.family == AF_INET6) {
+
+	} else if (IS_ENABLED(CONFIG_NET_IPV6) && ctx->local.family == AF_INET6) {
 		struct sockaddr_in6 addr6 = { 0 };
 
 		if (net_sin6_ptr(&ctx->local)->sin6_addr == NULL) {
 			SET_ERRNO(-EINVAL);
 		}
 
-		addr6.sin6_family = AF_INET6;
-		addr6.sin6_port = net_sin6_ptr(&ctx->local)->sin6_port;
-		memcpy(&addr6.sin6_addr, net_sin6_ptr(&ctx->local)->sin6_addr,
-		       sizeof(struct in6_addr));
 		newlen = sizeof(struct sockaddr_in6);
+
+		ret = net_context_get_local_addr(ctx,
+						 (struct sockaddr *)&addr6,
+						 &newlen);
+		if (ret < 0) {
+			SET_ERRNO(-ret);
+		}
 
 		memcpy(addr, &addr6, MIN(*addrlen, newlen));
 	} else {

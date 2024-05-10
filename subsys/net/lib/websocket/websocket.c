@@ -393,11 +393,13 @@ int websocket_connect(int sock, struct websocket_request *wreq,
 	/* Init parser FSM */
 	ctx->parser_state = WEBSOCKET_PARSER_STATE_OPCODE;
 
+	(void)sock_obj_core_alloc_find(ctx->real_sock, fd, SOCK_STREAM);
+
 	return fd;
 
 out:
 	if (fd >= 0) {
-		(void)close(fd);
+		(void)zsock_close(fd);
 	}
 
 	websocket_context_unref(ctx);
@@ -406,7 +408,7 @@ out:
 
 int websocket_disconnect(int ws_sock)
 {
-	return close(ws_sock);
+	return zsock_close(ws_sock);
 }
 
 static int websocket_interal_disconnect(struct websocket_context *ctx)
@@ -422,8 +424,10 @@ static int websocket_interal_disconnect(struct websocket_context *ctx)
 	ret = websocket_send_msg(ctx->sock, NULL, 0, WEBSOCKET_OPCODE_CLOSE,
 				 true, true, SYS_FOREVER_MS);
 	if (ret < 0) {
-		NET_ERR("[%p] Failed to send close message (err %d).", ctx, ret);
+		NET_DBG("[%p] Failed to send close message (err %d).", ctx, ret);
 	}
+
+	(void)sock_obj_core_dealloc(ctx->sock);
 
 	websocket_context_unref(ctx);
 
@@ -963,8 +967,8 @@ int websocket_recv_msg(int ws_sock, uint8_t *buf, size_t buf_len,
 
 			ret = wait_rx(ctx->real_sock, timeout_to_ms(&tout));
 			if (ret == 0) {
-				ret = recv(ctx->real_sock, ctx->recv_buf.buf,
-					   ctx->recv_buf.size, MSG_DONTWAIT);
+				ret = zsock_recv(ctx->real_sock, ctx->recv_buf.buf,
+						 ctx->recv_buf.size, MSG_DONTWAIT);
 				if (ret < 0) {
 					ret = -errno;
 				}
@@ -1050,6 +1054,8 @@ static int websocket_send(struct websocket_context *ctx, const uint8_t *buf,
 
 	NET_DBG("[%p] Sent %d bytes", ctx, ret);
 
+	sock_obj_core_update_send_stats(ctx->sock, ret);
+
 	return ret;
 }
 
@@ -1077,6 +1083,8 @@ static int websocket_recv(struct websocket_context *ctx, uint8_t *buf,
 	}
 
 	NET_DBG("[%p] Received %d bytes", ctx, ret);
+
+	sock_obj_core_update_recv_stats(ctx->sock, ret);
 
 	return ret;
 }
@@ -1125,6 +1133,59 @@ static ssize_t websocket_recvfrom_ctx(void *obj, void *buf, size_t max_len,
 	ARG_UNUSED(addrlen);
 
 	return (ssize_t)websocket_recv(ctx, buf, max_len, timeout);
+}
+
+int websocket_register(int sock, uint8_t *recv_buf, size_t recv_buf_len)
+{
+	struct websocket_context *ctx;
+	int ret, fd;
+
+	if (sock < 0) {
+		return -EINVAL;
+	}
+
+	ctx = websocket_find(sock);
+	if (ctx) {
+		NET_DBG("[%p] Websocket for sock %d already exists!", ctx, sock);
+		return -EEXIST;
+	}
+
+	ctx = websocket_get();
+	if (!ctx) {
+		return -ENOENT;
+	}
+
+	ctx->real_sock = sock;
+	ctx->recv_buf.buf = recv_buf;
+	ctx->recv_buf.size = recv_buf_len;
+
+	fd = z_reserve_fd();
+	if (fd < 0) {
+		ret = -ENOSPC;
+		goto out;
+	}
+
+	ctx->sock = fd;
+	z_finalize_fd(fd, ctx,
+		      (const struct fd_op_vtable *)&websocket_fd_op_vtable);
+
+	NET_DBG("[%p] WS connection to peer established (fd %d)", ctx, fd);
+
+	ctx->recv_buf.count = 0;
+	ctx->parser_state = WEBSOCKET_PARSER_STATE_OPCODE;
+
+	(void)sock_obj_core_alloc_find(ctx->real_sock, fd, SOCK_STREAM);
+
+	return fd;
+
+out:
+	if (fd >= 0) {
+		(void)zsock_close(fd);
+	}
+
+	websocket_context_unref(ctx);
+
+	return ret;
 }
 
 static const struct socket_op_vtable websocket_fd_op_vtable = {

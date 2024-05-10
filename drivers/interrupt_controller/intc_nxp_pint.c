@@ -6,7 +6,7 @@
 
 /* Based on STM32 EXTI driver, which is (c) 2016 Open-RnD Sp. z o.o. */
 
-#include <zephyr/device.h>
+#include <zephyr/init.h>
 #include <zephyr/irq.h>
 #include <errno.h>
 #include <zephyr/drivers/interrupt_controller/nxp_pint.h>
@@ -99,6 +99,7 @@ int nxp_pint_pin_enable(uint8_t pin, enum nxp_pint_trigger trigger, bool wake)
 		EnableDeepSleepIRQ(pint_irq_cfg[slot].irq);
 	} else {
 		DisableDeepSleepIRQ(pint_irq_cfg[slot].irq);
+		irq_enable(pint_irq_cfg[slot].irq);
 	}
 #endif
 	return 0;

@@ -66,14 +66,12 @@ LOG_MODULE_REGISTER(bt_hci_core);
 #define HCI_CMD_TIMEOUT      K_SECONDS(10)
 
 /* Stacks for the threads */
-#if !defined(CONFIG_BT_RECV_BLOCKING)
 static void rx_work_handler(struct k_work *work);
 static K_WORK_DEFINE(rx_work, rx_work_handler);
 #if defined(CONFIG_BT_RECV_WORKQ_BT)
 static struct k_work_q bt_workq;
 static K_KERNEL_STACK_DEFINE(rx_thread_stack, CONFIG_BT_RX_STACK_SIZE);
 #endif /* CONFIG_BT_RECV_WORKQ_BT */
-#endif /* !CONFIG_BT_RECV_BLOCKING */
 static struct k_thread tx_thread_data;
 static K_KERNEL_STACK_DEFINE(tx_thread_stack, CONFIG_BT_HCI_TX_STACK_SIZE);
 
@@ -255,8 +253,12 @@ struct net_buf *bt_hci_cmd_create(uint16_t opcode, uint8_t param_len)
 
 	LOG_DBG("opcode 0x%04x param_len %u", opcode, param_len);
 
+	/* net_buf_alloc(K_FOREVER) can fail when run from the syswq */
 	buf = net_buf_alloc(&hci_cmd_pool, K_FOREVER);
-	__ASSERT_NO_MSG(buf);
+	if (!buf) {
+		LOG_DBG("Unable to allocate a command buffer");
+		return NULL;
+	}
 
 	LOG_DBG("buf %p", buf);
 
@@ -406,6 +408,13 @@ static int hci_le_read_max_data_len(uint16_t *tx_octets, uint16_t *tx_time)
 	*tx_octets = sys_le16_to_cpu(rp->max_tx_octets);
 	*tx_time = sys_le16_to_cpu(rp->max_tx_time);
 	net_buf_unref(rsp);
+
+	if (!IN_RANGE(*tx_octets, BT_HCI_LE_MAX_TX_OCTETS_MIN, BT_HCI_LE_MAX_TX_OCTETS_MAX)) {
+		LOG_WRN("tx_octets exceeds the valid range %u", *tx_octets);
+	}
+	if (!IN_RANGE(*tx_time, BT_HCI_LE_MAX_TX_TIME_MIN, BT_HCI_LE_MAX_TX_TIME_MAX)) {
+		LOG_WRN("tx_time exceeds the valid range %u", *tx_time);
+	}
 
 	return 0;
 }
@@ -802,12 +811,14 @@ int bt_hci_disconnect(uint16_t handle, uint8_t reason)
 }
 
 static uint16_t disconnected_handles[CONFIG_BT_MAX_CONN];
+static uint8_t disconnected_handles_reason[CONFIG_BT_MAX_CONN];
+
 static void disconnected_handles_reset(void)
 {
 	(void)memset(disconnected_handles, 0, sizeof(disconnected_handles));
 }
 
-static void conn_handle_disconnected(uint16_t handle)
+static void conn_handle_disconnected(uint16_t handle, uint8_t disconnect_reason)
 {
 	for (int i = 0; i < ARRAY_SIZE(disconnected_handles); i++) {
 		if (!disconnected_handles[i]) {
@@ -815,22 +826,24 @@ static void conn_handle_disconnected(uint16_t handle)
 			 * handle 0 can be used as a valid non-zero handle.
 			 */
 			disconnected_handles[i] = ~BT_ACL_HANDLE_MASK | handle;
+			disconnected_handles_reason[i] = disconnect_reason;
 		}
 	}
 }
 
-static bool conn_handle_is_disconnected(uint16_t handle)
+/** @returns the disconnect reason. */
+static uint8_t conn_handle_is_disconnected(uint16_t handle)
 {
 	handle |= ~BT_ACL_HANDLE_MASK;
 
 	for (int i = 0; i < ARRAY_SIZE(disconnected_handles); i++) {
 		if (disconnected_handles[i] == handle) {
 			disconnected_handles[i] = 0;
-			return true;
+			return disconnected_handles_reason[i];
 		}
 	}
 
-	return false;
+	return 0;
 }
 
 static void hci_disconn_complete_prio(struct net_buf *buf)
@@ -850,7 +863,7 @@ static void hci_disconn_complete_prio(struct net_buf *buf)
 		/* Priority disconnect complete event received before normal
 		 * connection complete event.
 		 */
-		conn_handle_disconnected(handle);
+		conn_handle_disconnected(handle, evt->reason);
 		return;
 	}
 
@@ -901,7 +914,7 @@ static void hci_disconn_complete(struct net_buf *buf)
 
 #if defined(CONFIG_BT_CENTRAL) && !defined(CONFIG_BT_FILTER_ACCEPT_LIST)
 	if (atomic_test_bit(conn->flags, BT_CONN_AUTO_CONNECT)) {
-		bt_conn_set_state(conn, BT_CONN_CONNECTING_SCAN);
+		bt_conn_set_state(conn, BT_CONN_SCAN_BEFORE_INITIATING);
 		bt_le_scan_update(false);
 	}
 #endif /* defined(CONFIG_BT_CENTRAL) && !defined(CONFIG_BT_FILTER_ACCEPT_LIST) */
@@ -1034,11 +1047,11 @@ static struct bt_conn *find_pending_connect(uint8_t role, bt_addr_le_t *peer_add
 	 */
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) && role == BT_HCI_ROLE_CENTRAL) {
 		conn = bt_conn_lookup_state_le(BT_ID_DEFAULT, peer_addr,
-					       BT_CONN_CONNECTING);
+					       BT_CONN_INITIATING);
 		if (IS_ENABLED(CONFIG_BT_FILTER_ACCEPT_LIST) && !conn) {
 			conn = bt_conn_lookup_state_le(BT_ID_DEFAULT,
 						       BT_ADDR_LE_NONE,
-						       BT_CONN_CONNECTING_AUTO);
+						       BT_CONN_INITIATING_FILTER_LIST);
 		}
 
 		return conn;
@@ -1046,11 +1059,11 @@ static struct bt_conn *find_pending_connect(uint8_t role, bt_addr_le_t *peer_add
 
 	if (IS_ENABLED(CONFIG_BT_PERIPHERAL) && role == BT_HCI_ROLE_PERIPHERAL) {
 		conn = bt_conn_lookup_state_le(bt_dev.adv_conn_id, peer_addr,
-					       BT_CONN_CONNECTING_DIR_ADV);
+					       BT_CONN_ADV_DIR_CONNECTABLE);
 		if (!conn) {
 			conn = bt_conn_lookup_state_le(bt_dev.adv_conn_id,
 						       BT_ADDR_LE_NONE,
-						       BT_CONN_CONNECTING_ADV);
+						       BT_CONN_ADV_CONNECTABLE);
 		}
 
 		return conn;
@@ -1169,7 +1182,7 @@ static void le_conn_complete_cancel(uint8_t err)
 		/* Check if device is marked for autoconnect. */
 		if (atomic_test_bit(conn->flags, BT_CONN_AUTO_CONNECT)) {
 			/* Restart passive scanner for device */
-			bt_conn_set_state(conn, BT_CONN_CONNECTING_SCAN);
+			bt_conn_set_state(conn, BT_CONN_SCAN_BEFORE_INITIATING);
 		}
 	} else {
 		if (atomic_test_bit(conn->flags, BT_CONN_AUTO_CONNECT)) {
@@ -1288,7 +1301,7 @@ static void update_conn(struct bt_conn *conn, const bt_addr_le_t *id_addr,
 void bt_hci_le_enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt)
 {
 	uint16_t handle = sys_le16_to_cpu(evt->handle);
-	bool is_disconnected = conn_handle_is_disconnected(handle);
+	uint8_t disconnect_reason = conn_handle_is_disconnected(handle);
 	bt_addr_le_t peer_addr, id_addr;
 	struct bt_conn *conn;
 	uint8_t id;
@@ -1454,11 +1467,12 @@ void bt_hci_le_enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt)
 
 	bt_conn_set_state(conn, BT_CONN_CONNECTED);
 
-	if (is_disconnected) {
+	if (disconnect_reason) {
 		/* Mark the connection as already disconnected before calling
 		 * the connected callback, so that the application cannot
 		 * start sending packets
 		 */
+		conn->err = disconnect_reason;
 		bt_conn_set_state(conn, BT_CONN_DISCONNECT_COMPLETE);
 	}
 
@@ -1480,7 +1494,7 @@ void bt_hci_le_enh_conn_complete_sync(struct bt_hci_evt_le_enh_conn_complete_v2 
 				      struct bt_le_per_adv_sync *sync)
 {
 	uint16_t handle = sys_le16_to_cpu(evt->handle);
-	bool is_disconnected = conn_handle_is_disconnected(handle);
+	uint8_t disconnect_reason = conn_handle_is_disconnected(handle);
 	bt_addr_le_t peer_addr, id_addr;
 	struct bt_conn *conn;
 
@@ -1542,11 +1556,12 @@ void bt_hci_le_enh_conn_complete_sync(struct bt_hci_evt_le_enh_conn_complete_v2 
 
 	bt_conn_set_state(conn, BT_CONN_CONNECTED);
 
-	if (is_disconnected) {
+	if (disconnect_reason) {
 		/* Mark the connection as already disconnected before calling
 		 * the connected callback, so that the application cannot
 		 * start sending packets
 		 */
+		conn->err = disconnect_reason;
 		bt_conn_set_state(conn, BT_CONN_DISCONNECT_COMPLETE);
 	}
 
@@ -1681,6 +1696,19 @@ static void le_data_len_change(struct net_buf *buf)
 	uint16_t max_rx_octets = sys_le16_to_cpu(evt->max_rx_octets);
 	uint16_t max_tx_time = sys_le16_to_cpu(evt->max_tx_time);
 	uint16_t max_rx_time = sys_le16_to_cpu(evt->max_rx_time);
+
+	if (!IN_RANGE(max_tx_octets, BT_HCI_LE_MAX_TX_OCTETS_MIN, BT_HCI_LE_MAX_TX_OCTETS_MAX)) {
+		LOG_WRN("max_tx_octets exceeds the valid range %u", max_tx_octets);
+	}
+	if (!IN_RANGE(max_rx_octets, BT_HCI_LE_MAX_RX_OCTETS_MIN, BT_HCI_LE_MAX_RX_OCTETS_MAX)) {
+		LOG_WRN("max_rx_octets exceeds the valid range %u", max_rx_octets);
+	}
+	if (!IN_RANGE(max_tx_time, BT_HCI_LE_MAX_TX_TIME_MIN, BT_HCI_LE_MAX_TX_TIME_MAX)) {
+		LOG_WRN("max_tx_time exceeds the valid range %u", max_tx_time);
+	}
+	if (!IN_RANGE(max_rx_time, BT_HCI_LE_MAX_RX_TIME_MIN, BT_HCI_LE_MAX_RX_TIME_MAX)) {
+		LOG_WRN("max_rx_time exceeds the valid range %u", max_rx_time);
+	}
 
 	LOG_DBG("max. tx: %u (%uus), max. rx: %u (%uus)", max_tx_octets, max_tx_time, max_rx_octets,
 		max_rx_time);
@@ -2726,6 +2754,40 @@ static const struct event_handler normal_events[] = {
 		      sizeof(struct bt_hci_evt_hardware_error)),
 };
 
+
+#define BT_HCI_EVT_FLAG_RECV_PRIO BIT(0)
+#define BT_HCI_EVT_FLAG_RECV      BIT(1)
+
+/** @brief Get HCI event flags.
+ *
+ * Helper for the HCI driver to get HCI event flags that describes rules that.
+ * must be followed.
+ *
+ * @param evt HCI event code.
+ *
+ * @return HCI event flags for the specified event.
+ */
+static inline uint8_t bt_hci_evt_get_flags(uint8_t evt)
+{
+	switch (evt) {
+	case BT_HCI_EVT_DISCONN_COMPLETE:
+		return BT_HCI_EVT_FLAG_RECV | BT_HCI_EVT_FLAG_RECV_PRIO;
+		/* fallthrough */
+#if defined(CONFIG_BT_CONN) || defined(CONFIG_BT_ISO)
+	case BT_HCI_EVT_NUM_COMPLETED_PACKETS:
+#if defined(CONFIG_BT_CONN)
+	case BT_HCI_EVT_DATA_BUF_OVERFLOW:
+		__fallthrough;
+#endif /* defined(CONFIG_BT_CONN) */
+#endif /* CONFIG_BT_CONN ||  CONFIG_BT_ISO */
+	case BT_HCI_EVT_CMD_COMPLETE:
+	case BT_HCI_EVT_CMD_STATUS:
+		return BT_HCI_EVT_FLAG_RECV_PRIO;
+	default:
+		return BT_HCI_EVT_FLAG_RECV;
+	}
+}
+
 static void hci_event(struct net_buf *buf)
 {
 	struct bt_hci_evt_hdr *hdr;
@@ -3028,6 +3090,17 @@ static void le_read_supp_states_complete(struct net_buf *buf)
 	bt_dev.le.states = sys_get_le64(rp->le_states);
 }
 
+#if defined(CONFIG_BT_BROADCASTER)
+static void le_read_maximum_adv_data_len_complete(struct net_buf *buf)
+{
+	struct bt_hci_rp_le_read_max_adv_data_len *rp = (void *)buf->data;
+
+	LOG_DBG("status 0x%02x", rp->status);
+
+	bt_dev.le.max_adv_data_len = sys_le16_to_cpu(rp->max_adv_data_len);
+}
+#endif /* CONFIG_BT_BROADCASTER */
+
 #if defined(CONFIG_BT_SMP)
 static void le_read_resolving_list_size_complete(struct net_buf *buf)
 {
@@ -3328,6 +3401,25 @@ static int le_init(void)
 
 		net_buf_unref(rsp);
 	}
+
+#if defined(CONFIG_BT_BROADCASTER)
+	if (IS_ENABLED(CONFIG_BT_EXT_ADV) && BT_DEV_FEAT_LE_EXT_ADV(bt_dev.le.features)) {
+		/* Read LE Max Adv Data Len */
+		err = bt_hci_cmd_send_sync(BT_HCI_OP_LE_READ_MAX_ADV_DATA_LEN, NULL, &rsp);
+		if (err == 0) {
+			le_read_maximum_adv_data_len_complete(rsp);
+			net_buf_unref(rsp);
+		} else if (err == -EIO) {
+			LOG_WRN("Controller does not support 'LE_READ_MAX_ADV_DATA_LEN'. "
+				"Assuming maximum length is 31 bytes.");
+			bt_dev.le.max_adv_data_len = 31;
+		} else {
+			return err;
+		}
+	} else {
+		bt_dev.le.max_adv_data_len = 31;
+	}
+#endif /* CONFIG_BT_BROADCASTER */
 
 	if (BT_FEAT_BREDR(bt_dev.features)) {
 		buf = bt_hci_cmd_create(BT_HCI_OP_LE_WRITE_LE_HOST_SUPP,
@@ -3834,7 +3926,6 @@ void hci_event_prio(struct net_buf *buf)
 	}
 }
 
-#if !defined(CONFIG_BT_RECV_BLOCKING)
 static void rx_queue_put(struct net_buf *buf)
 {
 	net_buf_slist_put(&bt_dev.rx_queue, buf);
@@ -3848,9 +3939,8 @@ static void rx_queue_put(struct net_buf *buf)
 		LOG_ERR("Could not submit rx_work: %d", err);
 	}
 }
-#endif /* !CONFIG_BT_RECV_BLOCKING */
 
-int bt_recv(struct net_buf *buf)
+static int bt_recv_unsafe(struct net_buf *buf)
 {
 	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
 
@@ -3859,18 +3949,11 @@ int bt_recv(struct net_buf *buf)
 	switch (bt_buf_get_type(buf)) {
 #if defined(CONFIG_BT_CONN)
 	case BT_BUF_ACL_IN:
-#if defined(CONFIG_BT_RECV_BLOCKING)
-		hci_acl(buf);
-#else
 		rx_queue_put(buf);
-#endif
 		return 0;
 #endif /* BT_CONN */
 	case BT_BUF_EVT:
 	{
-#if defined(CONFIG_BT_RECV_BLOCKING)
-		hci_event(buf);
-#else
 		struct bt_hci_evt_hdr *hdr = (void *)buf->data;
 		uint8_t evt_flags = bt_hci_evt_get_flags(hdr->evt);
 
@@ -3881,17 +3964,12 @@ int bt_recv(struct net_buf *buf)
 		if (evt_flags & BT_HCI_EVT_FLAG_RECV) {
 			rx_queue_put(buf);
 		}
-#endif
-		return 0;
 
+		return 0;
 	}
 #if defined(CONFIG_BT_ISO)
 	case BT_BUF_ISO_IN:
-#if defined(CONFIG_BT_RECV_BLOCKING)
-		hci_iso(buf);
-#else
 		rx_queue_put(buf);
-#endif
 		return 0;
 #endif /* CONFIG_BT_ISO */
 	default:
@@ -3901,18 +3979,16 @@ int bt_recv(struct net_buf *buf)
 	}
 }
 
-#if defined(CONFIG_BT_RECV_BLOCKING)
-int bt_recv_prio(struct net_buf *buf)
+int bt_recv(struct net_buf *buf)
 {
-	bt_monitor_send(bt_monitor_opcode(buf), buf->data, buf->len);
+	int err;
 
-	BT_ASSERT(bt_buf_get_type(buf) == BT_BUF_EVT);
+	k_sched_lock();
+	err = bt_recv_unsafe(buf);
+	k_sched_unlock();
 
-	hci_event_prio(buf);
-
-	return 0;
+	return err;
 }
-#endif /* CONFIG_BT_RECV_BLOCKING */
 
 int bt_hci_driver_register(const struct bt_hci_driver *drv)
 {
@@ -3991,7 +4067,6 @@ static void init_work(struct k_work *work)
 	}
 }
 
-#if !defined(CONFIG_BT_RECV_BLOCKING)
 static void rx_work_handler(struct k_work *work)
 {
 	int err;
@@ -4043,7 +4118,6 @@ static void rx_work_handler(struct k_work *work)
 		}
 	}
 }
-#endif /* !CONFIG_BT_RECV_BLOCKING */
 
 #if defined(CONFIG_BT_TESTING)
 k_tid_t bt_testing_tx_tid_get(void)
@@ -4105,7 +4179,7 @@ int bt_enable(bt_ready_cb_t cb)
 	k_work_queue_start(&bt_workq, rx_thread_stack,
 			   CONFIG_BT_RX_STACK_SIZE,
 			   K_PRIO_COOP(CONFIG_BT_RX_PRIO), NULL);
-	k_thread_name_set(&bt_workq.thread, "BT RX");
+	k_thread_name_set(&bt_workq.thread, "BT RX WQ");
 #endif
 
 	err = bt_dev.drv->open();

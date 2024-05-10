@@ -1,5 +1,6 @@
 /*
  * Copyright (c) 2020, Linaro Ltd.
+ * Copyright 2024 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -31,6 +32,7 @@
 			reg = <0>;
 			#address-cells = <1>;
 			#size-cells = <1>;
+			cpu-power-states = <&sleep>;
 
 			mpu: mpu@e000ed90 {
 				compatible = "arm,armv8m-mpu";
@@ -40,6 +42,15 @@
 		cpu@1 {
 			compatible = "arm,cortex-m33";
 			reg = <1>;
+		};
+
+		power-states {
+			sleep: sleep {
+				compatible = "zephyr,power-state";
+				power-state-name = "runtime-idle";
+				min-residency-us = <4>;
+				exit-latency-us = <4>;
+			};
 		};
 	};
 };
@@ -321,6 +332,7 @@
 		offset-value-a = <10>;
 		offset-value-b = <10>;
 		#io-channel-cells = <1>;
+		clocks = <&syscon MCUX_LPADC1_CLK>;
 	};
 
 	usbfs: usbfs@84000 {

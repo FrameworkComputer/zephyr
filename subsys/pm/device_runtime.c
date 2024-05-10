@@ -242,9 +242,10 @@ int pm_device_runtime_get(const struct device *dev)
 		 * nothing else we can do but wait until it finishes.
 		 */
 		while (pm->base.state == PM_DEVICE_STATE_SUSPENDING) {
+			k_event_clear(&pm->event, EVENT_MASK);
 			k_sem_give(&pm->lock);
 
-			k_event_wait(&pm->event, EVENT_MASK, true, K_FOREVER);
+			k_event_wait(&pm->event, EVENT_MASK, false, K_FOREVER);
 
 			(void)k_sem_take(&pm->lock, K_FOREVER);
 		}
@@ -421,8 +422,8 @@ int pm_device_runtime_enable(const struct device *dev)
 		goto end;
 	}
 
-	if (pm_device_state_is_locked(dev)) {
-		ret = -EPERM;
+	if (pm_device_is_busy(dev)) {
+		ret = -EBUSY;
 		goto end;
 	}
 
@@ -520,9 +521,10 @@ int pm_device_runtime_disable(const struct device *dev)
 
 		/* wait until possible async suspend is completed */
 		while (pm->base.state == PM_DEVICE_STATE_SUSPENDING) {
+			k_event_clear(&pm->event, EVENT_MASK);
 			k_sem_give(&pm->lock);
 
-			k_event_wait(&pm->event, EVENT_MASK, true, K_FOREVER);
+			k_event_wait(&pm->event, EVENT_MASK, false, K_FOREVER);
 
 			(void)k_sem_take(&pm->lock, K_FOREVER);
 		}
@@ -557,4 +559,20 @@ bool pm_device_runtime_is_enabled(const struct device *dev)
 	struct pm_device_base *pm = dev->pm_base;
 
 	return pm && atomic_test_bit(&pm->flags, PM_DEVICE_FLAG_RUNTIME_ENABLED);
+}
+
+int pm_device_runtime_usage(const struct device *dev)
+{
+	struct pm_device *pm = dev->pm;
+	uint32_t usage;
+
+	if (!pm_device_runtime_is_enabled(dev)) {
+		return -ENOTSUP;
+	}
+
+	(void)k_sem_take(&pm->lock, K_FOREVER);
+	usage = pm->base.usage;
+	k_sem_give(&pm->lock);
+
+	return usage;
 }

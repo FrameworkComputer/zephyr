@@ -248,6 +248,30 @@
 #ifdef CONFIG_NRFX_PWM3
 #define NRFX_PWM3_ENABLED 1
 #endif
+#ifdef CONFIG_NRFX_PWM20
+#define NRFX_PWM20_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_PWM21
+#define NRFX_PWM21_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_PWM22
+#define NRFX_PWM22_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_PWM120
+#define NRFX_PWM120_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_PWM130
+#define NRFX_PWM130_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_PWM131
+#define NRFX_PWM131_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_PWM132
+#define NRFX_PWM132_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_PWM133
+#define NRFX_PWM133_ENABLED 1
+#endif
 
 #ifdef CONFIG_NRFX_QDEC
 #define NRFX_QDEC_ENABLED 1
@@ -286,6 +310,10 @@
 #endif
 #ifdef CONFIG_NRFX_RNG_LOG
 #define NRFX_RNG_CONFIG_LOG_ENABLED 1
+#endif
+
+#ifdef CONFIG_NRFX_RRAMC
+#define NRFX_RRAMC_ENABLED 1
 #endif
 
 #ifdef CONFIG_NRFX_RTC
@@ -357,8 +385,10 @@
 #ifdef CONFIG_NRFX_SPIM4
 #define NRFX_SPIM4_ENABLED 1
 #endif
-#if (DT_PROP(DT_NODELABEL(spi3), rx_delay_supported) || \
-	DT_PROP(DT_NODELABEL(spi4), rx_delay_supported))
+
+#define NRFX_SPIM_DT_HAS_RX_DELAY(node) DT_PROP(node, rx_delay_supported) +
+
+#if DT_FOREACH_STATUS_OKAY(nordic_nrf_spim, NRFX_SPIM_DT_HAS_RX_DELAY) 0
 #define NRFX_SPIM_EXTENDED_ENABLED 1
 #endif
 #ifdef CONFIG_NRFX_SPIM00
@@ -652,6 +682,42 @@
 #endif
 #ifdef CONFIG_NRFX_TWIS3
 #define NRFX_TWIS3_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_TWIS20
+#define NRFX_TWIS20_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_TWIS21
+#define NRFX_TWIS21_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_TWIS22
+#define NRFX_TWIS22_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_TWIS30
+#define NRFX_TWIS30_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_TWIS130
+#define NRFX_TWIS130_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_TWIS131
+#define NRFX_TWIS131_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_TWIS132
+#define NRFX_TWIS132_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_TWIS133
+#define NRFX_TWIS133_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_TWIS134
+#define NRFX_TWIS134_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_TWIS135
+#define NRFX_TWIS135_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_TWIS136
+#define NRFX_TWIS136_ENABLED 1
+#endif
+#ifdef CONFIG_NRFX_TWIS137
+#define NRFX_TWIS137_ENABLED 1
 #endif
 
 #ifdef CONFIG_NRFX_UART
@@ -949,6 +1015,8 @@
     #include <nrfx_config_nrf54h20_ppr.h>
 #elif (defined(NRF54L15_XXAA) || defined(NRF54L15_ENGA_XXAA)) && defined(NRF_APPLICATION)
     #include <nrfx_config_nrf54l15_enga_application.h>
+#elif (defined(NRF54L15_XXAA) || defined(NRF54L15_ENGA_XXAA)) && defined(NRF_FLPR)
+    #include <nrfx_config_nrf54l15_enga_flpr.h>
 #elif defined(NRF9120_XXAA) || defined(NRF9160_XXAA)
     #include <nrfx_config_nrf91.h>
 #else

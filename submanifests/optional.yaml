@@ -22,7 +22,7 @@ manifest:
       groups:
         - optional
     - name: nanopb
-      revision: 65cbefb4695bc7af1cb733ced99618afb3586b20
+      revision: 7f88274070afa5edfaf608f4d8e32f3d3c1de139
       path: modules/lib/nanopb
       remote: upstream
       groups:
@@ -34,13 +34,13 @@ manifest:
       groups:
         - optional
     - name: sof
-      revision: 3e70d036a2df94b854add51742681b64ea0df729
+      revision: c11a3185afbc8e1b2a79916de3dfefaf326d9ad1
       path: modules/audio/sof
       remote: upstream
       groups:
         - optional
     - name: tf-m-tests
-      revision: 08a3158f0623a4205608a52d880b17ae394e31d2
+      revision: 85f533a4aa5b4fe31247676a923db7453eb4429c
       path: modules/tee/tf-m/tf-m-tests
       remote: upstream
       groups:

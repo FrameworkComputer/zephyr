@@ -12,6 +12,7 @@ Major enhancements with this release include:
 * A new, completely overhauled hardware model has been introduced. This changes
   the way both SoCs and boards are named, defined and constructed in Zephyr.
   Additional information can be found in the :ref:`board_porting_guide`.
+* Zephyr now requires Python 3.10 or higher
 
 An overview of the changes required or recommended when migrating your application from Zephyr
 v3.6.0 to Zephyr v3.7.0 can be found in the separate :ref:`migration guide<migration_3.7>`.
@@ -25,6 +26,36 @@ The following CVEs are addressed by this release:
 More detailed information can be found in:
 https://docs.zephyrproject.org/latest/security/vulnerabilities.html
 
+* CVE-2024-3077 `Zephyr project bug tracker GHSA-gmfv-4vfh-2mh8
+  <https://github.com/zephyrproject-rtos/zephyr/security/advisories/GHSA-gmfv-4vfh-2mh8>`_
+
+API Changes
+***********
+
+Removed APIs in this release
+============================
+
+ * The Bluetooth subsystem specific debug symbols are removed. They have been replaced with the
+   Zephyr logging ones.
+
+Deprecated in this release
+==========================
+
+ * Bluetooth advertiser options :code:`BT_LE_ADV_OPT_USE_NAME` and
+   :code:`BT_LE_ADV_OPT_FORCE_NAME_IN_AD` are now deprecated. That means the following macro are
+   deprecated:
+
+    * :c:macro:`BT_LE_ADV_CONN_NAME`
+    * :c:macro:`BT_LE_ADV_CONN_NAME_AD`
+    * :c:macro:`BT_LE_ADV_NCONN_NAME`
+    * :c:macro:`BT_LE_EXT_ADV_CONN_NAME`
+    * :c:macro:`BT_LE_EXT_ADV_SCAN_NAME`
+    * :c:macro:`BT_LE_EXT_ADV_NCONN_NAME`
+    * :c:macro:`BT_LE_EXT_ADV_CODED_NCONN_NAME`
+
+   Application developer will now need to set the advertised name themselves by updating the advertising data
+   or the scan response data.
+
 Architectures
 *************
 
@@ -32,10 +63,20 @@ Architectures
 
 * ARM
 
+* RISC-V
+
+  * Implemented frame-pointer based stack unwinding.
+
+  * The fatal error message triggered from a fault now contains the callee-saved-registers states.
+
 * Xtensa
 
 Bluetooth
 *********
+
+  * Added Nordic UART Service (NUS), enabled by the :kconfig:option:`CONFIG_BT_ZEPHYR_NUS`.
+    This Service exposes the ability to declare multiple instances of the GATT service,
+    allowing multiple serial endpoints to be used for different purposes.
 
 Boards & SoC Support
 ********************
@@ -43,6 +84,8 @@ Boards & SoC Support
 * Added support for these SoC series:
 
 * Made these changes in other SoC series:
+
+  * ITE: Rename the Kconfig symbol for all ITE SoC variants.
 
 * Added support for these ARM boards:
 
@@ -54,10 +97,24 @@ Boards & SoC Support
 
 * Made these changes for native/POSIX boards:
 
+  * LLVM fuzzing support has been refactored while adding support for it in native_sim.
+
 * Added support for these following shields:
 
 Build system and Infrastructure
 *******************************
+
+  * CI-enabled blackbox tests were added in order to verify correctness of the vast majority of Twister flags.
+
+  * A ``socs`` folder for applications has been introduced that allows for Kconfig fragments and
+    devicetree overlays that should apply to any board target using a particular SoC and board
+    qualifier.
+
+  * :ref:`Board/SoC flashing configuration<flashing-soc-board-config>` settings have been added.
+
+  * Deprecated the global CSTD cmake property in favor of the :kconfig:option:`CONFIG_STD_C`
+    choice to select the C Standard version. Additionally subsystems can select a minimum
+    required C Standard version, with for example :kconfig:option:`CONFIG_REQUIRES_STD_C11`.
 
 Drivers and Sensors
 *******************
@@ -68,6 +125,11 @@ Drivers and Sensors
 
 * Audio
 
+* Battery
+
+  * Added ``re-charge-voltage-microvolt`` property to the ``battery`` binding. This allows to set
+    limit to automatically start charging again.
+
 * Battery backed up RAM
 
 * CAN
@@ -75,6 +137,10 @@ Drivers and Sensors
   * Deprecated the :c:func:`can_calc_prescaler` API function, as it allows for bitrate
     errors. Bitrate errors between nodes on the same network leads to them drifting apart after the
     start-of-frame (SOF) synchronization has taken place, leading to bus errors.
+  * Added :c:func:`can_get_bitrate_min` and :c:func:`can_get_bitrate_max` for retrieving the minimum
+    and maximum supported bitrate for a given CAN controller/CAN transceiver combination, reflecting
+    that retrieving the bitrate limits can no longer fail. Deprecated the existing
+    :c:func:`can_get_min_bitrate` and :c:func:`can_get_max_bitrate` API functions.
   * Extended support for automatic sample point location to also cover :c:func:`can_calc_timing` and
     :c:func:`can_calc_timing_data`.
   * Added optional ``min-bitrate`` devicetree property for CAN transceivers.
@@ -89,6 +155,13 @@ Drivers and Sensors
     validating the bitrate.
   * Made the ``sample-point`` and ``sample-point-data`` devicetree properties optional.
 
+* Charger
+
+  * Added ``chgin-to-sys-current-limit-microamp`` property to ``maxim,max20335-charger``.
+  * Added ``system-voltage-min-threshold-microvolt`` property to ``maxim,max20335-charger``.
+  * Added ``re-charge-threshold-microvolt`` property to ``maxim,max20335-charger``.
+  * Added ``thermistor-monitoring-mode`` property to ``maxim,max20335-charger``.
+
 * Clock control
 
 * Counter
@@ -101,7 +174,17 @@ Drivers and Sensors
 
 * Entropy
 
+* eSPI
+
+  * Renamed eSPI virtual wire direction macros and enum values to match the new terminology in
+    eSPI 1.5 specification.
+
 * Ethernet
+
+  * Deperecated eth_mcux driver in favor of the reworked nxp_enet driver.
+  * Driver nxp_enet is no longer experimental.
+  * All boards and SOCs with :dtcompatible:`nxp,kinetis-ethernet` compatible nodes
+    reworked to use the new :dtcompatible:`nxp,enet` binding.
 
 * Flash
 
@@ -145,7 +228,13 @@ Drivers and Sensors
 
 * Sensor
 
+  * Added TMP114 driver
+
 * Serial
+
+  * Added driver to support UART over Bluetooth LE using NUS (Nordic UART Service). This driver
+    enables using Bluetooth as a transport to all the subsystems that are currently supported by
+    UART (e.g: Console, Shell, Logging).
 
 * SPI
 
@@ -155,14 +244,35 @@ Drivers and Sensors
 
 * Wi-Fi
 
+  * Added support for configuring RTS threshold. With this, users can set the RTS threshold value or
+    disable the RTS mechanism.
+
 Networking
 **********
+
+* DHCPv4:
+
+  * Added support for encapsulated vendor specific options. By enabling
+    :kconfig:option:`CONFIG_NET_DHCPV4_OPTION_CALLBACKS_VENDOR_SPECIFIC` callbacks can be
+    registered with :c:func:`net_dhcpv4_add_option_vendor_callback` to handle these options after
+    being initialised with :c:func:`net_dhcpv4_init_option_vendor_callback`.
+
+  * Added support for the "Vendor class identifier" option. Use the
+    :kconfig:option:`CONFIG_NET_DHCPV4_VENDOR_CLASS_IDENTIFIER` to enable it and
+    :kconfig:option:`CONFIG_NET_DHCPV4_VENDOR_CLASS_IDENTIFIER_STRING` to set it.
+
+  * The NTP server from the DHCPv4 option can now be used to set the system time. This is done by
+    default, if :kconfig:option:`CONFIG_NET_CONFIG_CLOCK_SNTP_INIT` is enabled.
 
 * LwM2M:
 
   * Added new API function:
 
     * :c:func:`lwm2m_set_bulk`
+
+* IPSP:
+
+  * Removed IPSP support. ``CONFIG_NET_L2_BT`` does not exist anymore.
 
 USB
 ***
@@ -175,7 +285,31 @@ Libraries / Subsystems
 
 * Management
 
+  * hawkBit
+
+    * The hawkBit subsystem has been reworked to use the settings subsystem to store the hawkBit
+      configuration.
+
+    * By enabling :kconfig:option:`CONFIG_HAWKBIT_SET_SETTINGS_RUNTIME`, the hawkBit settings can
+      be configured at runtime. Use the :c:func:`hawkbit_set_config` function to set the hawkBit
+      configuration. It can also be set via the hawkBit shell, by using the ``hawkbit set``
+      command.
+
+    * When using the hawkBit autohandler and an update is installed, the device will now
+      automatically reboot after the installation is complete.
+
+    * By enabling :kconfig:option:`CONFIG_HAWKBIT_CUSTOM_DEVICE_ID`, a callback function can be
+      registered to set the device ID. Use the :c:func:`hawkbit_set_device_identity_cb` function to
+      register the callback.
+
+    * By enabling :kconfig:option:`CONFIG_HAWKBIT_CUSTOM_ATTRIBUTES`, a callback function can be
+      registered to set the device attributes that are sent to the hawkBit server. Use the
+      :c:func:`hawkbit_set_custom_data_cb` function to register the callback.
+
 * Logging
+
+  * By enabling :kconfig:option:`CONFIG_LOG_BACKEND_NET_USE_DHCPV4_OPTION`, the IP address of the
+    syslog server for the networking backend is set by the DHCPv4 Log Server Option (7).
 
 * Modem modules
 
@@ -185,11 +319,26 @@ Libraries / Subsystems
 
 * Crypto
 
+* Random
+
+  * Besides the existing :c:func:`sys_rand32_get` function, :c:func:`sys_rand8_get`,
+    :c:func:`sys_rand16_get` and :c:func:`sys_rand64_get` are now also available.
+    These functions are all implemented on top of :c:func:`sys_rand_get`.
+
 * Retention
 
 * SD
 
+* State Machine Framework
+
+  * The :c:macro:`SMF_CREATE_STATE` macro now always takes 5 arguments.
+
 * Storage
+
+  * FAT FS: It is now possible to expose file system formatting functionality for FAT without also
+    enabling automatic formatting on mount failure by setting the
+    :kconfig:option:`CONFIG_FS_FATFS_MKFS` Kconfig option. This option is enabled by default if
+    :kconfig:option:`CONFIG_FILE_SYSTEM_MKFS` is set.
 
 * POSIX API
 
@@ -213,3 +362,8 @@ LVGL
 
 Tests and Samples
 *****************
+
+  * Added snippet for easily enabling UART over Bluetooth LE by passing ``-S nus-console`` during
+    ``west build``. This snippet sets the :kconfig:option:`CONFIG_BT_ZEPHYR_NUS_AUTO_START_BLUETOOTH`
+    which allows non-Bluetooth samples that use the UART APIs to run without modifications
+    (e.g: Console and Logging examples).

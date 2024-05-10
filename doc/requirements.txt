@@ -1,7 +1,7 @@
 # DOC: used to generate docs
 
 breathe>=4.34
-sphinx~=7.1.0
+sphinx
 sphinx_rtd_theme~=2.0
 sphinx-tabs
 sphinxcontrib-svg2pdfconverter
@@ -9,9 +9,10 @@ pygments>=2.9
 sphinx-notfound-page
 sphinx-copybutton
 sphinx-togglebutton
+sphinx-sitemap
 
 # YAML validation. Used by zephyr_module.
-PyYAML>=5.1
+PyYAML>=6.0
 pykwalify
 
 # Used by pytest-twister-harness plugin

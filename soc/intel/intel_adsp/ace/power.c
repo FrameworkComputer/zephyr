@@ -25,6 +25,13 @@
 #define SRAM_ALIAS_BASE         0xA0000000
 #define SRAM_ALIAS_MASK         0xF0000000
 
+#if CONFIG_SOC_INTEL_ACE15_MTPM
+/* Used to force any pending transaction by HW issuing an upstream read before
+ * power down host domain.
+ */
+uint8_t adsp_pending_buffer[CONFIG_DCACHE_LINE_SIZE] __aligned(CONFIG_DCACHE_LINE_SIZE);
+#endif /* CONFIG_SOC_INTEL_ACE15_MTPM */
+
 __imr void power_init(void)
 {
 #if CONFIG_ADSP_IDLE_CLOCK_GATING
@@ -34,6 +41,14 @@ __imr void power_init(void)
 	/* Disable idle power and clock gating */
 	DSPCS.bootctl[0].bctl |= DSPBR_BCTL_WAITIPCG | DSPBR_BCTL_WAITIPPG;
 #endif /* CONFIG_ADSP_IDLE_CLOCK_GATING */
+
+#if CONFIG_SOC_INTEL_ACE15_MTPM
+	*((__sparse_force uint32_t *)sys_cache_cached_ptr_get(&adsp_pending_buffer)) =
+		INTEL_ADSP_ACE15_MAGIC_KEY;
+	cache_data_flush_range((__sparse_force void *)
+			sys_cache_cached_ptr_get(&adsp_pending_buffer),
+			sizeof(adsp_pending_buffer));
+#endif /* CONFIG_SOC_INTEL_ACE15_MTPM */
 }
 
 #ifdef CONFIG_PM
@@ -422,3 +437,25 @@ void pm_state_exit_post_ops(enum pm_state state, uint8_t substate_id)
 }
 
 #endif /* CONFIG_PM */
+
+#ifdef CONFIG_ARCH_CPU_IDLE_CUSTOM
+
+__no_optimization
+void arch_cpu_idle(void)
+{
+	uint32_t cpu = arch_proc_id();
+
+	sys_trace_idle();
+
+	/*
+	 * unlock and invalidate icache if clock gating is allowed
+	 */
+	if (!(DSPCS.bootctl[cpu].bctl & DSPBR_BCTL_WAITIPCG)) {
+		xthal_icache_all_unlock();
+		xthal_icache_all_invalidate();
+	}
+
+	__asm__ volatile ("waiti 0");
+}
+
+#endif /* CONFIG_ARCH_CPU_IDLE_CUSTOM */

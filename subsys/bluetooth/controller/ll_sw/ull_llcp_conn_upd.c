@@ -79,7 +79,7 @@
 
 /* LLCP Local Procedure Connection Update FSM states */
 enum {
-	LP_CU_STATE_IDLE,
+	LP_CU_STATE_IDLE = LLCP_STATE_IDLE,
 	LP_CU_STATE_WAIT_TX_CONN_PARAM_REQ,
 	LP_CU_STATE_WAIT_RX_CONN_PARAM_RSP,
 	LP_CU_STATE_WAIT_TX_CONN_UPDATE_IND,
@@ -109,7 +109,7 @@ enum {
 
 /* LLCP Remote Procedure Connection Update FSM states */
 enum {
-	RP_CU_STATE_IDLE,
+	RP_CU_STATE_IDLE = LLCP_STATE_IDLE,
 	RP_CU_STATE_WAIT_RX_CONN_PARAM_REQ,
 	RP_CU_STATE_WAIT_CONN_PARAM_REQ_AVAILABLE,
 	RP_CU_STATE_WAIT_NTF_CONN_PARAM_REQ,
@@ -585,6 +585,7 @@ static void lp_cu_st_wait_rx_conn_update_ind(struct ll_conn *conn, struct proc_c
 	switch (evt) {
 	case LP_CU_EVT_CONN_UPDATE_IND:
 		llcp_pdu_decode_conn_update_ind(ctx, param);
+		llcp_rr_set_incompat(conn, INCOMPAT_RESERVED);
 		/* Keep RX node to use for NTF */
 		llcp_rx_node_retain(ctx);
 		ctx->state = LP_CU_STATE_WAIT_INSTANT;
@@ -725,11 +726,6 @@ void llcp_lp_cu_rx(struct ll_conn *conn, struct proc_ctx *ctx, struct node_rx_pd
 		lp_cu_complete(conn, ctx);
 		break;
 	}
-}
-
-void llcp_lp_cu_init_proc(struct proc_ctx *ctx)
-{
-	ctx->state = LP_CU_STATE_IDLE;
 }
 
 void llcp_lp_cu_run(struct ll_conn *conn, struct proc_ctx *ctx, void *param)
@@ -1308,11 +1304,6 @@ void llcp_rp_cu_rx(struct ll_conn *conn, struct proc_ctx *ctx, struct node_rx_pd
 		rp_cu_complete(conn, ctx);
 		break;
 	}
-}
-
-void llcp_rp_cu_init_proc(struct proc_ctx *ctx)
-{
-	ctx->state = RP_CU_STATE_IDLE;
 }
 
 void llcp_rp_cu_run(struct ll_conn *conn, struct proc_ctx *ctx, void *param)

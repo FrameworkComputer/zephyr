@@ -52,6 +52,8 @@ static struct net_context *ipv6[MAX_IPV6_IFACE_COUNT];
 #endif
 
 static struct net_mgmt_event_callback mgmt_cb;
+static const struct dns_sd_rec *external_records;
+static size_t external_records_count;
 
 #define BUF_ALLOC_TIMEOUT K_MSEC(100)
 
@@ -97,8 +99,8 @@ static void mdns_iface_event_handler(struct net_mgmt_event_callback *cb,
 		int ret = net_ipv4_igmp_join(iface, &local_addr4.sin_addr, NULL);
 
 		if (ret < 0) {
-			NET_DBG("Cannot add IPv4 multicast address to iface %p",
-				iface);
+			NET_DBG("Cannot add IPv4 multicast address to iface %d",
+				net_if_get_by_iface(iface));
 		}
 #endif /* defined(CONFIG_NET_IPV4) */
 	}
@@ -236,7 +238,7 @@ static int create_answer(struct net_context *ctx,
 	/* Prepare the response into the query buffer: move the name
 	 * query buffer has to get enough free space: dns_hdr + answer
 	 */
-	if ((query->size - query->len) < (DNS_MSG_HEADER_SIZE +
+	if ((net_buf_max_len(query) - query->len) < (DNS_MSG_HEADER_SIZE +
 					  DNS_QTYPE_LEN + DNS_QCLASS_LEN +
 					  DNS_TTL_LEN + DNS_RDLENGTH_LEN +
 					  addr_len)) {
@@ -340,6 +342,7 @@ static void send_sd_response(struct net_context *ctx,
 			     struct net_buf *result)
 {
 	int ret;
+	const struct dns_sd_rec *record;
 	/* filter must be zero-initialized for "wildcard" port */
 	struct dns_sd_rec filter = {0};
 	struct sockaddr dst;
@@ -359,6 +362,8 @@ static void send_sd_response(struct net_context *ctx,
 		ARRAY_SIZE(domain_buf),
 	};
 	size_t n = ARRAY_SIZE(label);
+	size_t rec_num;
+	size_t ext_rec_num = external_records_count;
 
 	BUILD_ASSERT(ARRAY_SIZE(label) == ARRAY_SIZE(size), "");
 
@@ -423,7 +428,21 @@ static void send_sd_response(struct net_context *ctx,
 		service_type_enum = true;
 	}
 
-	DNS_SD_FOREACH(record) {
+	DNS_SD_COUNT(&rec_num);
+
+	while (rec_num > 0 || ext_rec_num > 0) {
+		/*
+		 * The loop will always iterate over all entries, it can be done
+		 * backwards for simplicity
+		 */
+		if (rec_num > 0) {
+			DNS_SD_GET(rec_num - 1, &record);
+			rec_num--;
+		} else {
+			record = &external_records[ext_rec_num - 1];
+			ext_rec_num--;
+		}
+
 		/* Checks validity and then compare */
 		if (dns_sd_rec_match(record, &filter)) {
 			NET_DBG("matched query: %s.%s.%s.%s port: %u",
@@ -434,7 +453,7 @@ static void send_sd_response(struct net_context *ctx,
 			/* Construct the response */
 			if (service_type_enum) {
 				ret = dns_sd_handle_service_type_enum(record, addr4, addr6,
-					result->data, result->size);
+						result->data, net_buf_max_len(result));
 				if (ret < 0) {
 					NET_DBG("dns_sd_handle_service_type_enum() failed (%d)",
 						ret);
@@ -442,7 +461,7 @@ static void send_sd_response(struct net_context *ctx,
 				}
 			} else {
 				ret = dns_sd_handle_ptr_query(record, addr4, addr6,
-					result->data, result->size);
+						result->data, net_buf_max_len(result));
 				if (ret < 0) {
 					NET_DBG("dns_sd_handle_ptr_query() failed (%d)", ret);
 					continue;
@@ -634,10 +653,25 @@ static void iface_ipv4_cb(struct net_if *iface, void *user_data)
 	struct in_addr *addr = user_data;
 	int ret;
 
+	if (!net_if_is_up(iface)) {
+		struct net_if_mcast_addr *maddr;
+
+		NET_DBG("Interface %d is down, not joining mcast group yet",
+			net_if_get_by_iface(iface));
+
+		maddr = net_if_ipv4_maddr_add(iface, addr);
+		if (!maddr) {
+			NET_DBG("Cannot add multicast address %s",
+				net_sprint_ipv4_addr(addr));
+		}
+
+		return;
+	}
+
 	ret = net_ipv4_igmp_join(iface, addr, NULL);
 	if (ret < 0) {
-		NET_DBG("Cannot add IPv4 multicast address to iface %p",
-			iface);
+		NET_DBG("Cannot add IPv4 multicast address to iface %d",
+			net_if_get_by_iface(iface));
 	}
 }
 
@@ -760,6 +794,8 @@ ipv4_out:
 
 static int mdns_responder_init(void)
 {
+	external_records = NULL;
+	external_records_count = 0;
 
 	net_mgmt_init_event_callback(&mgmt_cb, mdns_iface_event_handler,
 				     NET_EVENT_IF_UP);
@@ -767,6 +803,18 @@ static int mdns_responder_init(void)
 	net_mgmt_add_event_callback(&mgmt_cb);
 
 	return init_listener();
+}
+
+int mdns_responder_set_ext_records(const struct dns_sd_rec *records, size_t count)
+{
+	if (records == NULL || count == 0) {
+		return -EINVAL;
+	}
+
+	external_records = records;
+	external_records_count = count;
+
+	return 0;
 }
 
 SYS_INIT(mdns_responder_init, APPLICATION, CONFIG_MDNS_RESPONDER_INIT_PRIO);

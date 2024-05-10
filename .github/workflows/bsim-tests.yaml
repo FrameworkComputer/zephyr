@@ -34,7 +34,7 @@ jobs:
     runs-on:
       group: zephyr-runner-v2-linux-x64-4xlarge
     container:
-      image: ghcr.io/zephyrproject-rtos/ci-repo-cache:v0.26.9.20240223
+      image: ghcr.io/zephyrproject-rtos/ci-repo-cache:v0.26.11.20240324
       options: '--entrypoint /bin/bash'
     env:
       ZEPHYR_TOOLCHAIN_VARIANT: zephyr
@@ -90,50 +90,50 @@ jobs:
           echo "ZEPHYR_SDK_INSTALL_DIR=/opt/toolchains/zephyr-sdk-$( cat SDK_VERSION )" >> $GITHUB_ENV
 
       - name: Check common triggering files
-        uses: tj-actions/changed-files@v41
+        uses: tj-actions/changed-files@v44
         id: check-common-files
         with:
           files: |
             .github/workflows/bsim-tests.yaml
             .github/workflows/bsim-tests-publish.yaml
             west.yml
-            boards/posix/**
-            soc/posix/**
-            arch/posix/**
-            include/zephyr/arch/posix/**
-            scripts/native_simulator/**
+            boards/posix/
+            soc/posix/
+            arch/posix/
+            include/zephyr/arch/posix/
+            scripts/native_simulator/
             tests/bsim/*
 
       - name: Check if Bluethooth files changed
-        uses: tj-actions/changed-files@v41
+        uses: tj-actions/changed-files@v44
         id: check-bluetooth-files
         with:
           files: |
-            tests/bsim/bluetooth/**
-            samples/bluetooth/**
-            subsys/bluetooth/**
+            tests/bsim/bluetooth/
+            samples/bluetooth/
+            subsys/bluetooth/
 
       - name: Check if Networking files changed
-        uses: tj-actions/changed-files@v41
+        uses: tj-actions/changed-files@v44
         id: check-networking-files
         with:
           files: |
-            tests/bsim/net/**
-            samples/net/sockets/echo_*/**
-            modules/openthread/**
-            subsys/net/l2/openthread/**
+            tests/bsim/net/
+            samples/net/sockets/echo_*/
+            modules/openthread/
+            subsys/net/l2/openthread/
             include/zephyr/net/openthread.h
-            drivers/ieee802154/**
+            drivers/ieee802154/
             include/zephyr/net/ieee802154*
 
       - name: Check if UART files changed
-        uses: tj-actions/changed-files@v41
+        uses: tj-actions/changed-files@v44
         id: check-uart-files
         with:
           files: |
-            tests/bsim/drivers/uart/**
+            tests/bsim/drivers/uart/
             drivers/serial/*nrfx*
-            tests/drivers/uart/**
+            tests/drivers/uart/
 
       - name: Update BabbleSim to manifest revision
         if: >
@@ -154,22 +154,19 @@ jobs:
         if: steps.check-bluetooth-files.outputs.any_changed == 'true' || steps.check-common-files.outputs.any_changed == 'true'
         run: |
           export ZEPHYR_BASE=${PWD}
-          export WORK_DIR=${ZEPHYR_BASE}/bsim_bt
           # Build and run the BT tests for nrf52_bsim:
           nice tests/bsim/bluetooth/compile.sh
           RESULTS_FILE=${ZEPHYR_BASE}/${bsim_bt_52_test_results_file} \
           TESTS_FILE=tests/bsim/bluetooth/tests.nrf52bsim.txt tests/bsim/run_parallel.sh
-          # Build and run the BT controller tests also for the nrf5340bsim_nrf5340_cpunet
-          BOARD=nrf5340bsim_nrf5340_cpunet \
+          # Build and run the BT controller tests also for the nrf5340bsim/nrf5340/cpunet
           nice tests/bsim/bluetooth/compile.nrf5340bsim_nrf5340_cpunet.sh
-          BOARD=nrf5340bsim_nrf5340_cpunet \
+          BOARD=nrf5340bsim/nrf5340/cpunet \
           RESULTS_FILE=${ZEPHYR_BASE}/${bsim_bt_53_test_results_file} \
           TESTS_FILE=tests/bsim/bluetooth/tests.nrf5340bsim_nrf5340_cpunet.txt \
           tests/bsim/run_parallel.sh
           # Build and run the nrf5340 split stack tests set
-          BOARD=nrf5340bsim_nrf5340_cpuapp \
           nice tests/bsim/bluetooth/compile.nrf5340bsim_nrf5340_cpuapp.sh
-          BOARD=nrf5340bsim_nrf5340_cpuapp \
+          BOARD=nrf5340bsim/nrf5340/cpuapp \
           RESULTS_FILE=${ZEPHYR_BASE}/${bsim_bt_53split_test_results_file} \
           TESTS_FILE=tests/bsim/bluetooth/tests.nrf5340bsim_nrf5340_cpuapp.txt \
           tests/bsim/run_parallel.sh

@@ -271,7 +271,7 @@ static inline int queue_submit_locked(struct k_work_q *queue,
 		return -EINVAL;
 	}
 
-	int ret = -EBUSY;
+	int ret;
 	bool chained = (_current == &queue->thread) && !k_is_in_isr();
 	bool draining = flag_test(&queue->flags, K_WORK_QUEUE_DRAIN_BIT);
 	bool plugged = flag_test(&queue->flags, K_WORK_QUEUE_PLUGGED_BIT);
@@ -471,7 +471,7 @@ bool k_work_flush(struct k_work *work,
 	__ASSERT_NO_MSG(sync != NULL);
 #ifdef CONFIG_KERNEL_COHERENCE
 	__ASSERT_NO_MSG(arch_mem_coherent(sync));
-#endif
+#endif /* CONFIG_KERNEL_COHERENCE */
 
 	SYS_PORT_TRACING_OBJ_FUNC_ENTER(k_work, flush, work);
 
@@ -583,7 +583,7 @@ bool k_work_cancel_sync(struct k_work *work,
 	__ASSERT_NO_MSG(!k_is_in_isr());
 #ifdef CONFIG_KERNEL_COHERENCE
 	__ASSERT_NO_MSG(arch_mem_coherent(sync));
-#endif
+#endif /* CONFIG_KERNEL_COHERENCE */
 
 	SYS_PORT_TRACING_OBJ_FUNC_ENTER(k_work, cancel_sync, work, sync);
 
@@ -759,6 +759,10 @@ void k_work_queue_start(struct k_work_q *queue,
 
 	if ((cfg != NULL) && (cfg->name != NULL)) {
 		k_thread_name_set(&queue->thread, cfg->name);
+	}
+
+	if ((cfg != NULL) && (cfg->essential)) {
+		queue->thread.base.user_options |= K_ESSENTIAL;
 	}
 
 	k_thread_start(&queue->thread);
@@ -1014,7 +1018,7 @@ int k_work_reschedule_for_queue(struct k_work_q *queue,
 
 	SYS_PORT_TRACING_OBJ_FUNC_ENTER(k_work, reschedule_for_queue, queue, dwork, delay);
 
-	int ret = 0;
+	int ret;
 	k_spinlock_key_t key = k_spin_lock(&lock);
 
 	/* Remove any active scheduling. */
@@ -1066,7 +1070,7 @@ bool k_work_cancel_delayable_sync(struct k_work_delayable *dwork,
 	__ASSERT_NO_MSG(!k_is_in_isr());
 #ifdef CONFIG_KERNEL_COHERENCE
 	__ASSERT_NO_MSG(arch_mem_coherent(sync));
-#endif
+#endif /* CONFIG_KERNEL_COHERENCE */
 
 	SYS_PORT_TRACING_OBJ_FUNC_ENTER(k_work, cancel_delayable_sync, dwork, sync);
 
@@ -1098,7 +1102,7 @@ bool k_work_flush_delayable(struct k_work_delayable *dwork,
 	__ASSERT_NO_MSG(!k_is_in_isr());
 #ifdef CONFIG_KERNEL_COHERENCE
 	__ASSERT_NO_MSG(arch_mem_coherent(sync));
-#endif
+#endif /* CONFIG_KERNEL_COHERENCE */
 
 	SYS_PORT_TRACING_OBJ_FUNC_ENTER(k_work, flush_delayable, dwork, sync);
 

@@ -238,8 +238,8 @@ static uint8_t l2cap_br_get_ident(void)
 	return ident;
 }
 
-static int l2cap_br_send_cb(struct bt_conn *conn, uint16_t cid, struct net_buf *buf,
-			    bt_conn_tx_cb_t cb, void *user_data)
+int bt_l2cap_br_send_cb(struct bt_conn *conn, uint16_t cid, struct net_buf *buf,
+			bt_conn_tx_cb_t cb, void *user_data)
 {
 	struct bt_l2cap_hdr *hdr;
 
@@ -259,7 +259,7 @@ static int l2cap_br_send_cb(struct bt_conn *conn, uint16_t cid, struct net_buf *
 static inline void l2cap_send(struct bt_conn *conn, uint16_t cid,
 			      struct net_buf *buf)
 {
-	if (l2cap_br_send_cb(conn, cid, buf, NULL, NULL)) {
+	if (bt_l2cap_br_send_cb(conn, cid, buf, NULL, NULL)) {
 		net_buf_unref(buf);
 	}
 }
@@ -268,7 +268,7 @@ static void l2cap_br_chan_send_req(struct bt_l2cap_br_chan *chan,
 				   struct net_buf *buf, k_timeout_t timeout)
 {
 
-	if (l2cap_br_send_cb(chan->chan.conn, BT_L2CAP_CID_BR_SIG, buf,
+	if (bt_l2cap_br_send_cb(chan->chan.conn, BT_L2CAP_CID_BR_SIG, buf,
 			     NULL, NULL)) {
 		net_buf_unref(buf);
 		return;
@@ -1469,13 +1469,29 @@ static void l2cap_br_conn_rsp(struct bt_l2cap_br *l2cap, uint8_t ident,
 int bt_l2cap_br_chan_send_cb(struct bt_l2cap_chan *chan, struct net_buf *buf, bt_conn_tx_cb_t cb,
 			     void *user_data)
 {
-	struct bt_l2cap_br_chan *br_chan = BR_CHAN(chan);
+	struct bt_l2cap_br_chan *br_chan;
+
+	if (!buf || !chan) {
+		return -EINVAL;
+	}
+
+	br_chan = BR_CHAN(chan);
+
+	LOG_DBG("chan %p buf %p len %zu", chan, buf, net_buf_frags_len(buf));
+
+	if (!chan->conn || chan->conn->state != BT_CONN_CONNECTED) {
+		return -ENOTCONN;
+	}
+
+	if (atomic_test_bit(chan->status, BT_L2CAP_STATUS_SHUTDOWN)) {
+		return -ESHUTDOWN;
+	}
 
 	if (buf->len > br_chan->tx.mtu) {
 		return -EMSGSIZE;
 	}
 
-	return l2cap_br_send_cb(br_chan->chan.conn, br_chan->tx.cid, buf, cb, user_data);
+	return bt_l2cap_br_send_cb(br_chan->chan.conn, br_chan->tx.cid, buf, cb, user_data);
 }
 
 int bt_l2cap_br_chan_send(struct bt_l2cap_chan *chan, struct net_buf *buf)

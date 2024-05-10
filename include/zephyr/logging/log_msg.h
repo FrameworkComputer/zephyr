@@ -4,12 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/*
- * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
- * #line marks the *next* line, so it is off by one.
- */
-#line 12
-
 #ifndef ZEPHYR_INCLUDE_LOGGING_LOG_MSG_H_
 #define ZEPHYR_INCLUDE_LOGGING_LOG_MSG_H_
 
@@ -79,7 +73,7 @@ struct log_msg_hdr {
 /* Attempting to keep best alignment. When address is 64 bit and timestamp 32
  * swap the order to have 16 byte header instead of 24 byte.
  */
-#if (INTPTR_MAX > INT32_MAX) && !CONFIG_LOG_TIMESTAMP_64BIT
+#if (INTPTR_MAX > INT32_MAX) && !defined(CONFIG_LOG_TIMESTAMP_64BIT)
 	log_timestamp_t timestamp;
 	const void *source;
 #else
@@ -659,7 +653,7 @@ __syscall void z_log_msg_simple_create_2(const void *source, uint32_t level,
  *
  * @param package Package.
  *
- * @oaram data Data.
+ * @param data Data.
  */
 __syscall void z_log_msg_static_create(const void *source,
 					const struct log_msg_desc desc,
@@ -794,6 +788,14 @@ static inline const void *log_msg_get_source(struct log_msg *msg)
 {
 	return msg->hdr.source;
 }
+
+/** @brief Get log message source ID.
+ *
+ * @param msg Log message.
+ *
+ * @return Source ID, or -1 if not available.
+ */
+int16_t log_msg_get_source_id(struct log_msg *msg);
 
 /** @brief Get timestamp.
  *

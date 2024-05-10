@@ -98,6 +98,12 @@ static char *get_l3_desc(struct event_msg *msg,
 		info = net_addr_ntop(AF_INET6, msg->data, extra_info,
 				     extra_info_len);
 		break;
+	case NET_EVENT_IPV6_ADDR_DEPRECATED:
+		*desc = "IPv6 address";
+		*desc2 = "deprecated";
+		info = net_addr_ntop(AF_INET6, msg->data, extra_info,
+				     extra_info_len);
+		break;
 	case NET_EVENT_IPV6_ADDR_DEL:
 		*desc = "IPv6 address";
 		*desc2 = "del";
@@ -188,6 +194,26 @@ static char *get_l3_desc(struct event_msg *msg,
 		info = net_addr_ntop(AF_INET6, msg->data, extra_info,
 				     extra_info_len);
 		break;
+	case NET_EVENT_IPV6_PE_ENABLED:
+		*desc = "IPv6 PE";
+		*desc2 = "enabled";
+		break;
+	case NET_EVENT_IPV6_PE_DISABLED:
+		*desc = "IPv6 PE";
+		*desc2 = "disabled";
+		break;
+	case NET_EVENT_IPV6_PE_FILTER_ADD:
+		*desc = "IPv6 PE filter";
+		*desc2 = "add";
+		info = net_addr_ntop(AF_INET6, msg->data, extra_info,
+				     extra_info_len);
+		break;
+	case NET_EVENT_IPV6_PE_FILTER_DEL:
+		*desc = "IPv6 PE filter";
+		*desc2 = "del";
+		info = net_addr_ntop(AF_INET6, msg->data, extra_info,
+				     extra_info_len);
+		break;
 	case NET_EVENT_IPV4_ADDR_ADD:
 		*desc = "IPv4 address";
 		*desc2 = "add";
@@ -252,6 +278,9 @@ static const char *get_l4_desc(uint32_t event)
 	case NET_EVENT_DNS_SERVER_DEL:
 		desc = "DNS server del";
 		break;
+	case NET_EVENT_HOSTNAME_CHANGED:
+		desc = "Hostname changed";
+		break;
 	case NET_EVENT_COAP_SERVICE_STARTED:
 		desc = "CoAP service started";
 		break;
@@ -263,6 +292,12 @@ static const char *get_l4_desc(uint32_t event)
 		break;
 	case NET_EVENT_COAP_OBSERVER_REMOVED:
 		desc = "CoAP observer removed";
+		break;
+	case NET_EVENT_CAPTURE_STARTED:
+		desc = "Capture started";
+		break;
+	case NET_EVENT_CAPTURE_STOPPED:
+		desc = "Capture stopped";
 		break;
 	}
 

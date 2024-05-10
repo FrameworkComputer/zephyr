@@ -1015,6 +1015,13 @@
 				 <&rcc STM32_CLOCK_BUS_AHB1 0x00010000>,
 				 <&rcc STM32_CLOCK_BUS_AHB1 0x00020000>;
 			status = "disabled";
+
+			mdio: mdio {
+				compatible = "st,stm32-mdio";
+				#address-cells = <1>;
+				#size-cells = <0>;
+				status = "disabled";
+			};
 		};
 
 		fmc: memory-controller@52004000 {
@@ -1046,6 +1053,15 @@
 			reg = <0x52005000 0x34>;
 			interrupts = <92 0>;
 			clocks = <&rcc STM32_CLOCK_BUS_AHB3 0x00004000>;
+			status = "disabled";
+		};
+
+		dcmi: dcmi@48020000 {
+			compatible = "st,stm32-dcmi";
+			reg = <0x48020000 0x400>;
+			interrupts = <78 0>;
+			interrupt-names = "dcmi";
+			clocks = <&rcc STM32_CLOCK_BUS_AHB2 0x00000001>;
 			status = "disabled";
 		};
 	};

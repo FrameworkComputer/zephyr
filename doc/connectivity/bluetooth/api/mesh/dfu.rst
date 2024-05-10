@@ -5,7 +5,7 @@ Device Firmware Update (DFU)
 
 Bluetooth Mesh supports the distribution of firmware images across a mesh network. The Bluetooth
 mesh DFU subsystem implements the Bluetooth Mesh Device Firmware Update Model specification version
-1.0. The implementation is in experimental state.
+1.0.
 
 Bluetooth Mesh DFU implements a distribution mechanism for firmware images, and does not put any
 restrictions on the size, format or usage of the images. The primary design goal of the subsystem is
@@ -169,6 +169,12 @@ Firmware metadata
 |                        |              | this data before it can respond        |
 |                        |              | with a status message.                 |
 +------------------------+--------------+----------------------------------------+
+
+  .. note::
+
+      The AES-CMAC algorithm serves as a hashing function with a fixed key and is not used for
+      encryption in Bluetooth Mesh DFU metadata. The resulting hash is not secure since the key is
+      known.
 
 Firmware URI
    The firmware URI gives the Initiator information about where firmware updates for the image can

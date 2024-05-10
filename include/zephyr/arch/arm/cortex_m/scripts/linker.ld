@@ -178,7 +178,7 @@ SECTIONS
 	 * section overlap.
 	 */
 	__exidx_start = .;
-#if defined (__GCC_LINKER_CMD__)
+#if defined (__GCC_LINKER_CMD__) || defined (__LLD_LINKER_CMD__)
 	*(.ARM.exidx* gnu.linkonce.armexidx.*)
 #endif
 	__exidx_end = .;
@@ -468,6 +468,15 @@ GROUP_END(DTCM)
 	KEEP(*(.ARM.attributes))
 	KEEP(*(.gnu.attributes))
 	}
+
+/* Output section descriptions are needed for these sections to suppress
+ * warnings when "--orphan-handling=warn" is set for lld.
+ */
+#if defined(CONFIG_LLVM_USE_LLD)
+    SECTION_PROLOGUE(.symtab, 0,) { *(.symtab) }
+    SECTION_PROLOGUE(.strtab, 0,) { *(.strtab) }
+    SECTION_PROLOGUE(.shstrtab, 0,) { *(.shstrtab) }
+#endif
 
     /* Sections generated from 'zephyr,memory-region' nodes */
     LINKER_DT_SECTIONS()

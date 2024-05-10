@@ -156,7 +156,7 @@ config SCHED_CPU_MASK_PIN_ONLY
 config MAIN_STACK_SIZE
 	int "Size of stack for initialization and main thread"
 	default 2048 if COVERAGE_GCOV
-	default 512 if ZTEST && !(RISCV || X86 || ARM)
+	default 512 if ZTEST && !(RISCV || X86 || ARM || ARC)
 	default 1024
 	help
 	  When the initialization is complete, the thread executing it then
@@ -192,10 +192,27 @@ config THREAD_STACK_INFO
 	  This option allows each thread to store the thread stack info into
 	  the k_thread data structure.
 
+config THREAD_STACK_MEM_MAPPED
+	bool "Stack to be memory mapped at runtime"
+	depends on MMU && ARCH_SUPPORTS_MEM_MAPPED_STACKS
+	select THREAD_STACK_INFO
+	select THREAD_ABORT_NEED_CLEANUP
+	help
+	  This option changes behavior where the thread stack is memory
+	  mapped with guard pages on both ends to catch undesired
+	  accesses.
+
 config THREAD_ABORT_HOOK
 	bool
 	help
 	  Used by portability layers to modify locally managed status mask.
+
+config THREAD_ABORT_NEED_CLEANUP
+	bool
+	help
+	  This option enables the bits to clean up the current thread if
+	  k_thread_abort(_current) is called, as the cleanup cannot be
+	  running in the current thread stack.
 
 config THREAD_CUSTOM_DATA
 	bool "Thread custom data"

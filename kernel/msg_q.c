@@ -27,7 +27,7 @@
 
 #ifdef CONFIG_OBJ_CORE_MSGQ
 static struct k_obj_type obj_type_msgq;
-#endif
+#endif /* CONFIG_OBJ_CORE_MSGQ */
 
 #ifdef CONFIG_POLL
 static inline void handle_poll_events(struct k_msgq *msgq, uint32_t state)
@@ -55,7 +55,7 @@ void k_msgq_init(struct k_msgq *msgq, char *buffer, size_t msg_size,
 
 #ifdef CONFIG_OBJ_CORE_MSGQ
 	k_obj_core_init_and_link(K_OBJ_CORE(msgq), &obj_type_msgq);
-#endif
+#endif /* CONFIG_OBJ_CORE_MSGQ */
 
 	SYS_PORT_TRACING_OBJ_INIT(k_msgq, msgq);
 
@@ -98,7 +98,7 @@ int z_vrfy_k_msgq_alloc_init(struct k_msgq *msgq, size_t msg_size,
 	return z_impl_k_msgq_alloc_init(msgq, msg_size, max_msgs);
 }
 #include <syscalls/k_msgq_alloc_init_mrsh.c>
-#endif
+#endif /* CONFIG_USERSPACE */
 
 int k_msgq_cleanup(struct k_msgq *msgq)
 {
@@ -151,7 +151,7 @@ int z_impl_k_msgq_put(struct k_msgq *msgq, const void *data, k_timeout_t timeout
 			/* put message in queue */
 			__ASSERT_NO_MSG(msgq->write_ptr >= msgq->buffer_start &&
 					msgq->write_ptr < msgq->buffer_end);
-			(void)memcpy(msgq->write_ptr, data, msgq->msg_size);
+			(void)memcpy(msgq->write_ptr, (char *)data, msgq->msg_size);
 			msgq->write_ptr += msgq->msg_size;
 			if (msgq->write_ptr == msgq->buffer_end) {
 				msgq->write_ptr = msgq->buffer_start;
@@ -193,7 +193,7 @@ static inline int z_vrfy_k_msgq_put(struct k_msgq *msgq, const void *data,
 	return z_impl_k_msgq_put(msgq, data, timeout);
 }
 #include <syscalls/k_msgq_put_mrsh.c>
-#endif
+#endif /* CONFIG_USERSPACE */
 
 void z_impl_k_msgq_get_attrs(struct k_msgq *msgq, struct k_msgq_attrs *attrs)
 {
@@ -211,7 +211,7 @@ static inline void z_vrfy_k_msgq_get_attrs(struct k_msgq *msgq,
 	z_impl_k_msgq_get_attrs(msgq, attrs);
 }
 #include <syscalls/k_msgq_get_attrs_mrsh.c>
-#endif
+#endif /* CONFIG_USERSPACE */
 
 int z_impl_k_msgq_get(struct k_msgq *msgq, void *data, k_timeout_t timeout)
 {
@@ -227,7 +227,7 @@ int z_impl_k_msgq_get(struct k_msgq *msgq, void *data, k_timeout_t timeout)
 
 	if (msgq->used_msgs > 0U) {
 		/* take first available message from queue */
-		(void)memcpy(data, msgq->read_ptr, msgq->msg_size);
+		(void)memcpy((char *)data, msgq->read_ptr, msgq->msg_size);
 		msgq->read_ptr += msgq->msg_size;
 		if (msgq->read_ptr == msgq->buffer_end) {
 			msgq->read_ptr = msgq->buffer_start;
@@ -242,7 +242,7 @@ int z_impl_k_msgq_get(struct k_msgq *msgq, void *data, k_timeout_t timeout)
 			/* add thread's message to queue */
 			__ASSERT_NO_MSG(msgq->write_ptr >= msgq->buffer_start &&
 					msgq->write_ptr < msgq->buffer_end);
-			(void)memcpy(msgq->write_ptr, pending_thread->base.swap_data,
+			(void)memcpy(msgq->write_ptr, (char *)pending_thread->base.swap_data,
 			       msgq->msg_size);
 			msgq->write_ptr += msgq->msg_size;
 			if (msgq->write_ptr == msgq->buffer_end) {
@@ -291,7 +291,7 @@ static inline int z_vrfy_k_msgq_get(struct k_msgq *msgq, void *data,
 	return z_impl_k_msgq_get(msgq, data, timeout);
 }
 #include <syscalls/k_msgq_get_mrsh.c>
-#endif
+#endif /* CONFIG_USERSPACE */
 
 int z_impl_k_msgq_peek(struct k_msgq *msgq, void *data)
 {
@@ -302,7 +302,7 @@ int z_impl_k_msgq_peek(struct k_msgq *msgq, void *data)
 
 	if (msgq->used_msgs > 0U) {
 		/* take first available message from queue */
-		(void)memcpy(data, msgq->read_ptr, msgq->msg_size);
+		(void)memcpy((char *)data, msgq->read_ptr, msgq->msg_size);
 		result = 0;
 	} else {
 		/* don't wait for a message to become available */
@@ -325,7 +325,7 @@ static inline int z_vrfy_k_msgq_peek(struct k_msgq *msgq, void *data)
 	return z_impl_k_msgq_peek(msgq, data);
 }
 #include <syscalls/k_msgq_peek_mrsh.c>
-#endif
+#endif /* CONFIG_USERSPACE */
 
 int z_impl_k_msgq_peek_at(struct k_msgq *msgq, void *data, uint32_t idx)
 {
@@ -371,7 +371,7 @@ static inline int z_vrfy_k_msgq_peek_at(struct k_msgq *msgq, void *data, uint32_
 	return z_impl_k_msgq_peek_at(msgq, data, idx);
 }
 #include <syscalls/k_msgq_peek_at_mrsh.c>
-#endif
+#endif /* CONFIG_USERSPACE */
 
 void z_impl_k_msgq_purge(struct k_msgq *msgq)
 {
@@ -416,7 +416,7 @@ static inline uint32_t z_vrfy_k_msgq_num_used_get(struct k_msgq *msgq)
 }
 #include <syscalls/k_msgq_num_used_get_mrsh.c>
 
-#endif
+#endif /* CONFIG_USERSPACE */
 
 #ifdef CONFIG_OBJ_CORE_MSGQ
 static int init_msgq_obj_core_list(void)
@@ -438,4 +438,4 @@ static int init_msgq_obj_core_list(void)
 SYS_INIT(init_msgq_obj_core_list, PRE_KERNEL_1,
 	 CONFIG_KERNEL_INIT_PRIORITY_OBJECTS);
 
-#endif
+#endif /* CONFIG_OBJ_CORE_MSGQ */

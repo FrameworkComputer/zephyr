@@ -16,6 +16,7 @@ LOG_MODULE_REGISTER(net_arp, CONFIG_NET_ARP_LOG_LEVEL);
 #include <zephyr/net/net_pkt.h>
 #include <zephyr/net/net_if.h>
 #include <zephyr/net/net_stats.h>
+#include <zephyr/net/net_mgmt.h>
 
 #include "arp.h"
 #include "net_private.h"
@@ -34,9 +35,15 @@ static struct k_work_delayable arp_request_timer;
 
 static struct k_mutex arp_mutex;
 
+#if defined(CONFIG_NET_ARP_GRATUITOUS_TRANSMISSION)
+static struct net_mgmt_event_callback iface_event_cb;
+static struct net_mgmt_event_callback ipv4_event_cb;
+static struct k_work_delayable arp_gratuitous_work;
+#endif /* defined(CONFIG_NET_ARP_GRATUITOUS_TRANSMISSION) */
+
 static void arp_entry_cleanup(struct arp_entry *entry, bool pending)
 {
-	NET_DBG("%p", entry);
+	NET_DBG("entry %p", entry);
 
 	if (pending) {
 		struct net_pkt *pkt;
@@ -64,8 +71,9 @@ static struct arp_entry *arp_entry_find(sys_slist_t *list,
 	struct arp_entry *entry;
 
 	SYS_SLIST_FOR_EACH_CONTAINER(list, entry, node) {
-		NET_DBG("iface %p dst %s",
-			iface, net_sprint_ipv4_addr(&entry->ip));
+		NET_DBG("iface %d (%p) dst %s",
+			net_if_get_by_iface(iface), iface,
+			net_sprint_ipv4_addr(&entry->ip));
 
 		if (entry->iface == iface &&
 		    net_ipv4_addr_cmp(&entry->ip, dst)) {
@@ -266,9 +274,11 @@ static inline struct net_pkt *arp_prepare(struct net_if *iface,
 		if (IS_ENABLED(CONFIG_NET_CAPTURE) && pending) {
 			net_pkt_set_captured(pkt, net_pkt_is_captured(pending));
 		}
-	}
 
-	net_pkt_set_vlan_tag(pkt, net_eth_get_vlan_tag(iface));
+		if (IS_ENABLED(CONFIG_NET_VLAN) && pending) {
+			net_pkt_set_vlan_tag(pkt, net_pkt_vlan_tag(pending));
+		}
+	}
 
 	net_buf_add(pkt->buffer, sizeof(struct net_arp_hdr));
 
@@ -463,6 +473,141 @@ static void arp_gratuitous(struct net_if *iface,
 	}
 }
 
+#if defined(CONFIG_NET_ARP_GRATUITOUS_TRANSMISSION)
+static void arp_gratuitous_send(struct net_if *iface,
+				struct in_addr *ipaddr)
+{
+	struct net_arp_hdr *hdr;
+	struct net_pkt *pkt;
+
+	pkt = net_pkt_alloc_with_buffer(iface, sizeof(struct net_arp_hdr),
+					AF_UNSPEC, 0, NET_BUF_TIMEOUT);
+	if (!pkt) {
+		return;
+	}
+
+	net_buf_add(pkt->buffer, sizeof(struct net_arp_hdr));
+	net_pkt_set_vlan_tag(pkt, net_eth_get_vlan_tag(iface));
+
+	hdr = NET_ARP_HDR(pkt);
+
+	hdr->hwtype = htons(NET_ARP_HTYPE_ETH);
+	hdr->protocol = htons(NET_ETH_PTYPE_IP);
+	hdr->hwlen = sizeof(struct net_eth_addr);
+	hdr->protolen = sizeof(struct in_addr);
+	hdr->opcode = htons(NET_ARP_REQUEST);
+
+	memcpy(&hdr->dst_hwaddr.addr, net_eth_broadcast_addr(),
+	       sizeof(struct net_eth_addr));
+	memcpy(&hdr->src_hwaddr.addr, net_if_get_link_addr(iface)->addr,
+	       sizeof(struct net_eth_addr));
+
+	net_ipv4_addr_copy_raw(hdr->dst_ipaddr, (uint8_t *)ipaddr);
+	net_ipv4_addr_copy_raw(hdr->src_ipaddr, (uint8_t *)ipaddr);
+
+	net_pkt_lladdr_src(pkt)->addr = net_if_get_link_addr(iface)->addr;
+	net_pkt_lladdr_src(pkt)->len = sizeof(struct net_eth_addr);
+
+	net_pkt_lladdr_dst(pkt)->addr = (uint8_t *)net_eth_broadcast_addr();
+	net_pkt_lladdr_dst(pkt)->len = sizeof(struct net_eth_addr);
+
+	NET_DBG("Sending gratuitous ARP pkt %p", pkt);
+
+	if (net_if_send_data(iface, pkt) == NET_DROP) {
+		net_pkt_unref(pkt);
+	}
+}
+
+static void notify_all_ipv4_addr(struct net_if *iface)
+{
+	struct net_if_ipv4 *ipv4 = iface->config.ip.ipv4;
+	int i;
+
+	if (!ipv4) {
+		return;
+	}
+
+	for (i = 0; i < NET_IF_MAX_IPV4_ADDR; i++) {
+		if (ipv4->unicast[i].ipv4.is_used &&
+		    ipv4->unicast[i].ipv4.address.family == AF_INET &&
+		    ipv4->unicast[i].ipv4.addr_state == NET_ADDR_PREFERRED) {
+			arp_gratuitous_send(iface,
+					    &ipv4->unicast[i].ipv4.address.in_addr);
+		}
+	}
+}
+
+static void iface_event_handler(struct net_mgmt_event_callback *cb,
+				uint32_t mgmt_event, struct net_if *iface)
+{
+	ARG_UNUSED(cb);
+
+	if (!(net_if_l2(iface) == &NET_L2_GET_NAME(ETHERNET) ||
+	      net_eth_is_vlan_interface(iface))) {
+		return;
+	}
+
+	if (mgmt_event != NET_EVENT_IF_UP) {
+		return;
+	}
+
+	notify_all_ipv4_addr(iface);
+}
+
+static void ipv4_event_handler(struct net_mgmt_event_callback *cb,
+			       uint32_t mgmt_event, struct net_if *iface)
+{
+	struct in_addr *ipaddr;
+
+	if (!(net_if_l2(iface) == &NET_L2_GET_NAME(ETHERNET) ||
+	      net_eth_is_vlan_interface(iface))) {
+		return;
+	}
+
+	if (!net_if_is_up(iface)) {
+		return;
+	}
+
+	if (mgmt_event != NET_EVENT_IPV4_ADDR_ADD) {
+		return;
+	}
+
+	if (cb->info_length != sizeof(struct in_addr)) {
+		return;
+	}
+
+	ipaddr = (struct in_addr *)cb->info;
+
+	arp_gratuitous_send(iface, ipaddr);
+}
+
+static void iface_cb(struct net_if *iface, void *user_data)
+{
+	ARG_UNUSED(user_data);
+
+	if (!(net_if_l2(iface) == &NET_L2_GET_NAME(ETHERNET) ||
+	      net_eth_is_vlan_interface(iface))) {
+		return;
+	}
+
+	if (!net_if_is_up(iface)) {
+		return;
+	}
+
+	notify_all_ipv4_addr(iface);
+}
+
+static void arp_gratuitous_work_handler(struct k_work *work)
+{
+	ARG_UNUSED(work);
+
+	net_if_foreach(iface_cb, NULL);
+
+	k_work_reschedule(&arp_gratuitous_work,
+			  K_SECONDS(CONFIG_NET_ARP_GRATUITOUS_INTERVAL));
+}
+#endif /* defined(CONFIG_NET_ARP_GRATUITOUS_TRANSMISSION) */
+
 void net_arp_update(struct net_if *iface,
 		    struct in_addr *src,
 		    struct net_eth_addr *hwaddr,
@@ -472,7 +617,8 @@ void net_arp_update(struct net_if *iface,
 	struct arp_entry *entry;
 	struct net_pkt *pkt;
 
-	NET_DBG("src %s", net_sprint_ipv4_addr(src));
+	NET_DBG("iface %d (%p) src %s", net_if_get_by_iface(iface), iface,
+		net_sprint_ipv4_addr(src));
 	net_if_tx_lock(iface);
 	k_mutex_lock(&arp_mutex, K_FOREVER);
 
@@ -530,7 +676,8 @@ void net_arp_update(struct net_if *iface,
 		net_pkt_lladdr_dst(pkt)->addr =
 			(uint8_t *) &NET_ETH_HDR(pkt)->dst.addr;
 
-		NET_DBG("dst %s pending %p frag %p",
+		NET_DBG("iface %d (%p) dst %s pending %p frag %p",
+			net_if_get_by_iface(iface), iface,
 			net_sprint_ipv4_addr(&entry->ip),
 			pkt, pkt->frags);
 
@@ -570,7 +717,9 @@ static inline struct net_pkt *arp_prepare_reply(struct net_if *iface,
 	hdr = NET_ARP_HDR(pkt);
 	query = NET_ARP_HDR(req);
 
-	net_pkt_set_vlan_tag(pkt, net_pkt_vlan_tag(req));
+	if (IS_ENABLED(CONFIG_NET_VLAN)) {
+		net_pkt_set_vlan_tag(pkt, net_pkt_vlan_tag(req));
+	}
 
 	hdr->hwtype = htons(NET_ARP_HTYPE_ETH);
 	hdr->protocol = htons(NET_ETH_PTYPE_IP);
@@ -690,10 +839,11 @@ enum net_verdict net_arp_input(struct net_pkt *pkt,
 		 * and the target IP address is our address.
 		 */
 		if (net_eth_is_addr_unspecified(&arp_hdr->dst_hwaddr)) {
-			NET_DBG("Updating ARP cache for %s [%s]",
+			NET_DBG("Updating ARP cache for %s [%s] iface %d",
 				net_sprint_ipv4_addr(&arp_hdr->src_ipaddr),
 				net_sprint_ll_addr((uint8_t *)&arp_hdr->src_hwaddr,
-						   arp_hdr->hwlen));
+						   arp_hdr->hwlen),
+				net_if_get_by_iface(net_pkt_iface(pkt)));
 
 			net_arp_update(net_pkt_iface(pkt),
 				       (struct in_addr *)arp_hdr->src_ipaddr,
@@ -829,4 +979,19 @@ void net_arp_init(void)
 	k_mutex_init(&arp_mutex);
 
 	arp_cache_initialized = true;
+
+#if defined(CONFIG_NET_ARP_GRATUITOUS_TRANSMISSION)
+	net_mgmt_init_event_callback(&iface_event_cb, iface_event_handler,
+				     NET_EVENT_IF_UP);
+	net_mgmt_init_event_callback(&ipv4_event_cb, ipv4_event_handler,
+				     NET_EVENT_IPV4_ADDR_ADD);
+
+	net_mgmt_add_event_callback(&iface_event_cb);
+	net_mgmt_add_event_callback(&ipv4_event_cb);
+
+	k_work_init_delayable(&arp_gratuitous_work,
+			      arp_gratuitous_work_handler);
+	k_work_reschedule(&arp_gratuitous_work,
+			  K_SECONDS(CONFIG_NET_ARP_GRATUITOUS_INTERVAL));
+#endif /* defined(CONFIG_NET_ARP_GRATUITOUS_TRANSMISSION) */
 }

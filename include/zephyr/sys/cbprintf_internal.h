@@ -548,7 +548,7 @@ extern "C" {
  * Floats are promoted to double so they use size of double, others int storage
  * or it's own storage size if it is bigger than int.
  *
- * @param x argument.
+ * @param v argument.
  *
  * @return Number of bytes used for storing the argument.
  */
@@ -757,20 +757,6 @@ do { \
 		 _name##_buf32)))
 #endif
 
-/* When the first argument of Z_CBPRINTF_STATIC_PACKAGE_GENERIC() is a
- * static memory location, some compiler warns you if you compare the
- * location against NULL.  ___is_null() is used to kill this warning.
- *
- * The warnings would be visible when you built with -save-temps=obj,
- * our standard debugging tip for macro problems.
- *
- * https://github.com/zephyrproject-rtos/zephyr/issues/51528
- */
-static ALWAYS_INLINE bool ___is_null(void *p)
-{
-	return p == NULL;
-}
-
 /** @brief Statically package a formatted string with arguments.
  *
  * @param buf buffer. If null then only length is calculated.
@@ -819,7 +805,7 @@ do { \
 	Z_CBPRINTF_ON_STACK_ALLOC(_ros_pos_buf, _ros_cnt); \
 	uint8_t *_rws_buffer; \
 	Z_CBPRINTF_ON_STACK_ALLOC(_rws_buffer, 2 * _rws_cnt); \
-	size_t _pmax = !___is_null(buf) ? _inlen : INT32_MAX; \
+	size_t _pmax = !is_null_no_warn(buf) ? _inlen : INT32_MAX; \
 	int _pkg_len = 0; \
 	int _total_len = 0; \
 	int _pkg_offset = _align_offset; \

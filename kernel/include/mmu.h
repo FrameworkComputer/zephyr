@@ -36,8 +36,8 @@
 #define Z_VIRT_RAM_END		(Z_VIRT_RAM_START + Z_VIRT_RAM_SIZE)
 
 /* Boot-time virtual location of the kernel image. */
-#define Z_KERNEL_VIRT_START	((uint8_t *)(&z_mapped_start))
-#define Z_KERNEL_VIRT_END	((uint8_t *)(&z_mapped_end))
+#define Z_KERNEL_VIRT_START	((uint8_t *)&z_mapped_start[0])
+#define Z_KERNEL_VIRT_END	((uint8_t *)&z_mapped_end[0])
 #define Z_KERNEL_VIRT_SIZE	(Z_KERNEL_VIRT_END - Z_KERNEL_VIRT_START)
 
 #define Z_VM_OFFSET	 ((CONFIG_KERNEL_VM_BASE + CONFIG_KERNEL_VM_OFFSET) - \
@@ -54,7 +54,7 @@
 #define Z_FREE_VM_START	Z_BOOT_PHYS_TO_VIRT(Z_PHYS_RAM_END)
 #else
 #define Z_FREE_VM_START	Z_KERNEL_VIRT_END
-#endif
+#endif /* CONFIG_ARCH_MAPS_ALL_RAM */
 
 /*
  * Macros and data structures for physical page frame accounting,
@@ -121,7 +121,7 @@ struct z_page_frame {
 } __aligned(4);
 #else
 } __packed;
-#endif
+#endif /* CONFIG_XTENSA */
 
 static inline bool z_page_frame_is_pinned(struct z_page_frame *pf)
 {
@@ -237,7 +237,7 @@ void z_page_frames_dump(void);
 				     CONFIG_MMU_PAGE_SIZE))
 #else
 #define Z_VM_RESERVED	0
-#endif
+#endif /* CONFIG_DEMAND_PAGING */
 
 #ifdef CONFIG_DEMAND_PAGING
 /*

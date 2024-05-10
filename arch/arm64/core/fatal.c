@@ -33,7 +33,7 @@ void z_arm64_safe_exception_stack_init(void)
 	char *safe_exc_sp;
 
 	cpu_id = arch_curr_cpu()->id;
-	safe_exc_sp = Z_KERNEL_STACK_BUFFER(z_arm64_safe_exception_stacks[cpu_id]) +
+	safe_exc_sp = K_KERNEL_STACK_BUFFER(z_arm64_safe_exception_stacks[cpu_id]) +
 		      CONFIG_ARM64_SAFE_EXCEPTION_STACK_SIZE;
 	arch_curr_cpu()->arch.safe_exception_stack = (uint64_t)safe_exc_sp;
 	write_sp_el0((uint64_t)safe_exc_sp);
@@ -313,11 +313,13 @@ void z_arm64_fatal_error(unsigned int reason, z_arch_esf_t *esf)
 			far = read_far_el1();
 			elr = read_elr_el1();
 			break;
+#if !defined(CONFIG_ARMV8_R)
 		case MODE_EL3:
 			esr = read_esr_el3();
 			far = read_far_el3();
 			elr = read_elr_el3();
 			break;
+#endif /* CONFIG_ARMV8_R */
 		}
 
 #ifdef CONFIG_ARM64_STACK_PROTECTION

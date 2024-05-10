@@ -196,7 +196,7 @@ static int rtc_stm32_set_time(const struct device *dev, const struct rtc_time *t
 		return err;
 	}
 
-	LOG_INF("Setting clock");
+	LOG_DBG("Setting clock");
 
 #if defined(PWR_CR_DBP) || defined(PWR_CR1_DBP) || defined(PWR_DBPCR_DBP) || defined(PWR_DBPR_DBP)
 	LL_PWR_EnableBkUpAccess();
@@ -253,7 +253,12 @@ static int rtc_stm32_get_time(const struct device *dev, struct rtc_time *timeptr
 #if HW_SUBSECOND_SUPPORT
 	const struct rtc_stm32_config *cfg = dev->config;
 	uint32_t rtc_subsecond;
-#endif
+#endif /* HW_SUBSECOND_SUPPORT */
+
+	if (timeptr == NULL) {
+		LOG_ERR("NULL rtc_time pointer");
+		return -EINVAL;
+	}
 
 	int err = k_mutex_lock(&data->lock, K_NO_WAIT);
 
@@ -282,7 +287,7 @@ static int rtc_stm32_get_time(const struct device *dev, struct rtc_time *timeptr
 			rtc_time      = LL_RTC_TIME_Get(RTC);
 #if HW_SUBSECOND_SUPPORT
 			rtc_subsecond = LL_RTC_TIME_GetSubSecond(RTC);
-#endif
+#endif /* HW_SUBSECOND_SUPPORT */
 		} while (rtc_time != LL_RTC_TIME_Get(RTC));
 	} while (rtc_date != LL_RTC_DATE_Get(RTC));
 

@@ -4,8 +4,10 @@
  */
 #include <zephyr/init.h>
 #include <zephyr/device.h>
+#include <zephyr/dt-bindings/clock/mcux_lpc_syscon_clock.h>
 #include <fsl_clock.h>
 #include <fsl_spc.h>
+#include <soc.h>
 
 /* Board xtal frequency in Hz */
 #define BOARD_XTAL0_CLK_HZ                        24000000U
@@ -48,8 +50,6 @@ void power_mode_od(void)
 
 static int frdm_mcxn947_init(void)
 {
-	/* Do not re-run this clock init code if using MCUBoot */
-#ifndef CONFIG_BOOTLOADER_MCUBOOT
 	enable_lpcac();
 
 	power_mode_od();
@@ -67,6 +67,13 @@ static int frdm_mcxn947_init(void)
 
 	/* Enable FRO HF(48MHz) output */
 	CLOCK_SetupFROHFClocking(48000000U);
+
+#ifdef CONFIG_FLASH_MCUX_FLEXSPI_XIP
+	/* Call function flexspi_clock_safe_config() to move FleXSPI clock to a stable
+	 * clock source when updating the PLL if in XIP (execute code from FlexSPI memory
+	 */
+	flexspi_clock_safe_config();
+#endif
 
 	/* Set up PLL0 */
 	const pll_setup_t pll0Setup = {
@@ -87,7 +94,16 @@ static int frdm_mcxn947_init(void)
 
 	/* Set AHBCLKDIV divider to value 1 */
 	CLOCK_SetClkDiv(kCLOCK_DivAhbClk, 1U);
-#endif /* CONFIG_BOOTLOADER_MCUBOOT */
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(flexcomm1), okay)
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom1Clk, 1u);
+	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM1);
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(flexcomm2), okay)
+	CLOCK_SetClkDiv(kCLOCK_DivFlexcom2Clk, 1u);
+	CLOCK_AttachClk(kFRO12M_to_FLEXCOMM2);
+#endif
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(flexcomm4), okay)
 	CLOCK_SetClkDiv(kCLOCK_DivFlexcom4Clk, 1u);
@@ -120,6 +136,68 @@ static int frdm_mcxn947_init(void)
 
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(gpio5), okay)
 	CLOCK_EnableClock(kCLOCK_Gpio5);
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(dac0), okay)
+	SPC_EnableActiveModeAnalogModules(SPC0, kSPC_controlDac0);
+	CLOCK_SetClkDiv(kCLOCK_DivDac0Clk, 1u);
+	CLOCK_AttachClk(kFRO_HF_to_DAC0);
+
+	CLOCK_EnableClock(kCLOCK_Dac0);
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(dac1), okay)
+	SPC_EnableActiveModeAnalogModules(SPC0, kSPC_controlDac1);
+	CLOCK_SetClkDiv(kCLOCK_DivDac1Clk, 1u);
+	CLOCK_AttachClk(kFRO_HF_to_DAC1);
+
+	CLOCK_EnableClock(kCLOCK_Dac1);
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(enet), okay)
+	CLOCK_AttachClk(kNONE_to_ENETRMII);
+	CLOCK_EnableClock(kCLOCK_Enet);
+	SYSCON0->PRESETCTRL2 = SYSCON_PRESETCTRL2_ENET_RST_MASK;
+	SYSCON0->PRESETCTRL2 &= ~SYSCON_PRESETCTRL2_ENET_RST_MASK;
+	/* rmii selection for this board */
+	SYSCON->ENET_PHY_INTF_SEL = SYSCON_ENET_PHY_INTF_SEL_PHY_SEL(1);
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(wwdt0), okay)
+	CLOCK_SetClkDiv(kCLOCK_DivWdt0Clk, 1u);
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(ctimer0), okay)
+	CLOCK_SetClkDiv(kCLOCK_DivCtimer0Clk, 1U);
+	CLOCK_AttachClk(kPLL0_to_CTIMER0);
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(ctimer1), okay)
+	CLOCK_SetClkDiv(kCLOCK_DivCtimer1Clk, 1U);
+	CLOCK_AttachClk(kPLL0_to_CTIMER1);
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(ctimer2), okay)
+	CLOCK_SetClkDiv(kCLOCK_DivCtimer2Clk, 1U);
+	CLOCK_AttachClk(kPLL0_to_CTIMER2);
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(ctimer3), okay)
+	CLOCK_SetClkDiv(kCLOCK_DivCtimer3Clk, 1U);
+	CLOCK_AttachClk(kPLL0_to_CTIMER3);
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(ctimer4), okay)
+	CLOCK_SetClkDiv(kCLOCK_DivCtimer4Clk, 1U);
+	CLOCK_AttachClk(kPLL0_to_CTIMER4);
+#endif
+
+#if CONFIG_FLASH_MCUX_FLEXSPI_NOR
+	/* We downclock the FlexSPI to 50MHz, it will be set to the
+	 * optimum speed supported by the Flash device during FLEXSPI
+	 * Init
+	 */
+	flexspi_clock_set_freq(MCUX_FLEXSPI_CLK, MHZ(50));
 #endif
 
 	/* Set SystemCoreClock variable. */

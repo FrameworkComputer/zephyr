@@ -5,7 +5,7 @@ description: NXP ENET MAC/L2 Device
 
 compatible: "nxp,enet-mac"
 
-include: ["ethernet-controller.yaml", "ethernet,fixed-link.yaml", "pinctrl-device.yaml"]
+include: ["ethernet-controller.yaml", "pinctrl-device.yaml"]
 
 properties:
   interrupts:
@@ -22,3 +22,10 @@ properties:
     required: true
     description: |
       Corresponding ptp clock device
+
+  nxp,unique-mac:
+    type: boolean
+    description: |
+      Use unique silicon ID to use UAA MAC.
+      This property will be overridden if the node has
+      zephyr,random-mac-address or local-mac-address also.

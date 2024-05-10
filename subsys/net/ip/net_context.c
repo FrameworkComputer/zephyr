@@ -312,7 +312,7 @@ static uint16_t find_available_port(struct net_context *context,
 	uint16_t local_port;
 
 	do {
-		local_port = sys_rand32_get() | 0x8000;
+		local_port = sys_rand16_get() | 0x8000;
 	} while (check_used_port(NULL, net_context_get_proto(context),
 				 htons(local_port), addr, false, false) == -EEXIST);
 
@@ -467,6 +467,10 @@ int net_context_get(sa_family_t family, enum net_sock_type type, uint16_t proto,
 		net_context_set_family(&contexts[i], family);
 		net_context_set_type(&contexts[i], type);
 		net_context_set_proto(&contexts[i], proto);
+
+#if defined(CONFIG_NET_IPV6)
+		contexts[i].options.addr_preferences = IPV6_PREFER_SRC_PUBTMP_DEFAULT;
+#endif
 
 #if defined(CONFIG_NET_CONTEXT_RCVTIMEO)
 		contexts[i].options.rcvtimeo = K_FOREVER;
@@ -1131,10 +1135,10 @@ int net_context_create_ipv6_new(struct net_context *context,
 		src = ((struct sockaddr_in6_ptr *)&context->local)->sin6_addr;
 	}
 
-	if (net_ipv6_is_addr_unspecified(src)
-	    || net_ipv6_is_addr_mcast(src)) {
-		src = net_if_ipv6_select_src_addr(net_pkt_iface(pkt),
-						  (struct in6_addr *)dst);
+	if (net_ipv6_is_addr_unspecified(src) || net_ipv6_is_addr_mcast(src)) {
+		src = net_if_ipv6_select_src_addr_hint(net_pkt_iface(pkt),
+						       (struct in6_addr *)dst,
+						       context->options.addr_preferences);
 	}
 
 #if defined(CONFIG_NET_CONTEXT_DSCP_ECN)
@@ -1702,6 +1706,21 @@ static int get_context_recv_pktinfo(struct net_context *context,
 #if defined(CONFIG_NET_CONTEXT_RECV_PKTINFO)
 	return get_bool_option(context->options.recv_pktinfo,
 			       value, len);
+#else
+	ARG_UNUSED(context);
+	ARG_UNUSED(value);
+	ARG_UNUSED(len);
+
+	return -ENOTSUP;
+#endif
+}
+
+static int get_context_addr_preferences(struct net_context *context,
+					void *value, size_t *len)
+{
+#if defined(CONFIG_NET_IPV6)
+	return get_uint16_option(context->options.addr_preferences,
+				 value, len);
 #else
 	ARG_UNUSED(context);
 	ARG_UNUSED(value);
@@ -3001,6 +3020,21 @@ static int set_context_recv_pktinfo(struct net_context *context,
 #endif
 }
 
+static int set_context_addr_preferences(struct net_context *context,
+					const void *value, size_t len)
+{
+#if defined(CONFIG_NET_IPV6)
+	return set_uint16_option(&context->options.addr_preferences,
+				 value, len);
+#else
+	ARG_UNUSED(context);
+	ARG_UNUSED(value);
+	ARG_UNUSED(len);
+
+	return -ENOTSUP;
+#endif
+}
+
 int net_context_set_option(struct net_context *context,
 			   enum net_context_option option,
 			   const void *value, size_t len)
@@ -3063,6 +3097,9 @@ int net_context_set_option(struct net_context *context,
 		break;
 	case NET_OPT_RECV_PKTINFO:
 		ret = set_context_recv_pktinfo(context, value, len);
+		break;
+	case NET_OPT_ADDR_PREFERENCES:
+		ret = set_context_addr_preferences(context, value, len);
 		break;
 	}
 
@@ -3134,11 +3171,59 @@ int net_context_get_option(struct net_context *context,
 	case NET_OPT_RECV_PKTINFO:
 		ret = get_context_recv_pktinfo(context, value, len);
 		break;
+	case NET_OPT_ADDR_PREFERENCES:
+		ret = get_context_addr_preferences(context, value, len);
+		break;
 	}
 
 	k_mutex_unlock(&context->lock);
 
 	return ret;
+}
+
+int net_context_get_local_addr(struct net_context *ctx,
+			       struct sockaddr *addr,
+			       socklen_t *addrlen)
+{
+	if (ctx == NULL || addr == NULL || addrlen == NULL) {
+		return -EINVAL;
+	}
+
+	if (IS_ENABLED(CONFIG_NET_TCP) &&
+	    net_context_get_type(ctx) == SOCK_STREAM) {
+		return net_tcp_endpoint_copy(ctx, addr, NULL, addrlen);
+	}
+
+	if (IS_ENABLED(CONFIG_NET_UDP) && net_context_get_type(ctx) == SOCK_DGRAM) {
+		socklen_t newlen;
+
+		if (IS_ENABLED(CONFIG_NET_IPV4) && ctx->local.family == AF_INET) {
+			newlen = MIN(*addrlen, sizeof(struct sockaddr_in));
+
+			net_sin(addr)->sin_family = AF_INET;
+			net_sin(addr)->sin_port = net_sin_ptr(&ctx->local)->sin_port;
+			memcpy(&net_sin(addr)->sin_addr,
+			       net_sin_ptr(&ctx->local)->sin_addr,
+			       sizeof(struct in_addr));
+
+		} else if (IS_ENABLED(CONFIG_NET_IPV6) && ctx->local.family == AF_INET6) {
+			newlen = MIN(*addrlen, sizeof(struct sockaddr_in6));
+
+			net_sin6(addr)->sin6_family = AF_INET6;
+			net_sin6(addr)->sin6_port = net_sin6_ptr(&ctx->local)->sin6_port;
+			memcpy(&net_sin6(addr)->sin6_addr,
+			       net_sin6_ptr(&ctx->local)->sin6_addr,
+			       sizeof(struct in6_addr));
+		} else {
+			return -EAFNOSUPPORT;
+		}
+
+		*addrlen = newlen;
+
+		return 0;
+	}
+
+	return -ENOPROTOOPT;
 }
 
 void net_context_foreach(net_context_cb_t cb, void *user_data)

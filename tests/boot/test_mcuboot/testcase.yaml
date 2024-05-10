@@ -32,8 +32,9 @@ tests:
       - mimxrt1160_evk/mimxrt1166/cm7
       - mimxrt1170_evk/mimxrt1176/cm7
       - mimxrt595_evk/mimxrt595s/cm33
-      - mimxrt685_evk
+      - mimxrt685_evk/mimxrt685s/cm33
       - nrf52840dk/nrf52840
+      - rd_rw612_bga
     integration_platforms:
       - frdm_k64f
       - nrf52840dk/nrf52840

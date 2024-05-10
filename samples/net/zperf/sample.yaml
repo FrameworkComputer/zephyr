@@ -40,6 +40,12 @@ tests:
       - net
       - zperf
     depends_on: usb_device
+    # native_sim usb driver does not work with CONFIG_POSIX_API
+    platform_exclude:
+      - native_sim
+      - native_sim/native/64
+      - native_posix
+      - native_posix/native/64
   sample.net.zperf.device_next_ecm:
     harness: net
     extra_args: OVERLAY_CONFIG="overlay-usbd_next_ecm.conf"
@@ -58,6 +64,12 @@ tests:
       - net
       - zperf
     depends_on: usb_device
+    # native_sim usb driver does not work with CONFIG_POSIX_API
+    platform_exclude:
+      - native_sim
+      - native_sim/native/64
+      - native_posix
+      - native_posix/native/64
   sample.net.zperf.netusb_rndis:
     harness: net
     extra_args: OVERLAY_CONFIG="overlay-netusb.conf"
@@ -69,6 +81,12 @@ tests:
       - net
       - zperf
     depends_on: usb_device
+    # native_sim usb driver does not work with CONFIG_POSIX_API
+    platform_exclude:
+      - native_sim
+      - native_sim/native/64
+      - native_posix
+      - native_posix/native/64
   sample.net.zperf.shield:
     harness: net
     platform_allow: reel_board
@@ -80,16 +98,3 @@ tests:
     depends_on:
       - arduino_spi
       - arduino_gpio
-  sample.net.zperf.nxp_enet_experimental:
-    extra_args: EXTRA_DTC_OVERLAY_FILE="nxp,enet-experimental.overlay"
-    tags:
-      - net
-      - zperf
-    platform_allow:
-      - mimxrt1050_evk
-      - mimxrt1060_evk
-      - mimxrt1064_evk
-      - mimxrt1024_evk
-      - frdm_k64f
-      - mimxrt1170_evk/mimxrt1176/cm7
-      - mimxrt1160_evk/mimxrt1166/cm7

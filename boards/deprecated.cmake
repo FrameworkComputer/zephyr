@@ -39,7 +39,7 @@ set(adp_xc7k_ae350_DEPRECATED
     adp_xc7k
 )
 set(am62x_m4_phyboard_lyra_DEPRECATED
-    phyboard_lyra_am62x/am6234/m4
+    phyboard_lyra/am6234/m4
 )
 set(am62x_m4_sk_DEPRECATED
     sk_am62/am6234/m4
@@ -384,7 +384,7 @@ set(mimxrt595_evk_cm33_DEPRECATED
     mimxrt595_evk/mimxrt595s/cm33
 )
 set(mimxrt685_evk_cm33_DEPRECATED
-    mimxrt685_evk
+    mimxrt685_evk/mimxrt685s/cm33
 )
 set(mps2_an385_DEPRECATED
     mps2/an385
@@ -404,6 +404,15 @@ set(mps3_an547_DEPRECATED
 set(mps3_an547_ns_DEPRECATED
     mps3/an547/ns
 )
+
+set(native_posix_64_DEPRECATED
+    native_posix/native/64
+)
+
+set(native_sim_64_DEPRECATED
+    native_sim/native/64
+)
+
 set(nrf21540dk_nrf52840_DEPRECATED
     nrf21540dk
 )
@@ -445,6 +454,12 @@ set(nrf5340_audio_dk_nrf5340_cpuapp_ns_DEPRECATED
 )
 set(nrf5340_audio_dk_nrf5340_cpunet_DEPRECATED
     nrf5340_audio_dk/nrf5340/cpunet
+)
+set(nrf5340bsim_nrf5340_cpuapp_DEPRECATED
+    nrf5340bsim/nrf5340/cpuapp
+)
+set(nrf5340bsim_nrf5340_cpunet_DEPRECATED
+    nrf5340bsim/nrf5340/cpunet
 )
 set(nrf5340dk_nrf5340_cpuapp_DEPRECATED
     nrf5340dk/nrf5340/cpuapp
@@ -573,7 +588,7 @@ set(nxp_adsp_imx8m_DEPRECATED
     imx8mp_evk/mimx8ml8/adsp
 )
 set(nxp_adsp_imx8ulp_DEPRECATED
-    imx8ulp_evk/imx8ulp/adsp
+    imx8ulp_evk/mimx8ud7/adsp
 )
 set(nxp_adsp_imx8x_DEPRECATED
     imx8qxp_mek/mimx8qx6/adsp
@@ -615,7 +630,7 @@ set(pan1783a_pa_evb_cpunet_DEPRECATED
     pan1783a_pa_evb/nrf5340/cpunet
 )
 set(phycore_am62x_a53_DEPRECATED
-    phycore_am62x/am6234/a53
+    phyboard_lyra/am6234/a53
 )
 set(pico_pi_m4_DEPRECATED
     pico_pi/mcimx7d/m4

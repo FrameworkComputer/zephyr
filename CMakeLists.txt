@@ -200,7 +200,8 @@ elseif(CONFIG_SPEED_OPTIMIZATIONS)
 elseif(CONFIG_SIZE_OPTIMIZATIONS)
   set(OPTIMIZATION_FLAG ${OPTIMIZE_FOR_SIZE_FLAG}) # Default in kconfig
 else()
-  assert(0 "Unreachable code. Expected optimization level to have been chosen. See Kconfig.zephyr")
+  message(FATAL_ERROR
+    "Unreachable code. Expected optimization level to have been chosen. See Kconfig.zephyr")
 endif()
 
 if(NOT CONFIG_ARCH_IS_SET)
@@ -247,7 +248,8 @@ if(CONFIG_CPP)
     set(STD_CPP_DIALECT_FLAGS $<TARGET_PROPERTY:compiler-cpp,dialect_cpp2b>)
     list(APPEND CMAKE_CXX_COMPILE_FEATURES ${compile_features_cpp20})
   else()
-    assert(0 "Unreachable code. Expected C++ standard to have been chosen. See Kconfig.zephyr.")
+    message(FATAL_ERROR
+      "Unreachable code. Expected C++ standard to have been chosen. See Kconfig.zephyr.")
   endif()
   set(CMAKE_CXX_COMPILE_FEATURES ${CMAKE_CXX_COMPILE_FEATURES} PARENT_SCOPE)
 
@@ -694,6 +696,13 @@ if(CONFIG_ZTEST)
 
 endif()
 
+get_property(
+  syscalls_include_list
+  TARGET syscalls_interface
+  PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+)
+list(APPEND SYSCALL_INCLUDE_DIRS ${syscalls_include_list})
+
 foreach(d ${SYSCALL_INCLUDE_DIRS})
   list(APPEND parse_syscalls_include_args
     --include ${d}
@@ -759,6 +768,7 @@ add_custom_command(OUTPUT include/generated/syscall_dispatch.c ${syscall_list_h}
   --json-file        ${syscalls_json}                     # Read this file
   --base-output      include/generated/syscalls           # Write to this dir
   --syscall-dispatch include/generated/syscall_dispatch.c # Write this file
+  --syscall-export-llext  include/generated/syscall_export_llext.c
   --syscall-list     ${syscall_list_h}
   $<$<BOOL:${CONFIG_USERSPACE}>:--gen-mrsh-files>
   ${SYSCALL_LONG_REGISTERS_ARG}
@@ -839,7 +849,7 @@ add_subdirectory(kernel)
 get_property(
   syscalls_file_list
   TARGET syscalls_interface
-  PROPERTY INTERFACE_INCLUDE_DIRECTORIES
+  PROPERTY INTERFACE_SOURCES
 )
 file(CONFIGURE OUTPUT ${syscalls_file_list_output}
      CONTENT "@syscalls_file_list@" @ONLY)
@@ -875,6 +885,13 @@ foreach(zephyr_lib ${ZEPHYR_LIBS_PROPERTY})
   # TODO: Could this become an INTERFACE property of zephyr_interface?
   add_dependencies(${zephyr_lib} zephyr_generated_headers)
 endforeach()
+
+if(CONFIG_LLEXT)
+  set(WHOLE_ARCHIVE_LIBS ${ZEPHYR_LIBS_PROPERTY} kernel)
+else()
+  set(WHOLE_ARCHIVE_LIBS ${ZEPHYR_LIBS_PROPERTY})
+  set(NO_WHOLE_ARCHIVE_LIBS kernel)
+endif()
 
 get_property(OUTPUT_FORMAT        GLOBAL PROPERTY PROPERTY_OUTPUT_FORMAT)
 
@@ -940,7 +957,28 @@ if(CONFIG_USERSPACE)
 endif()
 
 get_property(CSTD GLOBAL PROPERTY CSTD)
-set_ifndef(CSTD c99)
+if(NOT DEFINED CSTD)
+  if(CONFIG_STD_C23)
+    set(CSTD c2x)
+  elseif(CONFIG_STD_C17)
+    set(CSTD c17)
+  elseif(CONFIG_STD_C11)
+    set(CSTD c11)
+  elseif(CONFIG_STD_C99)
+    set(CSTD c99)
+  elseif(CONFIG_STD_C90)
+    set(CSTD c90)
+  else()
+    message(FATAL_ERROR "Unreachable code. Expected C standard to have been chosen.")
+  endif()
+
+  if(CONFIG_GNU_C_EXTENSIONS)
+    string(REPLACE "c" "gnu" CSTD "${CSTD}")
+  endif()
+else()
+  message(DEPRECATION
+    "Global CSTD property is deprecated, see Kconfig.zephyr for C Standard options.")
+endif()
 
 # @Intent: Obtain compiler specific flag for specifying the c standard
 zephyr_compile_options(
@@ -1689,7 +1727,7 @@ endif()
 if(CONFIG_OUTPUT_DISASSEMBLY)
 if(CONFIG_OUTPUT_DISASSEMBLE_ALL)
     set(disassembly_type "$<TARGET_PROPERTY:bintools,disassembly_flag_all>")
-  else()
+  elseif (CONFIG_OUTPUT_DISASSEMBLY_WITH_SOURCE)
     set(disassembly_type "$<TARGET_PROPERTY:bintools,disassembly_flag_inline_source>")
   endif()
   list(APPEND

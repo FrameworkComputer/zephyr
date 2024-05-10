@@ -49,7 +49,6 @@ class Harness:
         self.regex = []
         self.matches = OrderedDict()
         self.ordered = True
-        self.repeat = 1
         self.id = None
         self.fail_on_fault = True
         self.fault = False
@@ -78,7 +77,6 @@ class Harness:
         if config:
             self.type = config.get('type', None)
             self.regex = config.get('regex', [])
-            self.repeat = config.get('repeat', 1)
             self.ordered = config.get('ordered', True)
             self.record = config.get('record', {})
             if self.record:
@@ -381,6 +379,10 @@ class Pytest(Harness):
         options = handler.options
         if runner := hardware.runner or options.west_runner:
             command.append(f'--runner={runner}')
+
+        if hardware.runner_params:
+            for param in hardware.runner_params:
+                command.append(f'--runner-params={param}')
 
         if options.west_flash and options.west_flash != []:
             command.append(f'--west-flash-extra-args={options.west_flash}')
@@ -706,8 +708,9 @@ class Bsim(Harness):
             new_exe_name = f'bs_{self.instance.platform.name}_{new_exe_name}'
         else:
             new_exe_name = self.instance.name
-            new_exe_name = new_exe_name.replace(os.path.sep, '_').replace('.', '_')
             new_exe_name = f'bs_{new_exe_name}'
+
+        new_exe_name = new_exe_name.replace(os.path.sep, '_').replace('.', '_').replace('@', '_')
 
         new_exe_path: str = os.path.join(bsim_out_path, 'bin', new_exe_name)
         logger.debug(f'Copying executable from {original_exe_path} to {new_exe_path}')

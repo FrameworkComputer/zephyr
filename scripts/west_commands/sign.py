@@ -299,7 +299,7 @@ class ImgtoolSigner(Signer):
                 log.inf(f'unsigned bin: {in_bin}')
                 log.inf(f'signed bin:   {out_bin}')
                 log.dbg(quote_sh_list(sign_bin))
-            subprocess.check_call(sign_bin)
+            subprocess.check_call(sign_bin, stdout=subprocess.PIPE if args.quiet else None)
         if in_hex:
             out_hex = args.shex or str(b / 'zephyr' / 'zephyr.signed.hex')
             sign_hex = sign_base + [in_hex, out_hex]
@@ -307,7 +307,7 @@ class ImgtoolSigner(Signer):
                 log.inf(f'unsigned hex: {in_hex}')
                 log.inf(f'signed hex:   {out_hex}')
                 log.dbg(quote_sh_list(sign_hex))
-            subprocess.check_call(sign_hex)
+            subprocess.check_call(sign_hex, stdout=subprocess.PIPE if args.quiet else None)
 
     @staticmethod
     def find_imgtool(command, args):
@@ -406,7 +406,7 @@ class ImgtoolSigner(Signer):
 
         # The partitions node, and its subnode, must provide
         # the size of slot1_partition or slot0_partition partition via the regs property.
-        slot_key = 'slot0_partition' if 'slot1_partition' in slots else 'slot0_partition'
+        slot_key = 'slot1_partition' if 'slot1_partition' in slots else 'slot0_partition'
         if not slots[slot_key].regs:
             log.die(f'{slot_key} flash partition has no regs property;',
                     "can't determine size of slot")

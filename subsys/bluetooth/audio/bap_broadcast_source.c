@@ -1017,6 +1017,11 @@ int bt_bap_broadcast_source_start(struct bt_bap_broadcast_source *source, struct
 	 */
 	broadcast_source_set_state(source, BT_BAP_EP_STATE_ENABLING);
 
+	/* Set the enabling state early in case that the BIS is connected before we can manage to
+	 * set it afterwards
+	 */
+	broadcast_source_set_state(source, BT_BAP_EP_STATE_ENABLING);
+
 	err = bt_iso_big_create(adv, &param, &source->big);
 	if (err != 0) {
 		LOG_DBG("Failed to create BIG: %d", err);

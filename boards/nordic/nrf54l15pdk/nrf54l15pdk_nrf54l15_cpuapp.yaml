@@ -9,12 +9,13 @@ toolchain:
   - gnuarmemb
   - xtools
   - zephyr
-ram: 256
-flash: 1536
+ram: 188
+flash: 324
 supported:
   - counter
   - gpio
   - i2c
+  - pwm
   - spi
   - watchdog
   - i2s

@@ -10,6 +10,7 @@
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
 #include <zephyr/linker/sections.h>
+#include <zephyr/sys/util_macro.h>
 
 #include <cortex_m/exception.h>
 #include <fsl_power.h>
@@ -137,6 +138,15 @@ __ramfunc void clock_init(void)
 	/* Call function set_flexspi_clock() to set flexspi clock source to aux0_pll_clk in XIP. */
 	set_flexspi_clock(FLEXSPI, 2U, 2U);
 
+#if (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(wwdt), nxp_lpc_wwdt, okay))
+	CLOCK_AttachClk(kLPOSC_to_WDT0_CLK);
+#else
+	/* Allowed to select none if not being used for watchdog to
+	 * reduce power
+	 */
+	CLOCK_AttachClk(kNONE_to_WDT0_CLK);
+#endif
+
 /* Any flexcomm can be USART */
 #if (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(flexcomm0), nxp_lpc_usart, okay)) && CONFIG_SERIAL
 	CLOCK_SetFRGClock(&(const clock_frg_clk_config_t){0, kCLOCK_FrgPllDiv, 255, 0});
@@ -199,6 +209,20 @@ __ramfunc void clock_init(void)
 #endif
 #endif /* CONFIG_SPI */
 
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(dmic0), okay) && CONFIG_AUDIO_DMIC_MCUX
+	/* Clock DMIC from Audio PLL. PLL output is sourced from AVPLL
+	 * channel 1, which is clocked at 12.288 MHz. We can divide this
+	 * by 4 to achieve the desired DMIC bit clk of 3.072 MHz
+	 */
+	CLOCK_AttachClk(kAUDIO_PLL_to_DMIC_CLK);
+	CLOCK_SetClkDiv(kCLOCK_DivDmicClk, 4);
+#endif
+
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(lcdic), okay) && CONFIG_MIPI_DBI_NXP_LCDIC
+	CLOCK_AttachClk(kMAIN_CLK_to_LCD_CLK);
+	RESET_PeripheralReset(kLCDIC_RST_SHIFT_RSTn);
+#endif
+
 #ifdef CONFIG_COUNTER_MCUX_CTIMER
 #if (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(ctimer0), nxp_lpc_ctimer, okay))
 	CLOCK_AttachClk(kSFRO_to_CTIMER0);
@@ -219,6 +243,17 @@ __ramfunc void clock_init(void)
 	RESET_PeripheralReset(kFREEMRT_RST_SHIFT_RSTn);
 #endif
 
+#if DT_NODE_HAS_STATUS(DT_NODELABEL(usb_otg), okay) && CONFIG_USB_DC_NXP_EHCI
+	/* Enable system xtal from Analog */
+	SYSCTL2->ANA_GRP_CTRL |= SYSCTL2_ANA_GRP_CTRL_PU_AG_MASK;
+	/* reset USB */
+	RESET_PeripheralReset(kUSB_RST_SHIFT_RSTn);
+	/* enable usb clock */
+	CLOCK_EnableClock(kCLOCK_Usb);
+	/* enable usb phy clock */
+	CLOCK_EnableUsbhsPhyClock();
+#endif
+
 }
 
 /**
@@ -233,6 +268,24 @@ __ramfunc void clock_init(void)
 
 static int nxp_rw600_init(void)
 {
+#if (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(wwdt), nxp_lpc_wwdt, okay))
+	POWER_EnableResetSource(kPOWER_ResetSourceWdt);
+#endif
+
+#if DT_NODE_HAS_PROP(DT_NODELABEL(pmu), reset_causes_en)
+#define PMU_RESET_CAUSES_ \
+	DT_FOREACH_PROP_ELEM_SEP(DT_NODELABEL(pmu), reset_causes_en, DT_PROP_BY_IDX, (|))
+#define PMU_RESET_CAUSES \
+	COND_CODE_0(IS_EMPTY(PMU_RESET_CAUSES_), (PMU_RESET_CAUSES_), (0))
+#define WDT_RESET \
+	COND_CODE_1(DT_NODE_HAS_STATUS_OKAY(wwdt), (kPOWER_ResetSourceWdt), (0))
+#define RESET_CAUSES \
+	(PMU_RESET_CAUSES | WDT_RESET)
+#else
+#define RESET_CAUSES 0
+#endif
+
+	POWER_EnableResetSource(RESET_CAUSES);
 
 	/* Initialize clock */
 	clock_init();

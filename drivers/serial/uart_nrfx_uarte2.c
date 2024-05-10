@@ -115,6 +115,9 @@ struct uarte_async_data {
 	uart_callback_t user_callback;
 	void *user_data;
 
+	uint8_t *en_rx_buf;
+	size_t en_rx_len;
+
 	struct k_timer tx_timer;
 	struct k_timer rx_timer;
 
@@ -239,22 +242,21 @@ static void on_rx_done(const struct device *dev, const nrfx_uarte_event_t *event
 	struct uarte_nrfx_data *data = dev->data;
 	struct uart_event evt;
 
-	if (event->data.rx.length) {
-		if (data->async->err) {
-			evt.type = UART_RX_STOPPED;
-			evt.data.rx_stop.reason = UARTE_ERROR_FROM_MASK(data->async->err);
-			evt.data.rx_stop.data.buf = event->data.rx.p_buffer;
-			evt.data.rx_stop.data.len = event->data.rx.length;
-			/* Keep error code for uart_err_check(). */
-			if (!IS_INT_DRIVEN_API(dev)) {
-				data->async->err = 0;
-			}
-		} else {
-			evt.type = UART_RX_RDY,
-			evt.data.rx.buf = event->data.rx.p_buffer,
-			evt.data.rx.len = event->data.rx.length,
-			evt.data.rx.offset = 0;
+	if (data->async->err) {
+		evt.type = UART_RX_STOPPED;
+		evt.data.rx_stop.reason = UARTE_ERROR_FROM_MASK(data->async->err);
+		evt.data.rx_stop.data.buf = event->data.rx.p_buffer;
+		evt.data.rx_stop.data.len = event->data.rx.length;
+		/* Keep error code for uart_err_check(). */
+		if (!IS_INT_DRIVEN_API(dev)) {
+			data->async->err = 0;
 		}
+		data->async->user_callback(dev, &evt, data->async->user_data);
+	} else if (event->data.rx.length) {
+		evt.type = UART_RX_RDY,
+		evt.data.rx.buf = event->data.rx.p_buffer,
+		evt.data.rx.len = event->data.rx.length,
+		evt.data.rx.offset = 0;
 		data->async->user_callback(dev, &evt, data->async->user_data);
 	}
 
@@ -288,6 +290,22 @@ static void on_rx_buf_req(const struct device *dev)
 	struct uarte_async_data *adata = data->async;
 	const nrfx_uarte_t *nrfx_dev = get_nrfx_dev(dev);
 
+	/* If buffer is not null it indicates that event comes from RX enabling
+	 * function context. We need to pass provided buffer to the driver.
+	 */
+	if (adata->en_rx_buf) {
+		uint8_t *buf = adata->en_rx_buf;
+		size_t len = adata->en_rx_len;
+		nrfx_err_t err;
+
+		adata->en_rx_buf = NULL;
+		adata->en_rx_len = 0;
+
+		err = nrfx_uarte_rx_buffer_set(nrfx_dev, buf, len);
+		__ASSERT_NO_MSG(err == NRFX_SUCCESS);
+		return;
+	}
+
 	struct uart_event evt = {
 		.type = UART_RX_BUF_REQUEST
 	};
@@ -296,8 +314,6 @@ static void on_rx_buf_req(const struct device *dev)
 	 * reception of one buffer was terminated to restart another transfer.
 	 */
 	if (!K_TIMEOUT_EQ(adata->rx_timeout, K_NO_WAIT)) {
-		/* Read and clear any pending new data information. */
-		nrfx_uarte_rx_new_data_check(nrfx_dev);
 		nrfx_uarte_rxdrdy_enable(nrfx_dev);
 	}
 	data->async->user_callback(dev, &evt, data->async->user_data);
@@ -367,6 +383,15 @@ static int api_tx(const struct device *dev, const uint8_t *buf, size_t len, int3
 	const nrfx_uarte_t *nrfx_dev = get_nrfx_dev(dev);
 	nrfx_err_t err;
 	bool hwfc;
+
+#if CONFIG_PM_DEVICE
+	enum pm_device_state state;
+
+	(void)pm_device_state_get(dev, &state);
+	if (state != PM_DEVICE_STATE_ACTIVE) {
+		return -ECANCELED;
+	}
+#endif
 
 #if CONFIG_UART_USE_RUNTIME_CONFIGURE
 	hwfc = data->uart_config.flow_ctrl == UART_CFG_FLOW_CTRL_RTS_CTS;
@@ -469,21 +494,28 @@ static int api_rx_enable(const struct device *dev, uint8_t *buf, size_t len, int
 	if (timeout != SYS_FOREVER_US) {
 		adata->idle_cnt = RX_TIMEOUT_DIV + 1;
 		adata->rx_timeout = K_USEC(timeout / RX_TIMEOUT_DIV);
+		nrfx_uarte_rxdrdy_enable(nrfx_dev);
 	} else {
 		adata->rx_timeout = K_NO_WAIT;
 	}
 
-	err = nrfx_uarte_rx_buffer_set(nrfx_dev, buf, len);
-	if (err != NRFX_SUCCESS) {
-		return -EIO;
-	}
+	/* Store the buffer. It will be passed to the driver in the event handler.
+	 * We do that instead of calling nrfx_uarte_rx_buffer_set here to ensure
+	 * that nrfx_uarte_rx_buffer_set is called when RX enable configuration
+	 * flags are already known to the driver (e.g. if flushed data shall be
+	 * kept or not).
+	 */
+	adata->err = 0;
+	adata->en_rx_buf = buf;
+	adata->en_rx_len = len;
+
+	atomic_or(&data->flags, UARTE_DATA_FLAG_RX_ENABLED);
 
 	err = nrfx_uarte_rx_enable(nrfx_dev, flags);
 	if (err != NRFX_SUCCESS) {
+		atomic_and(&data->flags, ~UARTE_DATA_FLAG_RX_ENABLED);
 		return (err == NRFX_ERROR_BUSY) ? -EBUSY : -EIO;
 	}
-
-	atomic_or(&data->flags, UARTE_DATA_FLAG_RX_ENABLED);
 
 	return 0;
 }
@@ -550,6 +582,15 @@ static void api_poll_out(const struct device *dev, unsigned char out_char)
 {
 	const nrfx_uarte_t *nrfx_dev = get_nrfx_dev(dev);
 	nrfx_err_t err;
+
+#if CONFIG_PM_DEVICE
+	enum pm_device_state state;
+
+	(void)pm_device_state_get(dev, &state);
+	if (state != PM_DEVICE_STATE_ACTIVE) {
+		return;
+	}
+#endif
 
 	do {
 		/* When runtime PM is used we cannot use early return because then
@@ -932,7 +973,8 @@ static int uarte_nrfx_pm_action(const struct device *dev,
 			UARTE_MEMORY_SECTION(idx) __aligned(4);					\
 	static nrfx_uarte_rx_cache_t uarte##idx##_rx_cache_scratch;				\
 	IF_ENABLED(CONFIG_UART_##idx##_INTERRUPT_DRIVEN,					\
-		(static uint8_t a2i_rx_buf##idx[CONFIG_UART_##idx##_A2I_RX_SIZE];))		\
+		(static uint8_t a2i_rx_buf##idx[CONFIG_UART_##idx##_A2I_RX_SIZE]		\
+			UARTE_MEMORY_SECTION(idx) __aligned(4);))				\
 	PINCTRL_DT_DEFINE(UARTE(idx));								\
 	static const struct uart_async_to_irq_config uarte_a2i_config_##idx =			\
 		UART_ASYNC_TO_IRQ_API_CONFIG_INITIALIZER(&a2i_api,				\

@@ -106,11 +106,6 @@ static sys_slist_t xtensa_domain_list;
 
 extern char _heap_end[];
 extern char _heap_start[];
-extern char __data_start[];
-extern char __data_end[];
-extern char _bss_start[];
-extern char _bss_end[];
-
 /*
  * Static definition of all code & data memory regions of the
  * current Zephyr image. This information must be available &
@@ -284,19 +279,6 @@ static void xtensa_init_page_tables(void)
 		map_memory(range->start, range->end, attrs, shared);
 	}
 
-/**
- * GCC complains about usage of the SoC MMU range ARRAY_SIZE
- * (xtensa_soc_mmu_ranges) as the default weak declaration is
- * an empty array, and any access to its element is considered
- * out of bound access. However, we have a number of element
- * variable to guard against this (... if done correctly).
- * Besides, this will almost be overridden by the SoC layer.
- * So tell GCC to ignore this.
- */
-#if defined(__GNUC__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Warray-bounds"
-#endif
 	for (entry = 0; entry < xtensa_soc_mmu_ranges_num; entry++) {
 		const struct xtensa_mmu_range *range = &xtensa_soc_mmu_ranges[entry];
 		bool shared;
@@ -307,9 +289,7 @@ static void xtensa_init_page_tables(void)
 
 		map_memory(range->start, range->end, attrs, shared);
 	}
-#if defined(__GNUC__)
-#pragma GCC diagnostic pop
-#endif
+
 	/* Finally, the direct-mapped pages used in the page tables
 	 * must be fixed up to use the same cache attribute (but these
 	 * must be writable, obviously).  They shouldn't be left at
@@ -757,7 +737,8 @@ static uint32_t *dup_table(uint32_t *source_table)
 	for (i = 0; i < XTENSA_L1_PAGE_TABLE_ENTRIES; i++) {
 		uint32_t *l2_table, *src_l2_table;
 
-		if (is_pte_illegal(source_table[i])) {
+		if (is_pte_illegal(source_table[i]) ||
+			(i == XTENSA_MMU_L1_POS(XTENSA_MMU_PTEVADDR))) {
 			dst_table[i] = XTENSA_MMU_PTE_ILLEGAL;
 			continue;
 		}
@@ -1063,7 +1044,7 @@ static bool page_validate(uint32_t *ptables, uint32_t page, uint8_t ring, bool w
 	return true;
 }
 
-int arch_buffer_validate(void *addr, size_t size, int write)
+int arch_buffer_validate(const void *addr, size_t size, int write)
 {
 	int ret = 0;
 	uint8_t *virt;
