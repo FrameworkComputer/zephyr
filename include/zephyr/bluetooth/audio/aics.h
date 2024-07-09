@@ -12,6 +12,9 @@
  *
  * @defgroup bt_gatt_aics Audio Input Control Service (AICS)
  *
+ * @since 2.6
+ * @version 0.8.0
+ *
  * @ingroup bluetooth
  * @{
  *
@@ -23,9 +26,11 @@
  * automatically handle any changes to that. If out of date, the client implementation will
  * autonomously read the change counter value when executing a write request.
  *
- * [Experimental] Users should note that the APIs can change as a part of ongoing development.
  */
+#include <stdint.h>
+#include <stdbool.h>
 
+#include <zephyr/autoconf.h>
 #include <zephyr/bluetooth/bluetooth.h>
 
 #ifdef __cplusplus

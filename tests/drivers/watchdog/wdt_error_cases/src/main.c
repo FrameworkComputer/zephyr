@@ -42,7 +42,7 @@
 #define DEFAULT_WINDOW_MIN (0U)
 
 /* Align tests to the specific target: */
-#if defined(CONFIG_SOC_NRF54L15)
+#if defined(CONFIG_SOC_NRF54L15) || defined(CONFIG_SOC_NRF54H20)
 #define WDT_TEST_FLAGS                                                                             \
 	(WDT_DISABLE_SUPPORTED | WDT_FLAG_RESET_SOC_SUPPORTED |                                    \
 	 WDT_FLAG_ONLY_ONE_TIMEOUT_VALUE_SUPPORTED | WDT_OPT_PAUSE_IN_SLEEP_SUPPORTED |            \
@@ -774,6 +774,48 @@ ZTEST(wdt_coverage, test_08d_wdt_disable_check_timeouts_uninstalled)
 
 	/* m_test_08d_B_value is set to TEST_08D_B_TAG in callback wdt_test_08d_B_cb */
 	zassert_equal(m_test_08d_B_value, 0, "Timeout B has fired while it shouldn't");
+}
+
+/**
+ * @brief Test error code when wdt_setup() is called after wdt_disable()
+ *
+ * Confirm that wdt_setup() returns error value or ASSERTION FAIL
+ * when it's called before any timeout was configured with wdt_install_timeouts().
+ * All timeouts were uninstalled by calling wdt_disable().
+ *
+ */
+ZTEST(wdt_coverage, test_08e_wdt_setup_immediately_after_wdt_disable)
+{
+	int ret;
+
+	if (!(WDT_TEST_FLAGS & WDT_DISABLE_SUPPORTED)) {
+		/* Skip this test because wdt_disable() is NOT supported. */
+		ztest_test_skip();
+	}
+
+	m_cfg_wdt0.callback = NULL;
+	m_cfg_wdt0.flags = DEFAULT_FLAGS;
+	m_cfg_wdt0.window.max = DEFAULT_WINDOW_MAX;
+	m_cfg_wdt0.window.min = DEFAULT_WINDOW_MIN;
+
+	ret = wdt_install_timeout(wdt, &m_cfg_wdt0);
+	zassert_true(ret >= 0, "Watchdog install error, got unexpected value of %d", ret);
+	TC_PRINT("Configured WDT channel %d\n", ret);
+
+	ret = wdt_setup(wdt, DEFAULT_OPTIONS);
+	zassert_true(ret == 0, "Watchdog setup error, got unexpected value of %d", ret);
+
+	ret = wdt_disable(wdt);
+	zassert_true(ret == 0, "Watchdog disable error, got unexpected value of %d", ret);
+
+	/* Call wdt_setup when no timeouts are configured. */
+	/* Timeouts were removed by calling wdt_disable(). */
+	ztest_set_assert_valid(true);
+	ret = wdt_setup(wdt, DEFAULT_OPTIONS);
+	zassert_true(ret < 0,
+		     "Calling wdt_setup before installing timeouts should fail, got unexpected "
+		     "value of %d",
+		     ret);
 }
 
 /**

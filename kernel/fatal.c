@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/*
+ * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
+ * #line marks the *next* line, so it is off by one.
+ */
+#line 12
+
 #include <zephyr/kernel.h>
 
 #include <kernel_internal.h>
@@ -15,6 +21,7 @@
 #include <zephyr/fatal.h>
 #include <zephyr/debug/coredump.h>
 
+#line 25
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
 /* LCOV_EXCL_START */
@@ -35,7 +42,7 @@ FUNC_NORETURN __weak void arch_system_halt(unsigned int reason)
 
 /* LCOV_EXCL_START */
 __weak void k_sys_fatal_error_handler(unsigned int reason,
-				      const z_arch_esf_t *esf)
+				      const struct arch_esf *esf)
 {
 	ARG_UNUSED(esf);
 
@@ -82,7 +89,7 @@ FUNC_NORETURN void k_fatal_halt(unsigned int reason)
 }
 /* LCOV_EXCL_STOP */
 
-void z_fatal_error(unsigned int reason, const z_arch_esf_t *esf)
+void z_fatal_error(unsigned int reason, const struct arch_esf *esf)
 {
 	/* We can't allow this code to be preempted, but don't need to
 	 * synchronize between CPUs, so an arch-layer lock is

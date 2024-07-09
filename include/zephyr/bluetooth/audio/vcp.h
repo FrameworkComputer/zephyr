@@ -12,17 +12,19 @@
  *
  * @defgroup bt_gatt_vcp Volume Control Profile (VCP)
  *
+ * @since 2.7
+ * @version 0.8.0
+ *
  * @ingroup bluetooth
  * @{
- *
- * [Experimental] Users should note that the APIs can change
- * as a part of ongoing development.
  */
 
 #include <stdint.h>
 
 #include <zephyr/bluetooth/audio/aics.h>
 #include <zephyr/bluetooth/audio/vocs.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/sys/slist.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -244,7 +246,7 @@ struct bt_vcp_vol_ctlr_cb {
 	 * Called when the value is remotely read as the Volume Controller.
 	 * Called if the value is changed by the Volume Renderer.
 	 *
-	 * A non-zero value indicates the the volume has been changed on the
+	 * A non-zero value indicates the volume has been changed on the
 	 * Volume Renderer since it was booted.
 	 *
 	 * @param vol_ctlr  Volume Controller instance pointer.

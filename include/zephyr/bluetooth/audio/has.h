@@ -12,20 +12,22 @@
  *
  * @defgroup bt_has Hearing Access Service (HAS)
  *
+ * @since 3.1
+ * @version 0.8.0
+ *
  * @ingroup bluetooth
  * @{
  *
  * The Hearing Access Service is used to identify a hearing aid and optionally
  * to control hearing aid presets.
- *
- * [Experimental] Users should note that the APIs can change as a part of
- * ongoing development.
  */
 
-#include <sys/types.h>
+#include <stdint.h>
+#include <stdbool.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/sys/util_macro.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -63,7 +65,7 @@ enum bt_has_properties {
 	BT_HAS_PROP_AVAILABLE = BIT(1),
 };
 
-/** Hearing Aid device capablilities */
+/** Hearing Aid device capabilities */
 enum bt_has_capabilities {
 	BT_HAS_PRESET_SUPPORT = BIT(0),
 };

@@ -337,7 +337,7 @@ static inline void z_vrfy_z_log_msg_static_create(const void *source,
 {
 	return z_impl_z_log_msg_static_create(source, desc, package, data);
 }
-#include <syscalls/z_log_msg_static_create_mrsh.c>
+#include <zephyr/syscalls/z_log_msg_static_create_mrsh.c>
 #endif
 
 void z_log_msg_runtime_vcreate(uint8_t domain_id, const void *source,
@@ -356,6 +356,12 @@ void z_log_msg_runtime_vcreate(uint8_t domain_id, const void *source,
 		va_end(ap2);
 	} else {
 		plen = 0;
+	}
+
+	if (plen > Z_LOG_MSG_MAX_PACKAGE) {
+		LOG_WRN("Message dropped because it exceeds size limitation (%u)",
+			(uint32_t)Z_LOG_MSG_MAX_PACKAGE);
+		return;
 	}
 
 	size_t msg_wlen = Z_LOG_MSG_ALIGNED_WLEN(plen, dlen);

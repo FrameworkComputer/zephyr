@@ -23,10 +23,9 @@ config HTTP_PARSER_STRICT
 	  This option enables the strict parsing option
 
 config HTTP_CLIENT
-	bool "HTTP client API [EXPERIMENTAL]"
+	bool "HTTP client API"
 	select HTTP_PARSER
 	select HTTP_PARSER_URL
-	select EXPERIMENTAL
 	help
 	  HTTP client API
 
@@ -115,6 +114,14 @@ config HTTP_SERVER_WEBSOCKET
 	  upgraded to a Websocket connection. The user can then define a Websocket
 	  handler that is called after upgrading to handle the Websocket network
 	  traffic.
+
+config HTTP_SERVER_RESOURCE_WILDCARD
+	bool "Allow wildcard matching of resources"
+	select FNMATCH
+	help
+	  Allow user to specify wildcards when setting up resource strings.
+	  This means that instead of specifying multiple resources with exact
+	  string matches, one resource handler could handle multiple URLs.
 
 endif
 

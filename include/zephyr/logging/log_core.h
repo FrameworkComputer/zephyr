@@ -4,6 +4,12 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+/*
+ * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
+ * #line marks the *next* line, so it is off by one.
+ */
+#line 12
+
 #ifndef ZEPHYR_INCLUDE_LOGGING_LOG_CORE_H_
 #define ZEPHYR_INCLUDE_LOGGING_LOG_CORE_H_
 
@@ -142,15 +148,15 @@ extern "C" {
 		(Z_LOG_STR_WITH_PREFIX(__VA_ARGS__)), (__VA_ARGS__))
 
 #define Z_LOG_LEVEL_CHECK(_level, _check_level, _default_level) \
-	(_level <= Z_LOG_RESOLVED_LEVEL(_check_level, _default_level))
+	((_level) <= Z_LOG_RESOLVED_LEVEL(_check_level, _default_level))
 
 #define Z_LOG_CONST_LEVEL_CHECK(_level)					    \
 	(IS_ENABLED(CONFIG_LOG) &&					    \
 	(Z_LOG_LEVEL_CHECK(_level, CONFIG_LOG_OVERRIDE_LEVEL, LOG_LEVEL_NONE) \
 	||								    \
 	((IS_ENABLED(CONFIG_LOG_OVERRIDE_LEVEL) == false) &&		    \
-	(_level <= __log_level) &&					    \
-	(_level <= CONFIG_LOG_MAX_LEVEL)				    \
+	((_level) <= __log_level) &&					    \
+	((_level) <= CONFIG_LOG_MAX_LEVEL)				    \
 	)								    \
 	))
 
@@ -198,7 +204,7 @@ static inline char z_log_minimal_level_to_char(int level)
  * emitted instead. String check may increase compilation time so it is not
  * always performed (could significantly increase CI time).
  */
-#if CONFIG_LOG_FMT_STRING_VALIDATE
+#ifdef CONFIG_LOG_FMT_STRING_VALIDATE
 #define LOG_STRING_WARNING(_mode, _src, ...) \
 	    Z_LOG_MSG_CREATE(UTIL_NOT(IS_ENABLED(CONFIG_USERSPACE)), _mode, \
 			     Z_LOG_LOCAL_DOMAIN_ID, _src, LOG_LEVEL_ERR, NULL, 0, \
@@ -258,7 +264,7 @@ static inline char z_log_minimal_level_to_char(int level)
 	} \
 	int _mode; \
 	void *_src = IS_ENABLED(CONFIG_LOG_RUNTIME_FILTERING) ? \
-		(void *)_dsource : (void *)_source; \
+		(void *)(_dsource) : (void *)(_source); \
 	bool string_ok; \
 	LOG_POINTERS_VALIDATE(string_ok, __VA_ARGS__); \
 	if (!string_ok) { \
@@ -332,17 +338,17 @@ static inline char z_log_minimal_level_to_char(int level)
 	\
 	if (IS_ENABLED(CONFIG_LOG_MODE_MINIMAL)) { \
 		Z_LOG_TO_PRINTK(_level, "%s", _str); \
-		z_log_minimal_hexdump_print(_level, \
-					    (const char *)_data, _len);\
+		z_log_minimal_hexdump_print((_level), \
+					    (const char *)(_data), (_len));\
 		break; \
 	} \
 	if (!IS_ENABLED(CONFIG_LOG_FRONTEND) && IS_ENABLED(CONFIG_LOG_RUNTIME_FILTERING) && \
-	    !is_user_context && _level > Z_LOG_RUNTIME_FILTER(filters)) { \
+	    !is_user_context && (_level) > Z_LOG_RUNTIME_FILTER(filters)) { \
 		break; \
 	} \
 	int mode; \
 	void *_src = IS_ENABLED(CONFIG_LOG_RUNTIME_FILTERING) ? \
-		(void *)_dsource : (void *)_source; \
+		(void *)(_dsource) : (void *)(_source); \
 	Z_LOG_MSG_CREATE(UTIL_NOT(IS_ENABLED(CONFIG_USERSPACE)), mode, \
 				  Z_LOG_LOCAL_DOMAIN_ID, _src, _level, \
 			  _data, _len, \
@@ -418,7 +424,7 @@ static inline char z_log_minimal_level_to_char(int level)
  * two other backends are set for ERR, returned level is INF.
  */
 #define Z_LOG_RUNTIME_FILTER(_filter) \
-	LOG_FILTER_SLOT_GET(&_filter, LOG_FILTER_AGGR_SLOT_IDX)
+	LOG_FILTER_SLOT_GET(&(_filter), LOG_FILTER_AGGR_SLOT_IDX)
 
 /** @brief Log level value used to indicate log entry that should not be
  *	   formatted (raw string).

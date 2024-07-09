@@ -5,11 +5,11 @@
  *
  * @defgroup bt_gatt_mcc Media Control Client (MCC)
  *
+ * @since 3.0
+ * @version 0.8.0
+ *
  * @ingroup bluetooth
  * @{
- *
- * [Experimental] Users should note that the APIs can change
- * as a part of ongoing development.
  */
 
 /*
@@ -22,6 +22,7 @@
 #define ZEPHYR_INCLUDE_BLUETOOTH_AUDIO_MCC_
 
 #include <stdint.h>
+#include <stdbool.h>
 
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/net/buf.h>
@@ -407,7 +408,7 @@ typedef void (*bt_mcc_read_content_control_id_cb)(struct bt_conn *conn,
 typedef void (*bt_mcc_otc_obj_selected_cb)(struct bt_conn *conn, int err);
 
 /**
- * @brief Callback function for bt_mcc_otc_read_object_meatadata()
+ * @brief Callback function for bt_mcc_otc_read_object_metadata()
  *
  * Called when object metadata is read
  *
@@ -725,7 +726,7 @@ int bt_mcc_read_current_track_obj_id(struct bt_conn *conn);
 /**
  * @brief Set Current Track Object ID
  *
- * Set the Current Track to the the track given by the @p id parameter
+ * Set the Current Track to the track given by the @p id parameter
  *
  * @param conn  Connection to the peer device
  * @param id    Object Transfer Service ID (UINT48) of the track to set as the current track
@@ -746,7 +747,7 @@ int bt_mcc_read_next_track_obj_id(struct bt_conn *conn);
 /**
  * @brief Set Next Track Object ID
  *
- * Set the Next Track to the the track given by the @p id parameter
+ * Set the Next Track to the track given by the @p id parameter
  *
  * @param conn  Connection to the peer device
  * @param id   Object Transfer Service ID (UINT48) of the track to set as the next track
@@ -767,7 +768,7 @@ int bt_mcc_read_current_group_obj_id(struct bt_conn *conn);
 /**
  * @brief Set Current Group Object ID
  *
- * Set the Current Group to the the group given by the @p id parameter
+ * Set the Current Group to the group given by the @p id parameter
  *
  * @param conn  Connection to the peer device
  * @param id   Object Transfer Service ID (UINT48) of the group to set as the current group

@@ -488,7 +488,6 @@ controller and sets the bus speed:
 
    &can0 {
         status = "okay";
-        bus-speed = <125000>;
    };
 
 The ``&can0 { ... };`` syntax adds/overrides properties on the node with label
@@ -571,13 +570,6 @@ files for a board named ``plank``:
   .. code-block:: kconfig
 
      if BOARD_PLANK
-
-     # Always set CONFIG_BOARD here. This isn't meant to be customized,
-     # but is set as a "default" due to Kconfig language restrictions.
-     config BOARD
-             default "plank"
-
-     # Other options you want enabled by default go next. Examples:
 
      config FOO
              default y

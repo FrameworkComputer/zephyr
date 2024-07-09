@@ -1,10 +1,13 @@
-Zephyr HTTP Server
-==================
+.. zephyr:code-sample:: sockets-http-server
+   :name: HTTP Server
+   :relevant-api: http_service http_server tls_credentials
+
+   Implement an HTTP(s) Server demonstrating various resource types.
 
 Overview
 --------
 
-This sample application demonstrates the use of the ``http_server`` library.
+This sample application demonstrates the use of the :ref:`http_server_interface` library.
 This library provides high-level functions to simplify and abstract server implementation.
 The server supports the HTTP/1.1 protocol which can also be upgraded to HTTP/2,
 it also support native HTTP/2 protocol without upgrading.
@@ -100,7 +103,7 @@ CPU Usage Profiling
 We can use ``perf`` to collect statistics about the CPU usage of our server
 running in native_sim board with the ``stat`` command:
 
-.. code-block:: bash
+.. code-block:: console
 
    $ sudo perf stat -p <pid_of_server>
 
@@ -114,14 +117,14 @@ Hotspot Analysis
 ``perf record`` and ``perf report`` can be used together to identify the
 functions in our code that consume the most CPU time:
 
-.. code-block:: bash
+.. code-block:: console
 
    $ sudo perf record -g -p <pid_of_server> -o perf.data
 
 After running our server under load (For example, using ApacheBench tool),
 we can stop the recording and analyze the data using:
 
-.. code-block:: bash
+.. code-block:: console
 
    $ sudo perf report -i perf.data
 
@@ -133,13 +136,13 @@ spending the most time.
 To do this, we need to convert the ``perf.data`` to a format that ``FlameGraph``
 can understand:
 
-.. code-block:: bash
+.. code-block:: console
 
    $ sudo perf script | ~/FlameGraph/stackcollapse-perf.pl > out.perf-folded
 
 And, then, generate the ``FlameGraph``:
 
-.. code-block:: bash
+.. code-block:: console
 
    $ ~/FlameGraph/flamegraph.pl out.perf-folded > flamegraph.svg
 

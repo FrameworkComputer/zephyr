@@ -5,6 +5,9 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#undef _POSIX_C_SOURCE
+#define _POSIX_C_SOURCE 200809L /* Required for strnlen() */
+
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -31,12 +34,13 @@ static int handle_http1_static_resource(
 {
 #define RESPONSE_TEMPLATE			\
 	"HTTP/1.1 200 OK\r\n"			\
-	"Content-Type: text/html\r\n"		\
+	"%s%s\r\n"				\
 	"Content-Length: %d\r\n"
 
 	/* Add couple of bytes to total response */
 	char http_response[sizeof(RESPONSE_TEMPLATE) +
 			   sizeof("Content-Encoding: 01234567890123456789\r\n") +
+			   sizeof("Content-Type: \r\n") + HTTP_SERVER_MAX_CONTENT_TYPE_LEN +
 			   sizeof("xxxx") +
 			   sizeof("\r\n")];
 	const char *data;
@@ -51,10 +55,17 @@ static int handle_http1_static_resource(
 		    static_detail->common.content_encoding[0] != '\0') {
 			snprintk(http_response, sizeof(http_response),
 				 RESPONSE_TEMPLATE "Content-Encoding: %s\r\n\r\n",
+				 "Content-Type: ",
+				 static_detail->common.content_type == NULL ?
+				 "text/html" : static_detail->common.content_type,
 				 len, static_detail->common.content_encoding);
 		} else {
 			snprintk(http_response, sizeof(http_response),
-				 RESPONSE_TEMPLATE "\r\n", len);
+				 RESPONSE_TEMPLATE "\r\n",
+				 "Content-Type: ",
+				 static_detail->common.content_type == NULL ?
+				 "text/html" : static_detail->common.content_type,
+				 len);
 		}
 
 		ret = http_server_sendall(client, http_response,
@@ -74,12 +85,28 @@ static int handle_http1_static_resource(
 
 #define RESPONSE_TEMPLATE_CHUNKED			\
 	"HTTP/1.1 200 OK\r\n"				\
-	"Content-Type: text/html\r\n"			\
+	"%s%s\r\n"					\
 	"Transfer-Encoding: chunked\r\n\r\n"
 
 #define RESPONSE_TEMPLATE_DYNAMIC			\
 	"HTTP/1.1 200 OK\r\n"				\
-	"Content-Type: text/html\r\n\r\n"		\
+	"%s%s\r\n\r\n"
+
+#define SEND_RESPONSE(_template, _content_type)	({			\
+	char http_response[sizeof(_template) +				\
+			   sizeof("Content-Type: \r\n") +		\
+			   HTTP_SERVER_MAX_CONTENT_TYPE_LEN +		\
+			   sizeof("xxxx") +				\
+			   sizeof("\r\n")];				\
+	snprintk(http_response, sizeof(http_response),			\
+		 _template,						\
+		 "Content-Type: ",					\
+		 _content_type == NULL ?				\
+		 "text/html" : _content_type);				\
+	ret = http_server_sendall(client, http_response,		\
+				  strnlen(http_response,		\
+					  sizeof(http_response) - 1));	\
+	ret; })
 
 static int dynamic_get_req(struct http_resource_detail_dynamic *dynamic_detail,
 			   struct http_client_ctx *client)
@@ -89,8 +116,8 @@ static int dynamic_get_req(struct http_resource_detail_dynamic *dynamic_detail,
 	char *ptr;
 	char tmp[TEMP_BUF_LEN];
 
-	ret = http_server_sendall(client, RESPONSE_TEMPLATE_CHUNKED,
-				  sizeof(RESPONSE_TEMPLATE_CHUNKED) - 1);
+	ret = SEND_RESPONSE(RESPONSE_TEMPLATE_CHUNKED,
+			    dynamic_detail->common.content_type);
 	if (ret < 0) {
 		return ret;
 	}
@@ -167,8 +194,8 @@ static int dynamic_post_req(struct http_resource_detail_dynamic *dynamic_detail,
 	}
 
 	if (!client->headers_sent) {
-		ret = http_server_sendall(client, RESPONSE_TEMPLATE_CHUNKED,
-			sizeof(RESPONSE_TEMPLATE_CHUNKED) - 1);
+		ret = SEND_RESPONSE(RESPONSE_TEMPLATE_CHUNKED,
+				    dynamic_detail->common.content_type);
 		if (ret < 0) {
 			return ret;
 		}
@@ -209,11 +236,10 @@ static int dynamic_post_req(struct http_resource_detail_dynamic *dynamic_detail,
 			}
 
 			(void)http_server_sendall(client, crlf, 2);
-
-			offset += copy_len;
-			remaining -= copy_len;
 		}
 
+		offset += copy_len;
+		remaining -= copy_len;
 		copy_len = MIN(remaining, dynamic_detail->data_buffer_len);
 	}
 
@@ -266,9 +292,8 @@ static int handle_http1_dynamic_resource(
 	switch (client->method) {
 	case HTTP_HEAD:
 		if (user_method & BIT(HTTP_HEAD)) {
-			ret = http_server_sendall(
-					client, RESPONSE_TEMPLATE_DYNAMIC,
-					sizeof(RESPONSE_TEMPLATE_DYNAMIC) - 1);
+			ret = SEND_RESPONSE(RESPONSE_TEMPLATE_DYNAMIC,
+					    dynamic_detail->common.content_type);
 			if (ret < 0) {
 				return ret;
 			}

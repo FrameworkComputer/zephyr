@@ -156,7 +156,8 @@ static inline bool is_in_tcp_time_wait_state(struct net_context *context)
 #endif
 }
 
-static int check_used_port(struct net_if *iface,
+static int check_used_port(struct net_context *context,
+			   struct net_if *iface,
 			   enum net_ip_protocol proto,
 			   uint16_t local_port,
 			   const struct sockaddr *local_addr,
@@ -167,6 +168,10 @@ static int check_used_port(struct net_if *iface,
 
 	for (i = 0; i < NET_MAX_CONTEXT; i++) {
 		if (!net_context_is_used(&contexts[i])) {
+			continue;
+		}
+
+		if (context != NULL && context == &contexts[i]) {
 			continue;
 		}
 
@@ -313,7 +318,7 @@ static uint16_t find_available_port(struct net_context *context,
 
 	do {
 		local_port = sys_rand16_get() | 0x8000;
-	} while (check_used_port(NULL, net_context_get_proto(context),
+	} while (check_used_port(context, NULL, net_context_get_proto(context),
 				 htons(local_port), addr, false, false) == -EEXIST);
 
 	return htons(local_port);
@@ -327,7 +332,8 @@ bool net_context_port_in_use(enum net_ip_protocol proto,
 			   uint16_t local_port,
 			   const struct sockaddr *local_addr)
 {
-	return check_used_port(NULL, proto, htons(local_port), local_addr, false, false) != 0;
+	return check_used_port(NULL, NULL, proto, htons(local_port),
+			       local_addr, false, false) != 0;
 }
 
 #if defined(CONFIG_NET_CONTEXT_CHECK)
@@ -794,7 +800,7 @@ int net_context_bind(struct net_context *context, const struct sockaddr *addr,
 
 		ret = 0;
 		if (addr6->sin6_port) {
-			ret = check_used_port(iface,
+			ret = check_used_port(context, iface,
 					      context->proto,
 					      addr6->sin6_port,
 					      addr,
@@ -894,7 +900,7 @@ int net_context_bind(struct net_context *context, const struct sockaddr *addr,
 
 		ret = 0;
 		if (addr4->sin_port) {
-			ret = check_used_port(iface,
+			ret = check_used_port(context, iface,
 					      context->proto,
 					      addr4->sin_port,
 					      addr,
@@ -1730,6 +1736,26 @@ static int get_context_addr_preferences(struct net_context *context,
 #endif
 }
 
+static int get_context_timestamping(struct net_context *context,
+				    void *value, size_t *len)
+{
+#if defined(CONFIG_NET_CONTEXT_TIMESTAMPING)
+	*((uint8_t *)value) = context->options.timestamping;
+
+	if (len) {
+		*len = sizeof(uint8_t);
+	}
+
+	return 0;
+#else
+	ARG_UNUSED(context);
+	ARG_UNUSED(value);
+	ARG_UNUSED(len);
+
+	return -ENOTSUP;
+#endif
+}
+
 /* If buf is not NULL, then use it. Otherwise read the data to be written
  * to net_pkt from msghdr.
  */
@@ -1811,6 +1837,16 @@ static int context_setup_udp_packet(struct net_context *context,
 	if (ret) {
 		return ret;
 	}
+
+#if defined(CONFIG_NET_CONTEXT_TIMESTAMPING)
+	if (context->options.timestamping & SOF_TIMESTAMPING_TX_HARDWARE) {
+		net_pkt_set_tx_timestamping(pkt, true);
+	}
+
+	if (context->options.timestamping & SOF_TIMESTAMPING_RX_HARDWARE) {
+		net_pkt_set_rx_timestamping(pkt, true);
+	}
+#endif
 
 	return 0;
 }
@@ -3035,6 +3071,23 @@ static int set_context_addr_preferences(struct net_context *context,
 #endif
 }
 
+static int set_context_timestamping(struct net_context *context,
+				    const void *value, size_t len)
+{
+#if defined(CONFIG_NET_CONTEXT_TIMESTAMPING)
+	uint8_t timestamping_flags = *((uint8_t *)value);
+
+	return set_uint8_option(&context->options.timestamping,
+				&timestamping_flags, len);
+#else
+	ARG_UNUSED(context);
+	ARG_UNUSED(value);
+	ARG_UNUSED(len);
+
+	return -ENOTSUP;
+#endif
+}
+
 int net_context_set_option(struct net_context *context,
 			   enum net_context_option option,
 			   const void *value, size_t len)
@@ -3100,6 +3153,9 @@ int net_context_set_option(struct net_context *context,
 		break;
 	case NET_OPT_ADDR_PREFERENCES:
 		ret = set_context_addr_preferences(context, value, len);
+		break;
+	case NET_OPT_TIMESTAMPING:
+		ret = set_context_timestamping(context, value, len);
 		break;
 	}
 
@@ -3173,6 +3229,9 @@ int net_context_get_option(struct net_context *context,
 		break;
 	case NET_OPT_ADDR_PREFERENCES:
 		ret = get_context_addr_preferences(context, value, len);
+		break;
+	case NET_OPT_TIMESTAMPING:
+		ret = get_context_timestamping(context, value, len);
 		break;
 	}
 

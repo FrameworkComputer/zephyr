@@ -59,6 +59,7 @@
 
 #include <errno.h>
 #include <stddef.h>
+#include <bos_desc.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/sys/__assert.h>
 #include <zephyr/init.h>
@@ -1445,7 +1446,7 @@ int usb_wakeup_request(void)
 /*
  * The functions class_handler(), custom_handler() and vendor_handler()
  * go through the interfaces one after the other and compare the
- * bInterfaceNumber with the wIndex and and then call the appropriate
+ * bInterfaceNumber with the wIndex and then call the appropriate
  * callback of the USB function.
  * Note, a USB function can have more than one interface and the
  * request does not have to be directed to the first interface (unlikely).

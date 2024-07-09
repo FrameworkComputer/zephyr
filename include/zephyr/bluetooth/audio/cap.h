@@ -12,19 +12,25 @@
  *
  * @defgroup bt_cap Common Audio Profile (CAP)
  *
+ * @since 3.2
+ * @version 0.8.0
+ *
  * @ingroup bluetooth
  * @{
- *
- * [Experimental] Users should note that the APIs can change
- * as a part of ongoing development.
  */
 
+#include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
-#include <zephyr/bluetooth/audio/csip.h>
-#include <zephyr/bluetooth/iso.h>
 #include <zephyr/bluetooth/audio/audio.h>
 #include <zephyr/bluetooth/audio/bap.h>
+#include <zephyr/bluetooth/audio/csip.h>
+#include <zephyr/bluetooth/addr.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/bluetooth/conn.h>
+#include <zephyr/bluetooth/iso.h>
+#include <zephyr/net/buf.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -63,14 +69,16 @@ struct bt_cap_initiator_cb {
 	 * @param conn      The connection pointer supplied to
 	 *                  bt_cap_initiator_unicast_discover().
 	 * @param err       0 if Common Audio Service was found else -ENODATA.
+	 * @param member    Pointer to the set member. NULL if err != 0.
 	 * @param csis_inst The Coordinated Set Identification Service if
 	 *                  Common Audio Service was found and includes a
 	 *                  Coordinated Set Identification Service.
 	 *                  NULL on error or if remote device does not include
-	 *                  Coordinated Set Identification Service.
+	 *                  Coordinated Set Identification Service. NULL if err != 0.
 	 */
 	void (*unicast_discovery_complete)(
 		struct bt_conn *conn, int err,
+		const struct bt_csip_set_coordinator_set_member *member,
 		const struct bt_csip_set_coordinator_csis_inst *csis_inst);
 
 	/**
@@ -293,6 +301,16 @@ struct bt_cap_unicast_audio_stop_param {
  * @return 0 on success or negative error value on failure.
  */
 int bt_cap_initiator_register_cb(const struct bt_cap_initiator_cb *cb);
+
+/**
+ * @brief Unregister Common Audio Profile Initiator callbacks
+ *
+ * @param cb   The callback structure that was previously registered.
+ *
+ * @retval 0 Success
+ * @retval -EINVAL @p cb is NULL or @p cb was not registered
+ */
+int bt_cap_initiator_unregister_cb(const struct bt_cap_initiator_cb *cb);
 
 /**
  * @brief Setup and start unicast audio streams for a set of devices.
@@ -676,13 +694,15 @@ struct bt_cap_commander_cb {
 	 * @param conn      The connection pointer supplied to
 	 *                  bt_cap_initiator_unicast_discover().
 	 * @param err       0 if Common Audio Service was found else -ENODATA.
+	 * @param member    Pointer to the set member. NULL if err != 0.
 	 * @param csis_inst The Coordinated Set Identification Service if
 	 *                  Common Audio Service was found and includes a
 	 *                  Coordinated Set Identification Service.
 	 *                  NULL on error or if remote device does not include
-	 *                  Coordinated Set Identification Service.
+	 *                  Coordinated Set Identification Service. NULL if err != 0.
 	 */
 	void (*discovery_complete)(struct bt_conn *conn, int err,
+				   const struct bt_csip_set_coordinator_set_member *member,
 				   const struct bt_csip_set_coordinator_csis_inst *csis_inst);
 
 #if defined(CONFIG_BT_VCP_VOL_CTLR)
