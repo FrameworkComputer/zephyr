@@ -37,7 +37,6 @@
 #include "keys.h"
 #include "conn_internal.h"
 #include "l2cap_internal.h"
-#include "classic/l2cap_br_interface.h"
 #include "smp.h"
 
 #define LOG_LEVEL CONFIG_BT_SMP_LOG_LEVEL
@@ -475,6 +474,7 @@ static enum bt_security_err security_err_get(uint8_t smp_err)
 	}
 }
 
+#if defined(CONFIG_BT_SECURITY_ERR_TO_STR)
 const char *bt_security_err_to_str(enum bt_security_err err)
 {
 	#define SEC_ERR(err) [err] = #err
@@ -500,7 +500,7 @@ const char *bt_security_err_to_str(enum bt_security_err err)
 
 	#undef SEC_ERR
 }
-
+#endif /* CONFIG_BT_SECURITY_ERR_TO_STR */
 
 static uint8_t smp_err_get(enum bt_security_err auth_err)
 {
@@ -527,6 +527,7 @@ static uint8_t smp_err_get(enum bt_security_err auth_err)
 	}
 }
 
+#if defined(CONFIG_BT_SMP_ERR_TO_STR)
 const char *bt_smp_err_to_str(uint8_t smp_err)
 {
 	#define SMP_ERR(err) [err] = #err
@@ -558,6 +559,7 @@ const char *bt_smp_err_to_str(uint8_t smp_err)
 
 	#undef SMP_ERR
 }
+#endif /* CONFIG_BT_SMP_ERR_TO_STR */
 
 static struct net_buf *smp_create_pdu(struct bt_smp *smp, uint8_t op, size_t len)
 {
@@ -707,7 +709,7 @@ static void smp_check_complete(struct bt_conn *conn, uint8_t dist_complete)
 	if (conn->type == BT_CONN_TYPE_BR) {
 		struct bt_smp_br *smp;
 
-		chan = bt_l2cap_le_lookup_tx_cid(conn, BT_L2CAP_CID_BR_SMP);
+		chan = bt_l2cap_br_lookup_tx_cid(conn, BT_L2CAP_CID_BR_SMP);
 		__ASSERT(chan, "No SMP channel found");
 
 		smp = CONTAINER_OF(chan, struct bt_smp_br, chan.chan);
@@ -1459,7 +1461,7 @@ static int smp_br_error(struct bt_smp_br *smp, uint8_t reason)
 	 * SMP timer is not restarted for PairingFailed so don't use
 	 * smp_br_send
 	 */
-	if (bt_l2cap_br_send_cb(smp->chan.chan.conn, BT_L2CAP_CID_SMP, buf,
+	if (bt_l2cap_br_send_cb(smp->chan.chan.conn, BT_L2CAP_CID_BR_SMP, buf,
 				NULL, NULL)) {
 		net_buf_unref(buf);
 	}
@@ -3228,7 +3230,7 @@ static uint8_t smp_pairing_rsp(struct bt_smp *smp, struct net_buf *buf)
 		return err;
 	}
 
-	/* the OR operation evaluated by "if" statement bellow seems redundant
+	/* the OR operation evaluated by "if" statement below seems redundant
 	 * when CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY is enabled, because in
 	 * that case the SMP_FLAG_SC will always be set to false. But it's
 	 * needed in order to inform the compiler that the inside of the "if"
@@ -4700,8 +4702,8 @@ static void bt_smp_encrypt_change(struct bt_l2cap_chan *chan,
 	struct bt_smp *smp = CONTAINER_OF(chan, struct bt_smp, chan.chan);
 	struct bt_conn *conn = chan->conn;
 
-	LOG_DBG("chan %p conn %p handle %u encrypt 0x%02x hci status 0x%02x", chan, conn,
-		conn->handle, conn->encrypt, hci_status);
+	LOG_DBG("chan %p conn %p handle %u encrypt 0x%02x hci status 0x%02x %s", chan, conn,
+		conn->handle, conn->encrypt, hci_status, bt_hci_err_to_str(hci_status));
 
 	if (!atomic_test_and_clear_bit(smp->flags, SMP_FLAG_ENC_PENDING)) {
 		/* We where not waiting for encryption procedure.
@@ -6034,8 +6036,8 @@ static int bt_smp_accept(struct bt_conn *conn, struct bt_l2cap_chan **chan)
 
 BT_L2CAP_CHANNEL_DEFINE(smp_fixed_chan, BT_L2CAP_CID_SMP, bt_smp_accept, NULL);
 #if defined(CONFIG_BT_CLASSIC)
-BT_L2CAP_CHANNEL_DEFINE(smp_br_fixed_chan, BT_L2CAP_CID_BR_SMP,
-			bt_smp_br_accept, NULL);
+BT_L2CAP_BR_CHANNEL_DEFINE(smp_br_fixed_chan, BT_L2CAP_CID_BR_SMP,
+			bt_smp_br_accept);
 #endif /* CONFIG_BT_CLASSIC */
 
 int bt_smp_init(void)

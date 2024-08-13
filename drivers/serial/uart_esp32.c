@@ -116,8 +116,8 @@ struct uart_esp32_data {
 };
 
 #define UART_FIFO_LIMIT	    (UART_LL_FIFO_DEF_LEN)
-#define UART_TX_FIFO_THRESH 0x1
-#define UART_RX_FIFO_THRESH 0x16
+#define UART_TX_FIFO_THRESH (CONFIG_UART_ESP32_TX_FIFO_THRESH)
+#define UART_RX_FIFO_THRESH (CONFIG_UART_ESP32_RX_FIFO_THRESH)
 
 #if CONFIG_UART_INTERRUPT_DRIVEN || CONFIG_UART_ASYNC_API
 static void uart_esp32_isr(void *arg);
@@ -1042,7 +1042,7 @@ static const DRAM_ATTR struct uart_driver_api uart_esp32_api = {
 			},                                                                         \
 		ESP_UART_UHCI_INIT(idx)};                                                          \
                                                                                                    \
-	DEVICE_DT_INST_DEFINE(idx, &uart_esp32_init, NULL, &uart_esp32_data_##idx,                 \
+	DEVICE_DT_INST_DEFINE(idx, uart_esp32_init, NULL, &uart_esp32_data_##idx,                  \
 			      &uart_esp32_cfg_port_##idx, PRE_KERNEL_1,                            \
 			      CONFIG_SERIAL_INIT_PRIORITY, &uart_esp32_api);
 

@@ -14,6 +14,8 @@
  * @brief HTTP server API
  *
  * @defgroup http_server HTTP server API
+ * @since 3.7
+ * @version 0.1.0
  * @ingroup networking
  * @{
  */
@@ -58,6 +60,9 @@ extern "C" {
 enum http_resource_type {
 	/** Static resource, cannot be modified on runtime. */
 	HTTP_RESOURCE_TYPE_STATIC,
+
+	/** serves static gzipped files from a filesystem */
+	HTTP_RESOURCE_TYPE_STATIC_FS,
 
 	/** Dynamic resource, server interacts with the application via registered
 	 *  @ref http_resource_dynamic_cb_t.
@@ -114,6 +119,37 @@ struct http_resource_detail_static {
 /* Make sure that the common is the first in the struct. */
 BUILD_ASSERT(offsetof(struct http_resource_detail_static, common) == 0);
 /** @endcond */
+
+/**
+ * @brief Representation of a static filesystem server resource.
+ */
+struct http_resource_detail_static_fs {
+	/** Common resource details. */
+	struct http_resource_detail common;
+
+	/** Path in the local filesystem */
+	const char *fs_path;
+};
+
+/** @cond INTERNAL_HIDDEN */
+/* Make sure that the common is the first in the struct. */
+BUILD_ASSERT(offsetof(struct http_resource_detail_static_fs, common) == 0);
+/** @endcond */
+
+struct http_content_type {
+	const char *extension;
+	size_t extension_len;
+	const char *content_type;
+};
+
+#define HTTP_SERVER_CONTENT_TYPE(_extension, _content_type)                                        \
+	const STRUCT_SECTION_ITERABLE(http_content_type, _extension) = {                           \
+		.extension = STRINGIFY(_extension),                                                \
+		.extension_len = sizeof(STRINGIFY(_extension)) - 1,                                \
+		.content_type = _content_type,                                                     \
+	};
+
+#define HTTP_SERVER_CONTENT_TYPE_FOREACH(_it) STRUCT_SECTION_FOREACH(http_content_type, _it)
 
 struct http_client_ctx;
 
@@ -230,14 +266,14 @@ BUILD_ASSERT(offsetof(struct http_resource_detail_websocket, common) == 0);
 
 /** @cond INTERNAL_HIDDEN */
 
-enum http_stream_state {
-	HTTP_SERVER_STREAM_IDLE,
-	HTTP_SERVER_STREAM_RESERVED_LOCAL,
-	HTTP_SERVER_STREAM_RESERVED_REMOTE,
-	HTTP_SERVER_STREAM_OPEN,
-	HTTP_SERVER_STREAM_HALF_CLOSED_LOCAL,
-	HTTP_SERVER_STREAM_HALF_CLOSED_REMOTE,
-	HTTP_SERVER_STREAM_CLOSED
+enum http2_stream_state {
+	HTTP2_STREAM_IDLE,
+	HTTP2_STREAM_RESERVED_LOCAL,
+	HTTP2_STREAM_RESERVED_REMOTE,
+	HTTP2_STREAM_OPEN,
+	HTTP2_STREAM_HALF_CLOSED_LOCAL,
+	HTTP2_STREAM_HALF_CLOSED_REMOTE,
+	HTTP2_STREAM_CLOSED
 };
 
 enum http_server_state {
@@ -253,6 +289,7 @@ enum http_server_state {
 	HTTP_SERVER_FRAME_PING_STATE,
 	HTTP_SERVER_FRAME_RST_STREAM_STATE,
 	HTTP_SERVER_FRAME_GOAWAY_STATE,
+	HTTP_SERVER_FRAME_PADDING_STATE,
 	HTTP_SERVER_DONE_STATE,
 };
 
@@ -271,19 +308,25 @@ enum http1_parser_state {
 /** @endcond */
 
 /** @brief HTTP/2 stream representation. */
-struct http_stream_ctx {
+struct http2_stream_ctx {
 	int stream_id; /**< Stream identifier. */
-	enum http_stream_state stream_state; /**< Stream state. */
+	enum http2_stream_state stream_state; /**< Stream state. */
 	int window_size; /**< Stream-level window size. */
+
+	/** Flag indicating that headers were sent in the reply. */
+	bool headers_sent : 1;
+
+	/** Flag indicating that END_STREAM flag was sent. */
+	bool end_stream_sent : 1;
 };
 
 /** @brief HTTP/2 frame representation. */
-struct http_frame {
+struct http2_frame {
 	uint32_t length; /**< Frame payload length. */
 	uint32_t stream_identifier; /**< Stream ID the frame belongs to. */
 	uint8_t type; /**< Frame type. */
 	uint8_t flags; /**< Frame flags. */
-	uint8_t *payload; /**< A pointer to the frame payload. */
+	uint8_t padding_len; /**< Frame padding length. */
 };
 
 /**
@@ -309,16 +352,19 @@ struct http_client_ctx {
 	enum http_server_state server_state;
 
 	/** Currently processed HTTP/2 frame. */
-	struct http_frame current_frame;
+	struct http2_frame current_frame;
 
 	/** Currently processed resource detail. */
 	struct http_resource_detail *current_detail;
+
+	/** Currently processed stream. */
+	struct http2_stream_ctx *current_stream;
 
 	/** HTTP/2 header parser context. */
 	struct http_hpack_header_buf header_field;
 
 	/** HTTP/2 streams context. */
-	struct http_stream_ctx streams[HTTP_SERVER_MAX_STREAMS];
+	struct http2_stream_ctx streams[HTTP_SERVER_MAX_STREAMS];
 
 	/** HTTP/1 parser configuration. */
 	struct http_parser_settings parser_settings;
@@ -359,11 +405,11 @@ struct http_client_ctx {
 	IF_ENABLED(CONFIG_WEBSOCKET, (uint8_t ws_sec_key[HTTP_SERVER_WS_MAX_SEC_KEY_LEN]));
 /** @endcond */
 
-	/** Flag indicating that headers were sent in the reply. */
-	bool headers_sent : 1;
-
 	/** Flag indicating that HTTP2 preface was sent. */
 	bool preface_sent : 1;
+
+	/** Flag indicating that HTTP1 headers were sent. */
+	bool http1_headers_sent : 1;
 
 	/** Flag indicating that upgrade header was present in the request. */
 	bool has_upgrade_header : 1;
@@ -376,6 +422,9 @@ struct http_client_ctx {
 
 	/** Flag indicating Websocket key is being processed. */
 	bool websocket_sec_key_next : 1;
+
+	/** The next frame on the stream is expectd to be a continuation frame. */
+	bool expect_continuation : 1;
 };
 
 /** @brief Start the HTTP2 server.

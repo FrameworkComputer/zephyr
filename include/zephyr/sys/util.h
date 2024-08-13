@@ -130,6 +130,29 @@ extern "C" {
 #endif /* __cplusplus */
 
 /**
+ * @brief Declare a flexible array member.
+ *
+ * This macro declares a flexible array member in a struct. The member
+ * is named @p name and has type @p type.
+ *
+ * Since C99, flexible arrays are part of the C standard, but for historical
+ * reasons many places still use an older GNU extension that is declare
+ * zero length arrays.
+ *
+ * Although zero length arrays are flexible arrays, we can't blindly
+ * replace [0] with [] because of some syntax limitations. This macro
+ * workaround these limitations.
+ *
+ * It is specially useful for cases where flexible arrays are
+ * used in unions or are not the last element in the struct.
+ */
+#define FLEXIBLE_ARRAY_DECLARE(type, name) \
+	struct { \
+		struct { } __unused_##name; \
+		type name[]; \
+	}
+
+/**
  * @brief Whether @p ptr is an element of @p array
  *
  * This macro can be seen as a slightly stricter version of @ref PART_OF_ARRAY
@@ -722,7 +745,7 @@ char *utf8_lcpy(char *dst, const char *src, size_t n);
  * @brief Determine if a buffer exceeds highest address
  *
  * This macro determines if a buffer identified by a starting address @a addr
- * and length @a buflen spans a region of memory that goes beond the highest
+ * and length @a buflen spans a region of memory that goes beyond the highest
  * possible address (thereby resulting in a pointer overflow).
  *
  * @param addr Buffer starting address

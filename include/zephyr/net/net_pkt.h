@@ -40,6 +40,8 @@ extern "C" {
 /**
  * @brief Network packet management library
  * @defgroup net_pkt Network Packet Library
+ * @since 1.5
+ * @version 0.8.0
  * @ingroup networking
  * @{
  */
@@ -293,7 +295,7 @@ struct net_pkt {
 	uint8_t priority;
 
 #if defined(CONFIG_NET_OFFLOAD) || defined(CONFIG_NET_L2_IPIP)
-	/* Remote address of the recived packet. This is only used by
+	/* Remote address of the received packet. This is only used by
 	 * network interfaces with an offloaded TCP/IP stack, or if we
 	 * have network tunneling in use.
 	 */

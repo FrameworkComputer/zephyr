@@ -187,6 +187,7 @@ struct uarte_nrfx_data {
  */
 struct uarte_nrfx_config {
 	NRF_UARTE_Type *uarte_regs; /* Instance address */
+	uint32_t clock_freq;
 	uint32_t flags;
 	bool disable_rx;
 	const struct pinctrl_dev_config *pcfg;
@@ -301,6 +302,7 @@ static void uarte_nrfx_isr_int(const void *arg)
  */
 static int baudrate_set(const struct device *dev, uint32_t baudrate)
 {
+	const struct uarte_nrfx_config *config = dev->config;
 	nrf_uarte_baudrate_t nrf_baudrate; /* calculated baudrate divisor */
 	NRF_UARTE_Type *uarte = get_uarte_instance(dev);
 
@@ -375,6 +377,11 @@ static int baudrate_set(const struct device *dev, uint32_t baudrate)
 		return -EINVAL;
 	}
 
+	/* scale baudrate setting */
+	if (config->clock_freq > 0U) {
+		nrf_baudrate /= config->clock_freq / NRF_UARTE_BASE_FREQUENCY_16MHZ;
+	}
+
 	nrf_uarte_baudrate_set(uarte, nrf_baudrate);
 
 	return 0;
@@ -385,6 +392,10 @@ static int uarte_nrfx_configure(const struct device *dev,
 {
 	struct uarte_nrfx_data *data = dev->data;
 	nrf_uarte_config_t uarte_cfg;
+
+#if NRF_UARTE_HAS_FRAME_TIMEOUT
+	uarte_cfg.frame_timeout = NRF_UARTE_FRAME_TIMEOUT_DIS;
+#endif
 
 #if defined(UARTE_CONFIG_STOP_Msk)
 	switch (cfg->stop_bits) {
@@ -2049,6 +2060,9 @@ static int uarte_nrfx_pm_action(const struct device *dev,
 		IF_ENABLED(CONFIG_UART_##idx##_NRF_HW_ASYNC,		       \
 			(.timer = NRFX_TIMER_INSTANCE(			       \
 				CONFIG_UART_##idx##_NRF_HW_ASYNC_TIMER),))     \
+		IF_ENABLED(DT_CLOCKS_HAS_IDX(UARTE(idx), 0),		       \
+			   (.clock_freq = DT_PROP(DT_CLOCKS_CTLR(UARTE(idx)),  \
+						  clock_frequency),))	       \
 	};								       \
 	static int uarte_##idx##_init(const struct device *dev)		       \
 	{								       \

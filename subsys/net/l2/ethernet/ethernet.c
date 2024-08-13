@@ -284,6 +284,13 @@ static enum net_verdict ethernet_recv(struct net_if *iface,
 					  net_eth_get_vlan_iface(iface,
 						       net_pkt_vlan_tag(pkt)));
 
+			/* If we receive a packet with a VLAN tag, for that we don't
+			 * have a VLAN interface, drop the packet.
+			 */
+			if (net_if_l2(net_pkt_iface(pkt)) == NULL) {
+				goto drop;
+			}
+
 			/* We could call VLAN interface directly but then the
 			 * interface statistics would not get updated so route
 			 * the call via Virtual L2 layer.
@@ -825,6 +832,26 @@ void net_eth_carrier_off(struct net_if *iface)
 	if (atomic_test_and_clear_bit(&ctx->flags, ETH_CARRIER_UP)) {
 		k_work_submit(&ctx->carrier_work);
 	}
+}
+
+const struct device *net_eth_get_phy(struct net_if *iface)
+{
+	const struct device *dev = net_if_get_device(iface);
+	const struct ethernet_api *api = dev->api;
+
+	if (!api) {
+		return NULL;
+	}
+
+	if (net_if_l2(iface) != &NET_L2_GET_NAME(ETHERNET)) {
+		return NULL;
+	}
+
+	if (!api->get_phy) {
+		return NULL;
+	}
+
+	return api->get_phy(net_if_get_device(iface));
 }
 
 #if defined(CONFIG_PTP_CLOCK)

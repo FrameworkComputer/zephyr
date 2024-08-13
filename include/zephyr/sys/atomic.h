@@ -23,6 +23,8 @@
 #include <zephyr/types.h>
 #include <zephyr/sys/util.h>
 
+#line 27
+
 #ifdef __cplusplus
 extern "C" {
 #endif
