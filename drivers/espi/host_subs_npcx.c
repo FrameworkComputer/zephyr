@@ -518,7 +518,14 @@ static void host_port80_work_handler(struct k_work *item)
 		uint8_t offset;
 
 		ring_buf_get(rbuf, &dp80_buf.offset_code[0], sizeof(dp80_buf.offset_code));
-		offset = dp80_buf.offset_code[1];
+		uint32_t overflow = (dp80_buf.offset_code[1] & 0xe0) >> 4;
+		if (overflow != 0) {
+			evt.evt_data = 0xBADBAD00 | overflow; // Put BADBAD in the port80 output if there is an overflow or something.
+			espi_send_callbacks(host_sub_data.callbacks, host_sub_data.host_bus_dev,
+					    evt);
+		}
+
+		offset = dp80_buf.offset_code[1] & 0x3; // Bit 7 is the overflow flag. Only 2 bits needed for 0,1,2,3
 		code |= dp80_buf.offset_code[0] << (8 * offset);
 		if (ring_buf_is_empty(rbuf)) {
 			evt.evt_data = code;
@@ -528,7 +535,7 @@ static void host_port80_work_handler(struct k_work *item)
 		}
 		/* peek the offset of the next byte */
 		ring_buf_peek(rbuf, &dp80_buf.offset_code[0], sizeof(dp80_buf.offset_code));
-		offset = dp80_buf.offset_code[1];
+		offset = dp80_buf.offset_code[1] & 0x3; // Bit 7 is the overflow flag. Only 2 bits needed for 0,1,2,3
 		/*
 		 * If the peeked next byte's offset is 0, it is the start of the new code.
 		 * Pass the current code to the application layer to handle the Port80 code.
@@ -547,7 +554,64 @@ static void host_port80_isr(const void *arg)
 {
 	ARG_UNUSED(arg);
 	struct shm_reg *const inst_shm = host_sub_cfg.inst_shm;
-	uint8_t status = inst_shm->DP80STS;
+	struct ring_buf *rbuf = &host_sub_data.port80_ring_buf;
+	uint8_t status = 0xff;
+	uint8_t status2 = 0xff;
+	uint32_t counter1 = 0;
+	uint32_t counter2 = 0;
+	uint32_t port80_overruns1 = 0;
+	uint32_t port80_overruns_position = 0xffffffff;
+	uint16_t codes[16];
+	uint8_t const *codes8 = (uint8_t const *)&codes;
+	while (1) {
+		counter2 = 0;
+		while (1) {
+			status = inst_shm->DP80STS;
+			if (IS_BIT_SET(status, NPCX_DP80STS_FNE)) {
+				codes[counter2] = inst_shm->DP80BUF;
+				if (IS_BIT_SET(status, NPCX_DP80STS_FOR)) {
+					inst_shm->DP80STS = BIT(NPCX_DP80STS_FOR);
+					status2 = inst_shm->DP80STS;
+					port80_overruns1++;
+					port80_overruns_position = counter2;
+					uint32_t status3 = (status & 0xe0) << 8;
+					codes[counter2] = codes[counter2] | status3; // Set high bit for overflow, fne, fwr
+				}
+				counter2++;
+			} else {
+				// The FIFO is empty at this point to break, avoiding infinite loops.
+				break;
+			}
+			if (counter2 >= 16) {
+				// Limit to 16 times round to avoid buffer overflow and avoid infinite loops.
+				break;
+			}
+		}
+
+		ring_buf_put(rbuf, codes8, 2 * counter2);
+		k_work_submit(&host_sub_data.work);
+
+		status = inst_shm->DP80STS;
+		if (!IS_BIT_SET(status, NPCX_DP80STS_FNE)) {
+			break;
+		}
+
+		// Fall through if FNE set.
+		counter1++;
+		if (counter1 >= 16) {  // Limit of rbuf is 256 entries.
+			break;
+		}
+	}
+	uint32_t clear = 0;
+	if (IS_BIT_SET(status, NPCX_DP80STS_FWR)) {
+		clear |= BIT(NPCX_DP80STS_FWR);
+	}
+	inst_shm->DP80STS = clear | 0x02; // Sent 0x02 as well, maybe it is int ack bit.
+	status2 = inst_shm->DP80STS;
+}
+
+#if 0
+
 
 #ifdef CONFIG_ESPI_NPCX_PERIPHERAL_DEBUG_PORT_80_MULTI_BYTE
 	struct ring_buf *rbuf = &host_sub_data.port80_ring_buf;
@@ -588,6 +652,8 @@ static void host_port80_isr(const void *arg)
 		inst_shm->DP80STS |= BIT(NPCX_DP80STS_FWR);
 	}
 }
+
+#endif
 
 static void host_port80_init(void)
 {
