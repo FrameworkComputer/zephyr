@@ -7,6 +7,7 @@
 #include "picolibc-hooks.h"
 
 #ifdef CONFIG_MULTITHREADING
+#define _LOCK_T void *
 K_MUTEX_DEFINE(__lock___libc_recursive_mutex);
 
 #ifdef CONFIG_USERSPACE
@@ -37,7 +38,7 @@ void __retarget_lock_init_recursive(_LOCK_T *lock)
 #endif /* !CONFIG_USERSPACE */
 	__ASSERT(*lock != NULL, "recursive lock allocation failed");
 
-	k_mutex_init(*lock);
+	k_mutex_init((struct k_mutex *)*lock);
 }
 
 /* Create a new dynamic non-recursive lock */
@@ -67,7 +68,7 @@ void __retarget_lock_close(_LOCK_T lock)
 void __retarget_lock_acquire_recursive(_LOCK_T lock)
 {
 	__ASSERT_NO_MSG(lock != NULL);
-	k_mutex_lock(lock, K_FOREVER);
+	k_mutex_lock((struct k_mutex *)lock, K_FOREVER);
 }
 
 /* Acquiure non-recursive lock */
@@ -80,7 +81,7 @@ void __retarget_lock_acquire(_LOCK_T lock)
 int __retarget_lock_try_acquire_recursive(_LOCK_T lock)
 {
 	__ASSERT_NO_MSG(lock != NULL);
-	return !k_mutex_lock(lock, K_NO_WAIT);
+	return !k_mutex_lock((struct k_mutex *)lock, K_NO_WAIT);
 }
 
 /* Try acquiring non-recursive lock */
@@ -93,7 +94,7 @@ int __retarget_lock_try_acquire(_LOCK_T lock)
 void __retarget_lock_release_recursive(_LOCK_T lock)
 {
 	__ASSERT_NO_MSG(lock != NULL);
-	k_mutex_unlock(lock);
+	k_mutex_unlock((struct k_mutex *)lock);
 }
 
 /* Release non-recursive lock */

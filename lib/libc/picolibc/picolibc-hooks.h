@@ -7,8 +7,6 @@
 #ifndef _PICOLIBC_HOOKS_H_
 #define _PICOLIBC_HOOKS_H_
 
-#define __lock k_mutex
-#include <sys/lock.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
