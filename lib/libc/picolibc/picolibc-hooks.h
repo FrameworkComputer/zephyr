@@ -26,11 +26,6 @@
 #include <zephyr/kernel/mm.h>
 #endif
 
-/* Define the picolibc lock type */
-struct __lock {
-	struct k_mutex m;
-};
-
 #define LIBC_BSS	K_APP_BMEM(z_libc_partition)
 #define LIBC_DATA	K_APP_DMEM(z_libc_partition)
 
