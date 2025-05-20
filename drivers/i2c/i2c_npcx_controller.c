@@ -559,8 +559,7 @@ static int i2c_ctrl_recovery(const struct device *dev)
 	ret = i2c_ctrl_wait_stop_completed(dev, I2C_MAX_TIMEOUT);
 	inst->SMBCST |= BIT(NPCX_SMBCST_BB);
 	if (ret != 0) {
-		LOG_ERR("Abort i2c port%02x fail! Bus might be stalled.",
-								data->port);
+		LOG_ERR("Abort i2c %s::%02x fail! Bus might be stalled.", dev->name, data->port);
 	}
 
 	/*
@@ -572,8 +571,7 @@ static int i2c_ctrl_recovery(const struct device *dev)
 	inst->SMBCTL2 &= ~BIT(NPCX_SMBCTL2_ENABLE);
 	ret = i2c_ctrl_wait_idle_completed(dev, I2C_MAX_TIMEOUT);
 	if (ret != 0) {
-		LOG_ERR("Reset i2c port%02x fail! Bus might be stalled.",
-								data->port);
+		LOG_ERR("Reset i2c %s::%02x fail! Bus might be stalled.", dev->name, data->port);
 		return -EIO;
 	}
 
@@ -1447,7 +1445,7 @@ int npcx_i2c_ctrl_transfer(const struct device *i2c_dev, struct i2c_msg *msgs,
 		    data->oper_state == NPCX_I2C_ERROR_RECOVERY) {
 			ret = npcx_i2c_ctrl_recover_bus(i2c_dev);
 			if (ret != 0) {
-				LOG_ERR("Recover Bus failed");
+				LOG_ERR("Recover Bus failed: %s::%d", i2c_dev->name, port);
 				goto out;
 			}
 
@@ -1489,8 +1487,8 @@ int npcx_i2c_ctrl_transfer(const struct device *i2c_dev, struct i2c_msg *msgs,
 		if (data->trans_err == 0) {
 			data->oper_state = NPCX_I2C_IDLE;
 		} else {
-			LOG_ERR("STOP fail! bus is held on i2c port%02x!",
-								data->port);
+			LOG_ERR("STOP fail! bus is held on i2c %s::%02x!\n", i2c_dev->name,
+				data->port);
 			data->oper_state = NPCX_I2C_ERROR_RECOVERY;
 		}
 	}
