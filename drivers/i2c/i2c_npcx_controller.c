@@ -1013,14 +1013,7 @@ static void i2c_ctrl_isr(const struct device *dev)
 		/* Make sure slave doesn't hold bus by reading FIFO again */
 		tmp = i2c_ctrl_fifo_read(dev);
 
-		if (!data->is_port_set) {
-			/* The port hasn't been set, this interrupt is erroneous. */
-			data->oper_state = NPCX_I2C_IDLE;
-			return;
-		}
-
 		LOG_ERR("Bus error occurred on i2c %s::%02x!", dev->name, data->port);
-
 		data->oper_state = NPCX_I2C_ERROR_RECOVERY;
 
 		/* I/O error occurred */
