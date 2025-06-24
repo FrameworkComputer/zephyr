@@ -184,7 +184,6 @@ struct i2c_ctrl_data {
 	uint8_t msg_max_num;
 	uint8_t msg_curr_idx;
 	uint8_t port; /* current port used the controller */
-	bool is_port_set; /* True if port has been set */
 	bool is_configured; /* is port configured? */
 	const struct npcx_i2c_timing_cfg *ptr_speed_confs;
 #ifdef CONFIG_I2C_TARGET
@@ -1287,7 +1286,6 @@ int npcx_i2c_ctrl_target_register(const struct device *i2c_dev,
 	i2c_ctrl_irq_enable(i2c_dev, 0);
 
 	data->port = port; /* Update the I2C port index */
-	data->is_port_set = true;
 
 	/* Config new address */
 	reg_smbaddr = npcx_i2c_ctrl_target_get_reg_smbaddr(i2c_dev, avail_addr_slot);
@@ -1465,7 +1463,6 @@ int npcx_i2c_ctrl_transfer(const struct device *i2c_dev, struct i2c_msg *msgs,
 
 	/* Start i2c transaction */
 	data->port = port;
-	data->is_port_set = true;
 	data->trans_err = 0;
 	data->addr = addr;
 
