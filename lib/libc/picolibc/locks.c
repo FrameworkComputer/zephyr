@@ -15,7 +15,8 @@ struct __lock {
 	struct k_mutex m;
 };
 
-STRUCT_SECTION_ITERABLE_ALTERNATE(k_mutex, __lock, __lock___libc_recursive_mutex) = {
+STRUCT_SECTION_ITERABLE_ALTERNATE(k_mutex, __lock,
+				  __lock___libc_recursive_mutex) = {
 	.m = Z_MUTEX_INITIALIZER(__lock___libc_recursive_mutex.m),
 };
 
