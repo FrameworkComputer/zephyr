@@ -95,29 +95,15 @@ void lll_peripheral_iso_prepare(void *param)
 {
 	struct lll_conn_iso_group *cig_lll;
 	struct lll_prepare_param *p;
-	uint16_t elapsed;
 	int err;
 
 	/* Initiate HF clock start up */
 	err = lll_hfclock_on();
 	LL_ASSERT(err >= 0);
 
-	/* Instants elapsed */
 	p = param;
-	elapsed = p->lazy + 1U;
 
-	/* Save the (latency + 1) for use in event and/or supervision timeout */
 	cig_lll = p->param;
-	cig_lll->latency_prepare += elapsed;
-
-	/* Accumulate window widening */
-	cig_lll->window_widening_prepare_us_frac +=
-	    cig_lll->window_widening_periodic_us_frac * elapsed;
-	if (cig_lll->window_widening_prepare_us_frac >
-	    EVENT_US_TO_US_FRAC(cig_lll->window_widening_max_us)) {
-		cig_lll->window_widening_prepare_us_frac =
-			EVENT_US_TO_US_FRAC(cig_lll->window_widening_max_us);
-	}
 
 	/* Invoke common pipeline handling of prepare */
 	err = lll_prepare(lll_is_abort_cb, abort_cb, prepare_cb, 0U, param);
@@ -152,7 +138,6 @@ static int prepare_cb(struct lll_prepare_param *p)
 	memq_link_t *link;
 	uint32_t start_us;
 	uint32_t hcto;
-	uint16_t lazy;
 	uint32_t ret;
 	uint8_t phy;
 	int err = 0;
@@ -179,6 +164,9 @@ static int prepare_cb(struct lll_prepare_param *p)
 	/* Get reference to ACL context */
 	conn_lll = ull_conn_lll_get(cis_lll->acl_handle);
 
+	/* Pick the event_count calculated in the ULL prepare */
+	cis_lll->event_count = cis_lll->event_count_prepare;
+
 	/* Event counter value,  0-15 bit of cisEventCounter */
 	event_counter = cis_lll->event_count;
 
@@ -190,14 +178,23 @@ static int prepare_cb(struct lll_prepare_param *p)
 					   &data_chan_prn_s,
 					   &data_chan_remap_idx);
 
-	/* Store the current event latency */
-	cig_lll->latency_event = cig_lll->latency_prepare;
-	lazy = cig_lll->latency_prepare - 1U;
+	/* Calculate the current event latency */
+	cig_lll->lazy_prepare = p->lazy;
+	cig_lll->latency_event = cig_lll->latency_prepare + cig_lll->lazy_prepare;
 
 	/* Reset accumulated latencies */
 	cig_lll->latency_prepare = 0U;
 
-	/* current window widening */
+	/* Accumulate window widening */
+	cig_lll->window_widening_prepare_us_frac +=
+	    cig_lll->window_widening_periodic_us_frac * (cig_lll->lazy_prepare + 1U);
+	if (cig_lll->window_widening_prepare_us_frac >
+	    EVENT_US_TO_US_FRAC(cig_lll->window_widening_max_us)) {
+		cig_lll->window_widening_prepare_us_frac =
+			EVENT_US_TO_US_FRAC(cig_lll->window_widening_max_us);
+	}
+
+	/* Current window widening */
 	cig_lll->window_widening_event_us_frac +=
 		cig_lll->window_widening_prepare_us_frac;
 	cig_lll->window_widening_prepare_us_frac = 0;
@@ -210,7 +207,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 	se_curr = 1U;
 
 	/* Adjust sn and nesn for skipped CIG events */
-	payload_count_lazy(cis_lll, lazy);
+	payload_count_lazy(cis_lll, cig_lll->latency_event);
 
 	/* Start setting up of Radio h/w */
 	radio_reset();
@@ -267,7 +264,7 @@ static int prepare_cb(struct lll_prepare_param *p)
 
 	radio_isr_set(isr_rx, cis_lll);
 
-	radio_tmr_tifs_set(EVENT_IFS_US);
+	radio_tmr_tifs_set(cis_lll->tifs_us);
 
 #if defined(CONFIG_BT_CTLR_PHY)
 	radio_switch_complete_and_tx(cis_lll->rx.phy, 0U, cis_lll->tx.phy,
@@ -380,8 +377,11 @@ static int prepare_cb(struct lll_prepare_param *p)
 			break;
 		}
 
+		/* Pick the event_count calculated in the ULL prepare */
+		cis_lll->event_count = cis_lll->event_count_prepare;
+
 		/* Adjust sn and nesn for skipped CIG events */
-		payload_count_lazy(cis_lll, lazy);
+		payload_count_lazy(cis_lll, cig_lll->latency_event);
 
 		/* Adjust sn and nesn for canceled events */
 		if (err) {
@@ -405,13 +405,13 @@ static int prepare_cb(struct lll_prepare_param *p)
 
 static void abort_cb(struct lll_prepare_param *prepare_param, void *param)
 {
+	struct lll_conn_iso_group *cig_lll;
 	int err;
 
 	/* NOTE: This is not a prepare being cancelled */
 	if (!prepare_param) {
 		struct lll_conn_iso_stream *next_cis_lll;
 		struct lll_conn_iso_stream *cis_lll;
-		struct lll_conn_iso_group *cig_lll;
 
 		cis_lll = ull_conn_iso_lll_stream_get(cis_handle_curr);
 		cig_lll = param;
@@ -442,6 +442,22 @@ static void abort_cb(struct lll_prepare_param *prepare_param, void *param)
 	err = lll_hfclock_off();
 	LL_ASSERT(err >= 0);
 
+	/* Get reference to CIG LLL context */
+	cig_lll = prepare_param->param;
+
+	/* Accumulate the latency as event is aborted while being in pipeline */
+	cig_lll->lazy_prepare = prepare_param->lazy;
+	cig_lll->latency_prepare += (cig_lll->lazy_prepare + 1U);
+
+	/* Accumulate window widening */
+	cig_lll->window_widening_prepare_us_frac +=
+	    cig_lll->window_widening_periodic_us_frac * (cig_lll->lazy_prepare + 1U);
+	if (cig_lll->window_widening_prepare_us_frac >
+	    EVENT_US_TO_US_FRAC(cig_lll->window_widening_max_us)) {
+		cig_lll->window_widening_prepare_us_frac =
+			EVENT_US_TO_US_FRAC(cig_lll->window_widening_max_us);
+	}
+
 	lll_done(param);
 }
 
@@ -452,8 +468,6 @@ static void isr_rx(void *param)
 	struct pdu_cis *pdu_tx;
 	uint64_t payload_count;
 	uint8_t payload_index;
-	uint32_t subevent_us;
-	uint32_t start_us;
 	uint8_t trx_done;
 	uint8_t crc_ok;
 	uint8_t cie;
@@ -606,7 +620,7 @@ static void isr_rx(void *param)
 						(cis_lll->rx.payload_count / cis_lll->rx.bn)) *
 					       cig_lll->iso_interval_us;
 			iso_meta->timestamp %=
-				HAL_TICKER_TICKS_TO_US(BIT(HAL_TICKER_CNTR_MSBIT + 1U));
+				HAL_TICKER_TICKS_TO_US_64BIT(BIT64(HAL_TICKER_CNTR_MSBIT + 1U));
 			iso_meta->status = 0U;
 
 			ull_iso_pdu_rx_alloc();
@@ -733,7 +747,7 @@ static void isr_rx(void *param)
 
 	radio_gpio_pa_setup();
 
-	pa_lna_enable_us = radio_tmr_tifs_base_get() + EVENT_IFS_US -
+	pa_lna_enable_us = radio_tmr_tifs_base_get() + cis_lll->tifs_us -
 			   HAL_RADIO_GPIO_PA_OFFSET;
 #if defined(CONFIG_BT_CTLR_PHY)
 	pa_lna_enable_us -= radio_rx_chain_delay_get(cis_lll->rx.phy,
@@ -797,6 +811,12 @@ static void isr_rx(void *param)
 		se_curr = 0U;
 	}
 
+	radio_isr_set(isr_tx, cis_lll);
+
+#if !defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
+	uint32_t subevent_us;
+	uint32_t start_us;
+
 	/* Schedule next subevent reception */
 	subevent_us = radio_tmr_aa_restore();
 	subevent_us += cis_lll->offset - cis_offset_first +
@@ -815,8 +835,7 @@ static void isr_rx(void *param)
 
 	start_us = radio_tmr_start_us(0U, subevent_us);
 	LL_ASSERT(start_us == (subevent_us + 1U));
-
-	radio_isr_set(isr_tx, cis_lll);
+#endif /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 }
 
 static void isr_tx(void *param)
@@ -887,7 +906,7 @@ static void isr_tx(void *param)
 	radio_tmr_tx_disable();
 	radio_tmr_rx_enable();
 
-	radio_tmr_tifs_set(EVENT_IFS_US);
+	radio_tmr_tifs_set(cis_lll->tifs_us);
 
 #if defined(CONFIG_BT_CTLR_PHY)
 	radio_switch_complete_and_tx(cis_lll->rx.phy, 0U, cis_lll->tx.phy,
@@ -913,8 +932,14 @@ static void isr_tx(void *param)
 	subevent_us -= radio_rx_chain_delay_get(0U, 0U);
 #endif /* !CONFIG_BT_CTLR_PHY */
 
+#if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
+	start_us = radio_tmr_start_us(0U, subevent_us);
+	LL_ASSERT(start_us == (subevent_us + 1U));
+
+#else /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 	/* Compensate for the 1 us added by radio_tmr_start_us() */
 	start_us = subevent_us + 1U;
+#endif /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 
 	hcto = start_us +
 	       ((EVENT_JITTER_US + EVENT_TICKER_RES_MARGIN_US +
@@ -931,7 +956,7 @@ static void isr_tx(void *param)
 	hcto += radio_rx_chain_delay_get(0U, 0U);
 #endif /* !CONFIG_BT_CTLR_PHY */
 
-	radio_tmr_hcto_configure(hcto);
+	radio_tmr_hcto_configure_abs(hcto);
 
 #if defined(HAL_RADIO_GPIO_HAVE_LNA_PIN)
 	radio_gpio_lna_setup();
@@ -1104,7 +1129,7 @@ static void isr_prepare_subevent_common(void *param)
 	radio_tmr_tx_disable();
 	radio_tmr_rx_enable();
 
-	radio_tmr_tifs_set(EVENT_IFS_US);
+	radio_tmr_tifs_set(cis_lll->tifs_us);
 
 #if defined(CONFIG_BT_CTLR_PHY)
 	radio_switch_complete_and_tx(cis_lll->rx.phy, 0U, cis_lll->tx.phy,
@@ -1162,7 +1187,7 @@ static void isr_prepare_subevent_common(void *param)
 	hcto += radio_rx_chain_delay_get(0U, 0U);
 #endif /* !CONFIG_BT_CTLR_PHY */
 
-	radio_tmr_hcto_configure(hcto);
+	radio_tmr_hcto_configure_abs(hcto);
 
 #if defined(HAL_RADIO_GPIO_HAVE_LNA_PIN)
 	radio_gpio_lna_setup();
@@ -1349,12 +1374,10 @@ static void payload_count_lazy(struct lll_conn_iso_stream *cis_lll, uint16_t laz
 			u = cis_lll->nse - ((cis_lll->nse / cis_lll->tx.bn) *
 					    (cis_lll->tx.bn - 1U -
 					     (payload_count % cis_lll->tx.bn)));
-			while (((((cis_lll->tx.payload_count / cis_lll->tx.bn) + cis_lll->tx.ft) <
-				 (cis_lll->event_count + 1U)) ||
-				((((cis_lll->tx.payload_count / cis_lll->tx.bn) + cis_lll->tx.ft) ==
-				 (cis_lll->event_count + 1U)) && (u < (cis_lll->nse + 1U)))) &&
-			       ((cis_lll->tx.payload_count / cis_lll->tx.bn) <
-				cis_lll->event_count)) {
+			while ((((cis_lll->tx.payload_count / cis_lll->tx.bn) + cis_lll->tx.ft) <
+				 cis_lll->event_count) ||
+			       ((((cis_lll->tx.payload_count / cis_lll->tx.bn) + cis_lll->tx.ft) ==
+				 cis_lll->event_count) && (u < cis_lll->nse))) {
 				/* sn and nesn are 1-bit, only Least Significant bit is needed */
 				cis_lll->sn++;
 				cis_lll->tx.bn_curr++;
@@ -1381,12 +1404,10 @@ static void payload_count_lazy(struct lll_conn_iso_stream *cis_lll, uint16_t laz
 			u = cis_lll->nse - ((cis_lll->nse / cis_lll->rx.bn) *
 					    (cis_lll->rx.bn - 1U -
 					     (payload_count % cis_lll->rx.bn)));
-			while (((((cis_lll->rx.payload_count / cis_lll->rx.bn) + cis_lll->rx.ft) <
-				 (cis_lll->event_count + 1U)) ||
-				((((cis_lll->rx.payload_count / cis_lll->rx.bn) + cis_lll->rx.ft) ==
-				 (cis_lll->event_count + 1U)) && (u <= (cis_lll->nse + 1U)))) &&
-			       ((cis_lll->rx.payload_count / cis_lll->rx.bn) <
-				cis_lll->event_count)) {
+			while ((((cis_lll->rx.payload_count / cis_lll->rx.bn) + cis_lll->rx.ft) <
+				cis_lll->event_count) ||
+			       ((((cis_lll->rx.payload_count / cis_lll->rx.bn) + cis_lll->rx.ft) ==
+				 cis_lll->event_count) && (u <= cis_lll->nse))) {
 				/* sn and nesn are 1-bit, only Least Significant bit is needed */
 				cis_lll->nesn++;
 				cis_lll->rx.bn_curr++;

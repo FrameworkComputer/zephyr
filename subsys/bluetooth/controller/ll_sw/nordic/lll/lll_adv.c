@@ -1289,6 +1289,11 @@ static void isr_rx(void *param)
 		}
 	}
 
+	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
+		lll_prof_cputime_capture();
+		lll_prof_send();
+	}
+
 isr_rx_do_close:
 	radio_isr_set(isr_done, param);
 	radio_disable();
@@ -1297,6 +1302,11 @@ isr_rx_do_close:
 static void isr_done(void *param)
 {
 	struct lll_adv *lll;
+
+	/* Call to ensure packet/event timer accumulates the elapsed time
+	 * under single timer use.
+	 */
+	(void)radio_is_tx_done();
 
 	/* Clear radio status and events */
 	lll_isr_status_reset();
@@ -1377,7 +1387,7 @@ static void isr_done(void *param)
 
 			err = isr_close_adv_mesh();
 			if (err) {
-				return 0;
+				return;
 			}
 		}
 #endif /* CONFIG_BT_HCI_MESH_EXT */

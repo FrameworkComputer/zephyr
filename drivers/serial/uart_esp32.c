@@ -21,6 +21,10 @@
 #include <esp32s3/rom/ets_sys.h>
 #include <esp32s3/rom/gpio.h>
 #include <zephyr/dt-bindings/clock/esp32s3_clock.h>
+#elif defined(CONFIG_SOC_SERIES_ESP32C2)
+#include <esp32c2/rom/ets_sys.h>
+#include <esp32c2/rom/gpio.h>
+#include <zephyr/dt-bindings/clock/esp32c2_clock.h>
 #elif defined(CONFIG_SOC_SERIES_ESP32C3)
 #include <esp32c3/rom/ets_sys.h>
 #include <esp32c3/rom/gpio.h>
@@ -47,7 +51,9 @@
 #include <soc.h>
 #include <zephyr/drivers/uart.h>
 
-#if defined(CONFIG_SOC_SERIES_ESP32C3) || defined(CONFIG_SOC_SERIES_ESP32C6)
+#if defined(CONFIG_SOC_SERIES_ESP32C2) || \
+	defined(CONFIG_SOC_SERIES_ESP32C3) || \
+	defined(CONFIG_SOC_SERIES_ESP32C6)
 #include <zephyr/drivers/interrupt_controller/intc_esp32c3.h>
 #else
 #include <zephyr/drivers/interrupt_controller/intc_esp32.h>
@@ -61,7 +67,9 @@
 
 LOG_MODULE_REGISTER(uart_esp32, CONFIG_UART_LOG_LEVEL);
 
-#if defined(CONFIG_SOC_SERIES_ESP32C3) || defined(CONFIG_SOC_SERIES_ESP32C6)
+#if defined(CONFIG_SOC_SERIES_ESP32C2) || \
+	defined(CONFIG_SOC_SERIES_ESP32C3) || \
+	defined(CONFIG_SOC_SERIES_ESP32C6)
 #define ISR_HANDLER isr_handler_t
 #else
 #define ISR_HANDLER intr_handler_t
@@ -73,6 +81,7 @@ struct uart_esp32_config {
 	const clock_control_subsys_t clock_subsys;
 	int irq_source;
 	int irq_priority;
+	int irq_flags;
 	bool tx_invert;
 	bool rx_invert;
 #if CONFIG_UART_ASYNC_API
@@ -161,6 +170,29 @@ static int uart_esp32_err_check(const struct device *dev)
 }
 
 #ifdef CONFIG_UART_USE_RUNTIME_CONFIGURE
+
+static uint32_t uart_esp32_get_standard_baud(uint32_t calc_baud)
+{
+	const uint32_t standard_bauds[] = {9600,  14400,  19200,  38400,  57600,
+					   74880, 115200, 230400, 460800, 921600};
+	int num_bauds = ARRAY_SIZE(standard_bauds);
+	uint32_t baud = calc_baud;
+
+	/* Find the standard baudrate within 0.1% range. If no close
+	 * value is found, input is returned.
+	 */
+	for (int i = 0; i < num_bauds; i++) {
+		float range = (float)abs(calc_baud - standard_bauds[i]) / standard_bauds[i];
+
+		if (range < 0.001f) {
+			baud = standard_bauds[i];
+			break;
+		}
+	}
+
+	return baud;
+}
+
 static int uart_esp32_config_get(const struct device *dev, struct uart_config *cfg)
 {
 	struct uart_esp32_data *data = dev->data;
@@ -170,11 +202,14 @@ static int uart_esp32_config_get(const struct device *dev, struct uart_config *c
 	uart_hw_flowcontrol_t hw_flow;
 	uart_sclk_t src_clk;
 	uint32_t sclk_freq;
+	uint32_t calc_baud;
 
 	uart_hal_get_sclk(&data->hal, &src_clk);
 	esp_clk_tree_src_get_freq_hz((soc_module_clk_t)src_clk,
 		ESP_CLK_TREE_SRC_FREQ_PRECISION_CACHED, &sclk_freq);
-	uart_hal_get_baudrate(&data->hal, &cfg->baudrate, sclk_freq);
+
+	uart_hal_get_baudrate(&data->hal, &calc_baud, sclk_freq);
+	cfg->baudrate = uart_esp32_get_standard_baud(calc_baud);
 
 	uart_hal_get_parity(&data->hal, &parity);
 	switch (parity) {
@@ -267,6 +302,7 @@ static int uart_esp32_configure(const struct device *dev, const struct uart_conf
 	uart_hal_set_rxfifo_full_thr(&data->hal, UART_RX_FIFO_THRESH);
 	uart_hal_set_txfifo_empty_thr(&data->hal, UART_TX_FIFO_THRESH);
 	uart_hal_rxfifo_rst(&data->hal);
+	uart_hal_txfifo_rst(&data->hal);
 
 	switch (cfg->parity) {
 	case UART_CFG_PARITY_NONE:
@@ -497,7 +533,6 @@ static void uart_esp32_isr(void *arg)
 	const struct device *dev = (const struct device *)arg;
 	struct uart_esp32_data *data = dev->data;
 	uint32_t uart_intr_status = uart_hal_get_intsts_mask(&data->hal);
-	const struct uart_esp32_config *config = dev->config;
 
 	if (uart_intr_status == 0) {
 		return;
@@ -529,7 +564,6 @@ static void IRAM_ATTR uart_esp32_dma_rx_done(const struct device *dma_dev, void 
 	const struct uart_esp32_config *config = uart_dev->config;
 	struct uart_esp32_data *data = uart_dev->data;
 	struct uart_event evt = {0};
-	struct dma_status dma_status = {0};
 	unsigned int key = irq_lock();
 
 	/* If the receive buffer is not complete we reload the DMA at current buffer position and
@@ -596,7 +630,6 @@ static void IRAM_ATTR uart_esp32_dma_tx_done(const struct device *dma_dev, void 
 					     uint32_t channel, int status)
 {
 	const struct device *uart_dev = user_data;
-	const struct uart_esp32_config *config = uart_dev->config;
 	struct uart_esp32_data *data = uart_dev->data;
 	struct uart_event evt = {0};
 	unsigned int key = irq_lock();
@@ -661,9 +694,7 @@ static void uart_esp32_async_rx_timeout(struct k_work *work)
 	struct uart_esp32_async_data *async =
 		CONTAINER_OF(dwork, struct uart_esp32_async_data, rx_timeout_work);
 	struct uart_esp32_data *data = CONTAINER_OF(async, struct uart_esp32_data, async);
-	const struct uart_esp32_config *config = data->uart_dev->config;
 	struct uart_event evt = {0};
-	int err = 0;
 	unsigned int key = irq_lock();
 
 	evt.type = UART_RX_RDY;
@@ -837,7 +868,6 @@ unlock:
 
 static int uart_esp32_async_rx_buf_rsp(const struct device *dev, uint8_t *buf, size_t len)
 {
-	const struct uart_esp32_config *config = dev->config;
 	struct uart_esp32_data *data = dev->data;
 
 	data->async.rx_next_buf = buf;
@@ -918,7 +948,6 @@ unlock:
 
 static int uart_esp32_init(const struct device *dev)
 {
-	const struct uart_esp32_config *config = dev->config;
 	struct uart_esp32_data *data = dev->data;
 	int ret = uart_esp32_configure(dev, &data->uart_config);
 
@@ -928,8 +957,11 @@ static int uart_esp32_init(const struct device *dev)
 	}
 
 #if CONFIG_UART_INTERRUPT_DRIVEN || CONFIG_UART_ASYNC_API
+	const struct uart_esp32_config *config = dev->config;
+
 	ret = esp_intr_alloc(config->irq_source,
-			config->irq_priority,
+			ESP_PRIO_TO_FLAGS(config->irq_priority) |
+			ESP_INT_FLAGS_CHECK(config->irq_flags),
 			(ISR_HANDLER)uart_esp32_isr,
 			(void *)dev,
 			NULL);
@@ -958,7 +990,7 @@ static int uart_esp32_init(const struct device *dev)
 	return 0;
 }
 
-static const DRAM_ATTR struct uart_driver_api uart_esp32_api = {
+static DEVICE_API(uart, uart_esp32_api) = {
 	.poll_in = uart_esp32_poll_in,
 	.poll_out = uart_esp32_poll_out,
 	.err_check = uart_esp32_err_check,
@@ -1001,12 +1033,9 @@ static const DRAM_ATTR struct uart_driver_api uart_esp32_api = {
 #define ESP_UART_UHCI_INIT(n)                                                                      \
 	.uhci_dev = COND_CODE_1(DT_INST_NODE_HAS_PROP(n, dmas), (&UHCI0), (NULL))
 
-#define UART_IRQ_PRIORITY ESP_INTR_FLAG_LEVEL2
-
 #else
 #define ESP_UART_DMA_INIT(n)
 #define ESP_UART_UHCI_INIT(n)
-#define UART_IRQ_PRIORITY (0)
 #endif
 
 #define ESP32_UART_INIT(idx)                                                                       \
@@ -1017,19 +1046,18 @@ static const DRAM_ATTR struct uart_driver_api uart_esp32_api = {
 		.clock_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(idx)),                              \
 		.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(idx),                                       \
 		.clock_subsys = (clock_control_subsys_t)DT_INST_CLOCKS_CELL(idx, offset),          \
-		.irq_source = DT_INST_IRQN(idx),                                                   \
-		.irq_priority = UART_IRQ_PRIORITY,                                                 \
+		.irq_source = DT_INST_IRQ_BY_IDX(idx, 0, irq),                                     \
+		.irq_priority = DT_INST_IRQ_BY_IDX(idx, 0, priority),                              \
+		.irq_flags = DT_INST_IRQ_BY_IDX(idx, 0, flags),                                    \
 		.tx_invert = DT_INST_PROP_OR(idx, tx_invert, false),                               \
 		.rx_invert = DT_INST_PROP_OR(idx, rx_invert, false),                               \
 		ESP_UART_DMA_INIT(idx)};                                                           \
                                                                                                    \
 	static struct uart_esp32_data uart_esp32_data_##idx = {                                    \
 		.uart_config = {.baudrate = DT_INST_PROP(idx, current_speed),                      \
-				.parity = DT_INST_ENUM_IDX_OR(idx, parity, UART_CFG_PARITY_NONE),  \
-				.stop_bits = DT_INST_ENUM_IDX_OR(idx, stop_bits,                   \
-								 UART_CFG_STOP_BITS_1),            \
-				.data_bits = DT_INST_ENUM_IDX_OR(idx, data_bits,                   \
-								 UART_CFG_DATA_BITS_8),            \
+				.parity = DT_INST_ENUM_IDX(idx, parity),                           \
+				.stop_bits = DT_INST_ENUM_IDX(idx, stop_bits),                     \
+				.data_bits = DT_INST_ENUM_IDX(idx, data_bits),                     \
 				.flow_ctrl = MAX(COND_CODE_1(DT_INST_PROP(idx, hw_rs485_hd_mode),  \
 							     (UART_CFG_FLOW_CTRL_RS485),           \
 							     (UART_CFG_FLOW_CTRL_NONE)),           \

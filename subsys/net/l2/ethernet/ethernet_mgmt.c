@@ -18,11 +18,11 @@ static inline bool is_hw_caps_supported(const struct device *dev,
 {
 	const struct ethernet_api *api = dev->api;
 
-	if (!api) {
+	if (!api || !api->get_capabilities) {
 		return false;
 	}
 
-	return !!(api->get_capabilities(dev) & caps);
+	return ((api->get_capabilities(dev) & caps) != 0);
 }
 
 static int ethernet_set_config(uint32_t mgmt_request,
@@ -90,7 +90,7 @@ static int ethernet_set_config(uint32_t mgmt_request,
 		config.full_duplex = params->full_duplex;
 		type = ETHERNET_CONFIG_TYPE_DUPLEX;
 	} else if (mgmt_request == NET_REQUEST_ETHERNET_SET_MAC_ADDRESS) {
-		if (net_if_is_up(iface)) {
+		if (net_if_is_admin_up(iface)) {
 			return -EACCES;
 		}
 
@@ -98,7 +98,8 @@ static int ethernet_set_config(uint32_t mgmt_request,
 		 * generated from old MAC address, from network interface if
 		 * needed.
 		 */
-		if (IS_ENABLED(CONFIG_NET_NATIVE_IPV6)) {
+		if (IS_ENABLED(CONFIG_NET_NATIVE_IPV6) &&
+		    IS_ENABLED(CONFIG_NET_IPV6_IID_EUI_64)) {
 			struct in6_addr iid;
 
 			net_ipv6_addr_create_iid(&iid,

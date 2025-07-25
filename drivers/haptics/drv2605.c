@@ -90,6 +90,9 @@ LOG_MODULE_REGISTER(DRV2605, CONFIG_HAPTICS_LOG_LEVEL);
 #define DRV2605_LOOP_GAIN            GENMASK(3, 2)
 #define DRV2605_BEMF_GAIN            GENMASK(1, 0)
 
+#define DRV2605_ACTUATOR_MODE_ERM 0
+#define DRV2605_ACTUATOR_MODE_LRA 1
+
 #define DRV2605_REG_CONTROL1  0x1b
 #define DRV2605_STARTUP_BOOST BIT(7)
 #define DRV2605_AC_COUPLE     BIT(5)
@@ -124,11 +127,9 @@ LOG_MODULE_REGISTER(DRV2605, CONFIG_HAPTICS_LOG_LEVEL);
 
 #define DRV2605_POWER_UP_DELAY_US 250
 
-enum drv2605_pm_state {
-	DRV2605_PM_STATE_SHUTDOWN,
-	DRV2605_PM_STATE_STANDBY,
-	DRV2605_PM_STATE_ACTIVE,
-};
+#define DRV2605_VOLTAGE_SCALE_FACTOR_MV 5600
+
+#define DRV2605_CALCULATE_VOLTAGE(_volt) ((_volt * 255) / DRV2605_VOLTAGE_SCALE_FACTOR_MV)
 
 struct drv2605_config {
 	struct i2c_dt_spec i2c;
@@ -458,6 +459,25 @@ static int drv2605_hw_config(const struct device *dev)
 		return ret;
 	}
 
+	ret = i2c_reg_write_byte_dt(&config->i2c, DRV2605_REG_RATED_VOLTAGE, config->rated_voltage);
+	if (ret < 0) {
+		return ret;
+	}
+
+	ret = i2c_reg_write_byte_dt(&config->i2c, DRV2605_REG_OVERDRIVE_CLAMP_VOLTAGE,
+				    config->overdrive_clamp_voltage);
+	if (ret < 0) {
+		return ret;
+	}
+
+	if (config->actuator_mode == DRV2605_ACTUATOR_MODE_LRA) {
+		ret = i2c_reg_update_byte_dt(&config->i2c, DRV2605_REG_CONTROL3,
+					     DRV2605_LRA_OPEN_LOOP, DRV2605_LRA_OPEN_LOOP);
+		if (ret < 0) {
+			return ret;
+		}
+	}
+
 	return 0;
 }
 
@@ -478,16 +498,18 @@ static int drv2605_reset(const struct device *dev)
 	k_msleep(100);
 
 	while (retries > 0) {
-		i2c_reg_read_byte_dt(&config->i2c, DRV2605_REG_MODE, &value);
+		retries--;
+
+		ret = i2c_reg_read_byte_dt(&config->i2c, DRV2605_REG_MODE, &value);
+		if (ret < 0) {
+			k_usleep(10000);
+			continue;
+		}
 
 		if ((value & DRV2605_DEV_RESET) == 0U) {
 			i2c_reg_update_byte_dt(&config->i2c, DRV2605_REG_MODE, DRV2605_STANDBY, 0);
 			return 0;
 		}
-
-		retries--;
-
-		k_usleep(10000);
 	}
 
 	return -ETIMEDOUT;
@@ -592,7 +614,7 @@ static int drv2605_init(const struct device *dev)
 	return 0;
 }
 
-static const struct haptics_driver_api drv2605_driver_api = {
+static DEVICE_API(haptics, drv2605_driver_api) = {
 	.start_output = &drv2605_start_output,
 	.stop_output = &drv2605_stop_output,
 };
@@ -601,11 +623,14 @@ static const struct haptics_driver_api drv2605_driver_api = {
                                                                                                    \
 	static const struct drv2605_config drv2605_config_##inst = {                               \
 		.i2c = I2C_DT_SPEC_INST_GET(inst),                                                 \
-		.en_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, ti_en_gpios, {}),                        \
-		.in_trig_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, ti_in_trig_gpios, {}),              \
-		.feedback_brake_factor = DT_INST_ENUM_IDX_OR(inst, ti_feedback_brake_factor, 3),   \
-		.loop_gain = DT_INST_ENUM_IDX_OR(inst, ti_loop_gain, 2),                           \
-		.actuator_mode = DT_INST_ENUM_IDX_OR(inst, ti_actuator_mode, 0),                   \
+		.en_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, en_gpios, {}),                           \
+		.in_trig_gpio = GPIO_DT_SPEC_INST_GET_OR(inst, in_trig_gpios, {}),                 \
+		.feedback_brake_factor = DT_INST_ENUM_IDX(inst, feedback_brake_factor),            \
+		.loop_gain = DT_INST_ENUM_IDX(inst, loop_gain),                                    \
+		.actuator_mode = DT_INST_ENUM_IDX(inst, actuator_mode),                            \
+		.rated_voltage = DRV2605_CALCULATE_VOLTAGE(DT_INST_PROP(inst, vib_rated_mv)),      \
+		.overdrive_clamp_voltage =                                                         \
+			DRV2605_CALCULATE_VOLTAGE(DT_INST_PROP(inst, vib_overdrive_mv)),           \
 	};                                                                                         \
                                                                                                    \
 	static struct drv2605_data drv2605_data_##inst = {                                         \

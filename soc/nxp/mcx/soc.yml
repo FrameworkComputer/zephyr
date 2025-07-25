@@ -1,9 +1,26 @@
 family:
 - name: nxp_mcx
   series:
-  - name: mcxnx4x
+  - name: mcxn
     socs:
     - name: mcxn947
+      cpuclusters:
+      - name: cpu0
+      - name: cpu1
+    - name: mcxn236
+  - name: mcxc
+    socs:
+    - name: mcxc141
+    - name: mcxc142
+    - name: mcxc242
+    - name: mcxc444
+  - name: mcxa
+    socs:
+    - name: mcxa156
+  - name: mcxw
+    socs:
+    - name: mcxw716c
+    - name: mcxw727c
       cpuclusters:
       - name: cpu0
       - name: cpu1
@@ -17,6 +34,20 @@ runners:
       - qualifiers:
         - mcxn947/cpu0
         - mcxn947/cpu1
+      - qualifiers:
+        - mcxn236
+      - qualifiers:
+        - mcxc141
+      - qualifiers:
+        - mcxc142
+      - qualifiers:
+        - mcxc242
+      - qualifiers:
+        - mcxc444
+      - qualifiers:
+        - mcxa156
+      - qualifiers:
+        - mcxw716c
     '--reset':
     - run: last
       runners:
@@ -25,3 +56,17 @@ runners:
       - qualifiers:
         - mcxn947/cpu0
         - mcxn947/cpu1
+      - qualifiers:
+        - mcxn236
+      - qualifiers:
+        - mcxc141
+      - qualifiers:
+        - mcxc142
+      - qualifiers:
+        - mcxc242
+      - qualifiers:
+        - mcxc444
+      - qualifiers:
+        - mcxa156
+      - qualifiers:
+        - mcxw716c

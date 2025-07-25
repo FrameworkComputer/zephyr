@@ -11,7 +11,7 @@
 #include <zephyr/dt-bindings/clock/npcx_clock.h>
 
 #include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(clock_control_npcx, LOG_LEVEL_ERR);
+LOG_MODULE_REGISTER(clock_control_npcx, CONFIG_CLOCK_CONTROL_LOG_LEVEL);
 
 /* Driver config */
 struct npcx_pcc_config {
@@ -130,8 +130,9 @@ void npcx_clock_control_turn_on_system_sleep(bool is_deep, bool is_instant)
 	if (is_deep) {
 		pm_flags |= BIT(NPCX_PMCSR_DHF);
 		/* Add 'Instant Wake-up' flag if sleep time is within 200 ms */
-		if (is_instant)
+		if (is_instant) {
 			pm_flags |= BIT(NPCX_PMCSR_DI_INSTW);
+		}
 	}
 
 	inst_pmc->PMCSR = pm_flags;
@@ -147,7 +148,7 @@ void npcx_clock_control_turn_off_system_sleep(void)
 #endif /* CONFIG_PM */
 
 /* Clock controller driver registration */
-static const struct clock_control_driver_api npcx_clock_control_api = {
+static DEVICE_API(clock_control, npcx_clock_control_api) = {
 	.on = npcx_clock_control_on,
 	.off = npcx_clock_control_off,
 	.get_rate = npcx_clock_control_get_subsys_rate,
@@ -223,8 +224,9 @@ static int npcx_clock_control_init(const struct device *dev)
 		/* Load M and N values into the frequency multiplier */
 		inst_cdcg->HFCGCTRL |= BIT(NPCX_HFCGCTRL_LOAD);
 		/* Wait for stable */
-		while (IS_BIT_SET(inst_cdcg->HFCGCTRL, NPCX_HFCGCTRL_CLK_CHNG))
+		while (IS_BIT_SET(inst_cdcg->HFCGCTRL, NPCX_HFCGCTRL_CLK_CHNG)) {
 			;
+		}
 	}
 
 	/* Set all clock prescalers of core and peripherals. */

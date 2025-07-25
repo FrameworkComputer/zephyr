@@ -15,7 +15,7 @@ LOG_MODULE_REGISTER(modem_cmd_handler, CONFIG_MODEM_LOG_LEVEL);
 
 #include <zephyr/kernel.h>
 #include <stddef.h>
-#include <zephyr/net/buf.h>
+#include <zephyr/net_buf.h>
 
 #include "modem_context.h"
 #include "modem_cmd_handler.h"
@@ -98,12 +98,6 @@ static bool starts_with(struct net_buf *buf, const char *str)
 /*
  * Cmd Handler Functions
  */
-
-static inline struct net_buf *read_rx_allocator(k_timeout_t timeout,
-						void *user_data)
-{
-	return net_buf_alloc((struct net_buf_pool *)user_data, timeout);
-}
 
 /* return scanned length for params */
 static int parse_params(struct modem_cmd_handler_data *data,  size_t match_len,

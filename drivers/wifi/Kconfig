@@ -42,6 +42,7 @@ source "drivers/wifi/esp_at/Kconfig.esp_at"
 source "drivers/wifi/esp32/Kconfig.esp32"
 source "drivers/wifi/nxp/Kconfig.nxp"
 source "drivers/wifi/infineon/Kconfig.airoc"
-source "drivers/wifi/nrfwifi/Kconfig.nrfwifi"
+source "drivers/wifi/nrf_wifi/Kconfig.nrfwifi"
+source "drivers/wifi/siwx91x/Kconfig.siwx91x"
 
 endif # WIFI

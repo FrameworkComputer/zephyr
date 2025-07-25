@@ -91,8 +91,8 @@ this:
 
       # CONFIG_SOME_OTHER_BOOL is not set
 
-   This is the format you will see in the merged configuration in
-   :file:`zephyr/.config`.
+   This is the format you will see in the merged configuration
+   saved to :file:`zephyr/.config` in the build directory.
 
    This style is accepted for historical reasons: Kconfig configuration files
    can be parsed as makefiles (though Zephyr doesn't use this). Having
@@ -148,13 +148,6 @@ used.
    2. By passing ``-DCONF_FILE=<conf file(s)>``, either directly or via ``west``
 
    3. From the CMake variable cache
-
-   Furthermore if ``CONF_FILE`` is set as single configuration file of the
-   form :file:`prj_<build>.conf` and if file
-   :file:`boards/<BOARD>_<build>.conf` exists in same folder as file
-   :file:`prj_<build>.conf`, the result of merging :file:`prj_<build>.conf` and
-   :file:`boards/<BOARD>_<build>.conf` is used - note that this feature is
-   deprecated, :ref:`application-file-suffixes` should be used instead.
 
 #. Otherwise, if :file:`boards/<BOARD>.conf` exists in the application
    configuration directory, the result of merging it with :file:`prj.conf` is

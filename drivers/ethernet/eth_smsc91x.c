@@ -99,8 +99,9 @@ static ALWAYS_INLINE unsigned int smsc_current_bank(struct smsc_data *sc)
 static void smsc_mmu_wait(struct smsc_data *sc)
 {
 	__ASSERT((smsc_current_bank(sc) == 2), "%s called when not in bank 2", __func__);
-	while (sys_read16(sc->smsc_reg + MMUCR) & MMUCR_BUSY)
+	while (sys_read16(sc->smsc_reg + MMUCR) & MMUCR_BUSY) {
 		;
+	}
 }
 
 static ALWAYS_INLINE uint8_t smsc_read_1(struct smsc_data *sc, int offset)
@@ -879,7 +880,7 @@ static int mdio_smsc_write(const struct device *dev, uint8_t prtad, uint8_t deva
 	return 0;
 }
 
-static const struct mdio_driver_api mdio_smsc_api = {
+static DEVICE_API(mdio, mdio_smsc_api) = {
 	.bus_disable = mdio_smsc_bus_disable,
 	.bus_enable = mdio_smsc_bus_enable,
 	.read = mdio_smsc_read,

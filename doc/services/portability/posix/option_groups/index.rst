@@ -121,6 +121,10 @@ POSIX_DEVICE_IO
 
 Enable this option group with :kconfig:option:`CONFIG_POSIX_DEVICE_IO`.
 
+.. note::
+   When using Newlib, Picolibc, or other C libraries conforming to the ISO C Standard, the
+   C89 components of the ``POSIX_DEVICE_IO`` Option Group are considered supported.
+
 .. csv-table:: POSIX_DEVICE_IO
    :header: API, Supported
    :widths: 50,10
@@ -131,48 +135,48 @@ Enable this option group with :kconfig:option:`CONFIG_POSIX_DEVICE_IO`.
     FD_ZERO(),yes
     clearerr(),yes
     close(),yes
-    fclose(),
-    fdopen(),
-    feof(),
-    ferror(),
-    fflush(),
-    fgetc(),
-    fgets(),
-    fileno(),
-    fopen(),
+    fclose(),yes
+    fdopen(),yes
+    feof(),yes
+    ferror(),yes
+    fflush(),yes
+    fgetc(),yes
+    fgets(),yes
+    fileno(),yes
+    fopen(),yes
     fprintf(),yes
     fputc(),yes
     fputs(),yes
-    fread(),
-    freopen(),
-    fscanf(),
+    fread(),yes
+    freopen(),yes
+    fscanf(),yes
     fwrite(),yes
-    getc(),
-    getchar(),
-    gets(),
+    getc(),yes
+    getchar(),yes
+    gets(),yes
     open(),yes
     perror(),yes
     poll(),yes
     printf(),yes
-    pread(),
-    pselect(),
+    pread(),yes
+    pselect(),yes
     putc(),yes
     putchar(),yes
     puts(),yes
-    pwrite(),
+    pwrite(),yes
     read(),yes
-    scanf(),
+    scanf(),yes
     select(),yes
-    setbuf(),
-    setvbuf(),
-    stderr,
-    stdin,
-    stdout,
-    ungetc(),
+    setbuf(),yes
+    setvbuf(),yes
+    stderr,yes
+    stdin,yes
+    stdout,yes
+    ungetc(),yes
     vfprintf(),yes
-    vfscanf(),
+    vfscanf(),yes
     vprintf(),yes
-    vscanf(),
+    vscanf(),yes
     write(),yes
 
 .. _posix_option_group_fd_mgmt:
@@ -242,10 +246,10 @@ Enable this option group with :kconfig:option:`CONFIG_POSIX_FILE_SYSTEM`.
     opendir(), yes
     pathconf(),
     readdir(), yes
-    remove(),
+    remove(), yes
     rename(), yes
     rewinddir(),
-    rmdir(),
+    rmdir(), yes
     stat(), yes
     statvfs(),
     tmpfile(),
@@ -253,6 +257,19 @@ Enable this option group with :kconfig:option:`CONFIG_POSIX_FILE_SYSTEM`.
     truncate(),
     unlink(), yes
     utime(),
+
+.. _posix_option_group_file_system_r:
+
+POSIX_FILE_SYSTEM_R
++++++++++++++++++++
+
+Enable this option with :kconfig:option:`CONFIG_POSIX_FILE_SYSTEM_R`.
+
+.. csv-table:: POSIX_FILE_SYSTEM_R
+   :header: API, Supported
+   :widths: 50,10
+
+    readdir_r(), yes
 
 .. _posix_option_group_mapped_files:
 
@@ -450,31 +467,36 @@ POSIX_SIGNAL_JUMP
 POSIX_SIGNALS
 +++++++++++++
 
-Signal services are a basic mechanism within POSIX-based systems and are
-required for error and event handling.
-
 Enable this option group with :kconfig:option:`CONFIG_POSIX_SIGNALS`.
+
+.. note::
+   As processes are not yet supported in Zephyr, the ISO C functions ``abort()``, ``signal()``,
+   and ``raise()``, as well as the other POSIX functions listed below, may exhibit undefined
+   behaviour. The POSIX functions ``kill()``, ``pause()``, ``sigaction()``, ``sigpending()``,
+   ``sigsuspend()``, and ``sigwait()`` are implemented to ensure that conformant applications can
+   link, but they are expected to fail, setting errno to ``ENOSYS``
+   :ref:`†<posix_undefined_behaviour>`.
 
 .. csv-table:: POSIX_SIGNALS
    :header: API, Supported
    :widths: 50,10
 
-    abort(),yes
-    alarm(),
-    kill(),
-    pause(),
-    raise(),
-    sigaction(),
+    abort(),yes :ref:`†<posix_undefined_behaviour>`
+    alarm(),yes :ref:`†<posix_undefined_behaviour>`
+    kill(),yes :ref:`†<posix_undefined_behaviour>`
+    pause(),yes :ref:`†<posix_undefined_behaviour>`
+    raise(),yes :ref:`†<posix_undefined_behaviour>`
+    sigaction(),yes :ref:`†<posix_undefined_behaviour>`
     sigaddset(),yes
     sigdelset(),yes
     sigemptyset(),yes
     sigfillset(),yes
     sigismember(),yes
-    signal(),
-    sigpending(),
+    signal(),yes :ref:`†<posix_undefined_behaviour>`
+    sigpending(),yes :ref:`†<posix_undefined_behaviour>`
     sigprocmask(),yes
-    sigsuspend(),
-    sigwait(),
+    sigsuspend(),yes :ref:`†<posix_undefined_behaviour>`
+    sigwait(),yes :ref:`†<posix_undefined_behaviour>`
     strsignal(),yes
 
 .. _posix_option_group_single_process:
@@ -618,6 +640,24 @@ Enable this option group with :kconfig:option:`CONFIG_POSIX_TIMERS`.
     timer_gettime(),yes
     timer_getoverrun(),yes
     timer_settime(),yes
+
+.. _posix_option_group_xsi_realtime:
+
+XSI_REALTIME
+++++++++++++
+
+The ``XSI_REALTIME`` option group indicates that the :ref:`_POSIX_FSYNC<posix_option_fsync>`,
+:ref:`_POSIX_MEMLOCK<posix_option_memlock>`,
+:ref:`_POSIX_MEMLOCK_RANGE<posix_option_memlock_range>`,
+:ref:`_POSIX_MESSAGE_PASSING<posix_option_message_passing>`,
+:ref:`_POSIX_PRIORITY_SCHEDULING<posix_option_priority_scheduling>`,
+:ref:`_POSIX_SHARED_MEMORY_OBJECTS<posix_option_shared_memory_objects>`, and
+:ref:`_POSIX_SYNCHRONIZED_IO<posix_option_synchronized_io>` options are enabled.
+
+Enable this option group with :kconfig:option:`CONFIG_XSI_REALTIME`.
+
+When this option group is enabled, the ``_XOPEN_REALTIME`` feature test macro will be defined to a
+value other than -1.
 
 .. _posix_option_group_xsi_system_logging:
 
@@ -844,7 +884,11 @@ Enable this option with :kconfig:option:`CONFIG_POSIX_READER_WRITER_LOCKS`.
     pthread_rwlockattr_init(),yes
     pthread_rwlockattr_setpshared(),yes
 
+..
+   this link is "deprecated" - mainly left here so that older links still work
 .. _posix_shared_memory_objects:
+
+.. _posix_option_shared_memory_objects:
 
 _POSIX_SHARED_MEMORY_OBJECTS
 ++++++++++++++++++++++++++++
@@ -970,7 +1014,7 @@ Enable this option with :kconfig:option:`CONFIG_POSIX_THREAD_PRIORITY_SCHEDULING
     pthread_setschedparam(),yes
     pthread_setschedprio(),yes
 
-.. _posix_thread_safe_functions:
+.. _posix_option_thread_safe_functions:
 
 _POSIX_THREAD_SAFE_FUNCTIONS
 ++++++++++++++++++++++++++++
@@ -981,8 +1025,8 @@ Enable this option with :kconfig:option:`CONFIG_POSIX_THREAD_SAFE_FUNCTIONS`.
     :header: API, Supported
     :widths: 50,10
 
-    asctime_r(),
-    ctime_r(),
+    asctime_r(), yes
+    ctime_r(), yes (UTC timezone only)
     flockfile(),
     ftrylockfile(),
     funlockfile(),
@@ -993,7 +1037,7 @@ Enable this option with :kconfig:option:`CONFIG_POSIX_THREAD_SAFE_FUNCTIONS`.
     getpwnam_r(),yes :ref:`†<posix_undefined_behaviour>`
     getpwuid_r(),yes :ref:`†<posix_undefined_behaviour>`
     gmtime_r(), yes
-    localtime_r(),
+    localtime_r(), yes (UTC timezone only)
     putc_unlocked(),
     putchar_unlocked(),
     rand_r(), yes

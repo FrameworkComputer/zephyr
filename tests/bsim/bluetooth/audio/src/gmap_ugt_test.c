@@ -42,13 +42,13 @@ static struct bt_audio_codec_cap codec_cap =
 	BT_AUDIO_CODEC_CAP_LC3(BT_AUDIO_CODEC_CAP_FREQ_ANY, BT_AUDIO_CODEC_CAP_DURATION_ANY,
 			       BT_AUDIO_CODEC_CAP_CHAN_COUNT_SUPPORT(1, 2), 30, 240, 2, CONTEXT);
 
-static const struct bt_audio_codec_qos_pref unicast_qos_pref =
-	BT_AUDIO_CODEC_QOS_PREF(true, BT_GAP_LE_PHY_2M, 0U, 60U, 10000U, 60000U, 10000U, 60000U);
+static const struct bt_bap_qos_cfg_pref unicast_qos_pref =
+	BT_BAP_QOS_CFG_PREF(true, BT_GAP_LE_PHY_2M, 0U, 60U, 10000U, 60000U, 10000U, 60000U);
 
 #define UNICAST_CHANNEL_COUNT_1 BIT(0)
 
 static struct bt_cap_stream
-	unicast_streams[CONFIG_BT_ASCS_ASE_SNK_COUNT + CONFIG_BT_ASCS_ASE_SRC_COUNT];
+	unicast_streams[CONFIG_BT_ASCS_MAX_ASE_SNK_COUNT + CONFIG_BT_ASCS_MAX_ASE_SRC_COUNT];
 
 CREATE_FLAG(flag_unicast_stream_started);
 CREATE_FLAG(flag_gmap_discovered);
@@ -88,12 +88,6 @@ static struct bt_bap_stream_ops unicast_stream_ops = {
 	.started = unicast_stream_started_cb,
 };
 
-/* TODO: Expand with GMAP service data */
-static const struct bt_data gmap_acceptor_ad[] = {
-	BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
-	BT_DATA_BYTES(BT_DATA_UUID16_ALL, BT_UUID_16_ENCODE(BT_UUID_CAS_VAL)),
-};
-
 static struct bt_csip_set_member_svc_inst *csip_set_member;
 
 static struct bt_bap_stream *unicast_stream_alloc(void)
@@ -112,7 +106,7 @@ static struct bt_bap_stream *unicast_stream_alloc(void)
 static int unicast_server_config(struct bt_conn *conn, const struct bt_bap_ep *ep,
 				 enum bt_audio_dir dir, const struct bt_audio_codec_cfg *codec_cfg,
 				 struct bt_bap_stream **stream,
-				 struct bt_audio_codec_qos_pref *const pref,
+				 struct bt_bap_qos_cfg_pref *const pref,
 				 struct bt_bap_ascs_rsp *rsp)
 {
 	printk("ASE Codec Config: conn %p ep %p dir %u\n", conn, ep, dir);
@@ -136,7 +130,7 @@ static int unicast_server_config(struct bt_conn *conn, const struct bt_bap_ep *e
 
 static int unicast_server_reconfig(struct bt_bap_stream *stream, enum bt_audio_dir dir,
 				   const struct bt_audio_codec_cfg *codec_cfg,
-				   struct bt_audio_codec_qos_pref *const pref,
+				   struct bt_bap_qos_cfg_pref *const pref,
 				   struct bt_bap_ascs_rsp *rsp)
 {
 	printk("ASE Codec Reconfig: stream %p\n", stream);
@@ -151,7 +145,7 @@ static int unicast_server_reconfig(struct bt_bap_stream *stream, enum bt_audio_d
 	return -ENOEXEC;
 }
 
-static int unicast_server_qos(struct bt_bap_stream *stream, const struct bt_audio_codec_qos *qos,
+static int unicast_server_qos(struct bt_bap_stream *stream, const struct bt_bap_qos_cfg *qos,
 			      struct bt_bap_ascs_rsp *rsp)
 {
 	printk("QoS: stream %p qos %p\n", stream, qos);
@@ -218,6 +212,11 @@ static int unicast_server_release(struct bt_bap_stream *stream, struct bt_bap_as
 
 	return 0;
 }
+
+static struct bt_bap_unicast_server_register_param param = {
+	CONFIG_BT_ASCS_MAX_ASE_SNK_COUNT,
+	CONFIG_BT_ASCS_MAX_ASE_SRC_COUNT
+};
 
 static struct bt_bap_unicast_server_cb unicast_server_cbs = {
 	.config = unicast_server_config,
@@ -363,6 +362,21 @@ static void test_main(void)
 	static struct bt_pacs_cap unicast_cap = {
 		.codec_cap = &codec_cap,
 	};
+	struct bt_le_ext_adv *ext_adv;
+	const struct bt_pacs_register_param pacs_param = {
+#if defined(CONFIG_BT_PAC_SNK)
+		.snk_pac = true,
+#endif /* CONFIG_BT_PAC_SNK */
+#if defined(CONFIG_BT_PAC_SNK_LOC)
+		.snk_loc = true,
+#endif /* CONFIG_BT_PAC_SNK_LOC */
+#if defined(CONFIG_BT_PAC_SRC)
+		.src_pac = true,
+#endif /* CONFIG_BT_PAC_SRC */
+#if defined(CONFIG_BT_PAC_SRC_LOC)
+		.src_loc = true,
+#endif /* CONFIG_BT_PAC_SRC_LOC */
+	};
 	int err;
 
 	err = bt_enable(NULL);
@@ -372,6 +386,12 @@ static void test_main(void)
 	}
 
 	printk("Bluetooth initialized\n");
+
+	err = bt_pacs_register(&pacs_param);
+	if (err) {
+		FAIL("Could not register PACS (err %d)\n", err);
+		return;
+	}
 
 	if (IS_ENABLED(CONFIG_BT_CAP_ACCEPTOR_SET_MEMBER)) {
 		const struct bt_csip_set_member_register_param csip_set_member_param = {
@@ -400,6 +420,13 @@ static void test_main(void)
 	err = bt_pacs_cap_register(BT_AUDIO_DIR_SOURCE, &unicast_cap);
 	if (err != 0) {
 		FAIL("Capability register failed (err %d)\n", err);
+
+		return;
+	}
+
+	err = bt_bap_unicast_server_register(&param);
+	if (err != 0) {
+		FAIL("Failed to register unicast server (err %d)\n", err);
 
 		return;
 	}
@@ -433,12 +460,7 @@ static void test_main(void)
 		return;
 	}
 
-	err = bt_le_adv_start(BT_LE_ADV_CONN_ONE_TIME, gmap_acceptor_ad,
-			      ARRAY_SIZE(gmap_acceptor_ad), NULL, 0);
-	if (err != 0) {
-		FAIL("Advertising failed to start (err %d)\n", err);
-		return;
-	}
+	setup_connectable_adv(&ext_adv);
 
 	WAIT_FOR_FLAG(flag_connected);
 

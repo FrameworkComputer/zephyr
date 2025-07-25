@@ -28,6 +28,7 @@ struct mcux_tpm_config {
 
 	tpm_clock_source_t tpm_clock_source;
 	tpm_clock_prescale_t prescale;
+	void (*irq_config_func)(void);
 };
 
 struct mcux_tpm_data {
@@ -86,18 +87,21 @@ static int mcux_tpm_set_alarm(const struct device *dev, uint8_t chan_id,
 		return -EINVAL;
 	}
 
-	if (ticks > (top_value))
+	if (ticks > (top_value)) {
 		return -EINVAL;
-
-	if ((alarm_cfg->flags & COUNTER_ALARM_CFG_ABSOLUTE) == 0) {
-		if (top_value - current >= ticks)
-			ticks += current;
-		else
-			ticks -= top_value - current;
 	}
 
-	if (data->alarm_callback)
+	if ((alarm_cfg->flags & COUNTER_ALARM_CFG_ABSOLUTE) == 0) {
+		if (top_value - current >= ticks) {
+			ticks += current;
+		} else {
+			ticks -= top_value - current;
+		}
+	}
+
+	if (data->alarm_callback) {
 		return -EBUSY;
+	}
 
 	data->alarm_callback = alarm_cfg->callback;
 	data->alarm_user_data = alarm_cfg->user_data;
@@ -163,8 +167,9 @@ static int mcux_tpm_set_top_value(const struct device *dev,
 	TPM_Type *base = get_base(dev);
 	struct mcux_tpm_data *data = dev->data;
 
-	if (data->alarm_callback)
+	if (data->alarm_callback) {
 		return -EBUSY;
+	}
 
 	/* Check if timer already enabled. */
 #if defined(FSL_FEATURE_TPM_HAS_SC_CLKS) && FSL_FEATURE_TPM_HAS_SC_CLKS
@@ -173,8 +178,9 @@ static int mcux_tpm_set_top_value(const struct device *dev,
 	if (base->SC & TPM_SC_CMOD_MASK) {
 #endif
 		/* Timer already enabled, check flags before resetting */
-		if (cfg->flags & COUNTER_TOP_CFG_DONT_RESET)
+		if (cfg->flags & COUNTER_TOP_CFG_DONT_RESET) {
 			return -ENOTSUP;
+		}
 
 		TPM_StopTimer(base);
 		base->CNT = 0;
@@ -243,10 +249,12 @@ static int mcux_tpm_init(const struct device *dev)
 	/* Set the modulo to max value. */
 	base->MOD = TPM_MAX_COUNTER_VALUE(base);
 
+	config->irq_config_func();
+
 	return 0;
 }
 
-static const struct counter_driver_api mcux_tpm_driver_api = {
+static DEVICE_API(counter, mcux_tpm_driver_api) = {
 	.start = mcux_tpm_start,
 	.stop = mcux_tpm_stop,
 	.get_value = mcux_tpm_get_value,
@@ -262,6 +270,7 @@ static const struct counter_driver_api mcux_tpm_driver_api = {
 
 #define TPM_DEVICE_INIT_MCUX(n)							\
 	static struct mcux_tpm_data mcux_tpm_data_ ## n;			\
+	static void mcux_tpm_irq_config_ ## n(void);				\
 										\
 	static const struct mcux_tpm_config mcux_tpm_config_ ## n = {		\
 		DEVICE_MMIO_NAMED_ROM_INIT(tpm_mmio, DT_DRV_INST(n)),		\
@@ -276,11 +285,11 @@ static const struct counter_driver_api mcux_tpm_driver_api = {
 			.channels = 1,						\
 			.flags = COUNTER_CONFIG_INFO_COUNT_UP,			\
 		},								\
+		.irq_config_func = mcux_tpm_irq_config_ ## n,			\
 	};									\
 										\
-	static int mcux_tpm_## n ##_init(const struct device *dev);		\
 	DEVICE_DT_INST_DEFINE(n,						\
-			mcux_tpm_## n ##_init,					\
+			mcux_tpm_init,						\
 			NULL,							\
 			&mcux_tpm_data_ ## n,					\
 			&mcux_tpm_config_ ## n,					\
@@ -288,13 +297,12 @@ static const struct counter_driver_api mcux_tpm_driver_api = {
 			CONFIG_COUNTER_INIT_PRIORITY,				\
 			&mcux_tpm_driver_api);					\
 										\
-	static int mcux_tpm_## n ##_init(const struct device *dev)		\
+	static void mcux_tpm_irq_config_ ## n(void)				\
 	{									\
 		IRQ_CONNECT(DT_INST_IRQN(n),					\
 			DT_INST_IRQ(n, priority),				\
 			mcux_tpm_isr, DEVICE_DT_INST_GET(n), 0);		\
 		irq_enable(DT_INST_IRQN(n));					\
-		return mcux_tpm_init(dev);					\
 	}									\
 
 DT_INST_FOREACH_STATUS_OKAY(TPM_DEVICE_INIT_MCUX)

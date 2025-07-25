@@ -1,7 +1,4 @@
-.. _ad_apard32690_sl:
-
-AD-APARD32690-SL
-################
+.. zephyr:board:: apard32690
 
 Overview
 ********
@@ -18,10 +15,6 @@ Power over Ethernet (SPoE) and be used for powering the system via an Arduino sh
 the required power circuitry.
 
 The Zephyr port is running on the MAX32690 MCU.
-
-.. image:: img/apard32690_img.webp
-   :align: center
-   :alt: AD-APARD32690-SL Front
 
 Hardware
 ********
@@ -115,6 +108,10 @@ Below interfaces are supported by Zephyr on APARD32690.
 +-----------+------------+------------------------------------+
 | TRNG      | on-chip    | entropy                            |
 +-----------+------------+------------------------------------+
+| Timer     | on-chip    | counter                            |
++-----------+------------+------------------------------------+
+| W1        | on-chip    | one wire master                    |
++-----------+------------+------------------------------------+
 
 
 Connections and IOs
@@ -193,7 +190,8 @@ SWD port. SWD debug can be accessed through the Cortex 10-pin connector, P9.
 Logic levels are either 1.8V or 3.3V (based on P51 selection).
 
 Once the debug probe is connected to your host computer, then you can simply run the
-``west flash`` command to write a firmware image into flash.
+``west flash`` command to write a firmware image into flash. To perform a full erase,
+pass the ``--erase`` option when executing ``west flash``.
 
 .. note::
 
@@ -212,7 +210,7 @@ instead of ``west flash``.
 References
 **********
 
-- `AD-APARD32690-SL web page`_
+- `AD-APARD32690-SL solution center`_
 
-.. _AD-APARD32690-SL web page:
-   https://www.analog.com/en/resources/evaluation-hardware-and-software/evaluation-boards-kits/ad-apard32690-sl.html
+.. _AD-APARD32690-SL solution center:
+   https://developer.analog.com/solutions/max32690

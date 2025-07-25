@@ -24,6 +24,32 @@ successfully, the extension is loaded into memory and is ready to be used.
    included in any user memory domain. To allow access from user mode, the
    :c:func:`llext_add_domain` function must be called.
 
+Initializing and cleaning up the extension
+==========================================
+
+The extension may define a number of initialization functions that must be
+called after loading but before any function in it can be used; this is typical
+in languages such as C++ that provide the concept of object constructors. The
+same is true for cleanup functions that must be called before unloading the
+extension.
+
+LLEXT supports calling the functions listed in the ``.preinit_array`` and
+``.init_array`` sections of the ELF file with the :c:func:`llext_bringup`
+function, and the functions listed in the ``.fini_array`` section with the
+:c:func:`llext_teardown` function. These APIs are compatible with
+:ref:`User Mode <usermode_api>`, and thus can be called from either kernel or
+user context.
+
+.. important::
+   The code run by these functions is fully determined by the contents of the
+   ELF file. This may have security implications if its origin is untrusted.
+
+If the extension requires a dedicated thread, the :c:func:`llext_bootstrap`
+function can be used to minimize boilerplate code. This function has a
+signature that is compatible with the :c:func:`k_thread_create` API, and will
+call :c:func:`llext_bringup`, then a user-specified function in the same
+context, and finally :c:func:`llext_teardown` before returning.
+
 Accessing code and data
 =======================
 
@@ -33,6 +59,10 @@ The returned ``void *`` can then be cast to the appropriate type and used.
 
 A wrapper for calling a function with no arguments is provided in
 :c:func:`llext_call_fn`.
+
+Advanced users that need direct access to areas of the newly loaded extension
+may want to refer to :c:func:`llext_get_section_info` and other LLEXT
+inspection APIs.
 
 Cleaning up after use
 =====================
@@ -68,13 +98,7 @@ If any of this happens, the following tips may help understand the issue:
   the issue.
 
 * Use a debugger to inspect the memory and registers to try to understand what
-  is happening.
-
-  .. note::
-     When using GDB, the ``add_symbol_file`` command may be used to load the
-     debugging information and symbols from the ELF file. Make sure to specify
-     the proper offset (usually the start of the ``.text`` section, reported
-     as ``region 0`` in the debug logs.)
+  is happening. See :ref:`Debugging extensions <llext_debug>` for more details.
 
 If the issue persists, please open an issue in the GitHub repository, including
 all the above information.

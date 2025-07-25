@@ -21,7 +21,7 @@
 #include <zephyr/devicetree.h>
 #include <zephyr/kernel.h>
 #include <zephyr/logging/log.h>
-#include <zephyr/net/buf.h>
+#include <zephyr/net_buf.h>
 #include <zephyr/shell/shell.h>
 #include <zephyr/sys/ring_buffer.h>
 #include <zephyr/sys/util.h>
@@ -33,6 +33,8 @@
 
 #if defined(CONFIG_SOC_NRF5340_CPUAPP)
 #include <nrfx_clock.h>
+#include <drivers/nrfx_errors.h>
+#include <hal/nrf_clock.h>
 #endif /* CONFIG_SOC_NRF5340_CPUAPP */
 
 #include "audio.h"

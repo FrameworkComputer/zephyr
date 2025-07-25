@@ -811,9 +811,11 @@ static int cmd_ipd_parse_hdr(struct esp_data *dev,
 	}
 
 	*sock = esp_socket_ref_from_link_id(dev, link_id);
-	if (!sock) {
+
+	if (!*sock) {
 		LOG_ERR("No socket for link %ld", link_id);
-		return str - ipd_buf;
+		*data_offset = (str - ipd_buf);
+		return -ENOTCONN;
 	}
 
 	if (!ESP_PROTO_PASSIVE(esp_socket_ip_proto(*sock)) &&
@@ -823,15 +825,27 @@ static int cmd_ipd_parse_hdr(struct esp_data *dev,
 		char *remote_ip;
 		long port;
 
-		err = esp_pull_quoted(&str, str_end, &remote_ip);
+		if (IS_ENABLED(CONFIG_WIFI_ESP_AT_VERSION_1_7)) {
+			/* NOT quoted per AT version 1.7.0 */
+			err = esp_pull_raw(&str, str_end, &remote_ip);
+		} else {
+			/* Quoted per AT version 2.1.0/2.2.0 */
+			err = esp_pull_quoted(&str, str_end, &remote_ip);
+		}
 		if (err) {
-			LOG_ERR("Failed to pull remote_ip");
+			if (err == -EAGAIN && match_len >= MAX_IPD_LEN) {
+				LOG_ERR("Failed to pull remote_ip");
+				err = -EBADMSG;
+			}
 			goto socket_unref;
 		}
 
 		err = esp_pull_long(&str, str_end, &port);
 		if (err) {
-			LOG_ERR("Failed to pull port");
+			if (err == -EAGAIN && match_len >= MAX_IPD_LEN) {
+				LOG_ERR("Failed to pull port");
+				err = -EBADMSG;
+			}
 			goto socket_unref;
 		}
 
@@ -1600,6 +1614,14 @@ static int esp_init(const struct device *dev)
 		.hw_flow_control = DT_PROP(ESP_BUS, hw_flow_control),
 	};
 
+	/* The context must be registered before the serial port is initialised. */
+	data->mctx.driver_data = data;
+	ret = modem_context_register(&data->mctx);
+	if (ret < 0) {
+		LOG_ERR("Error registering modem context: %d", ret);
+		goto error;
+	}
+
 	ret = modem_iface_uart_init(&data->mctx.iface, &data->iface_data, &uart_config);
 	if (ret < 0) {
 		goto error;
@@ -1620,14 +1642,6 @@ static int esp_init(const struct device *dev)
 		goto error;
 	}
 #endif
-
-	data->mctx.driver_data = data;
-
-	ret = modem_context_register(&data->mctx);
-	if (ret < 0) {
-		LOG_ERR("Error registering modem context: %d", ret);
-		goto error;
-	}
 
 	/* start RX thread */
 	k_thread_create(&esp_rx_thread, esp_rx_stack,

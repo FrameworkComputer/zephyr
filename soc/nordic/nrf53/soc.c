@@ -47,14 +47,36 @@
 #define RTC1_PRETICK_SELECTED_CC_MASK   BIT_MASK(CONFIG_NRF_RTC_TIMER_USER_CHAN_COUNT + 1U)
 #define RTC0_PRETICK_SELECTED_CC_MASK	BIT_MASK(NRF_RTC_CC_COUNT_MAX)
 
-#if defined(CONFIG_SOC_NRF_GPIO_FORWARDER_FOR_NRF5340)
-#define GPIOS_PSEL_BY_IDX(node_id, prop, idx) \
-	NRF_DT_GPIOS_TO_PSEL_BY_IDX(node_id, prop, idx),
-#define ALL_GPIOS_IN_NODE(node_id) \
-	DT_FOREACH_PROP_ELEM(node_id, gpios, GPIOS_PSEL_BY_IDX)
-#define ALL_GPIOS_IN_FORWARDER(node_id) \
-	DT_FOREACH_CHILD(node_id, ALL_GPIOS_IN_NODE)
+#ifdef CONFIG_SOC_NRF5340_CPUAPP
+#define LFXO_NODE DT_NODELABEL(lfxo)
+#define HFXO_NODE DT_NODELABEL(hfxo)
+
+/* LFXO config from DT */
+#if DT_ENUM_HAS_VALUE(LFXO_NODE, load_capacitors, external)
+#define LFXO_CAP NRF_OSCILLATORS_LFXO_CAP_EXTERNAL
+#elif DT_ENUM_HAS_VALUE(LFXO_NODE, load_capacitors, internal)
+#define LFXO_CAP (DT_ENUM_IDX(LFXO_NODE, load_capacitance_picofarad) + 1U)
+#else
+/* LFXO config from legacy Kconfig */
+#if defined(CONFIG_SOC_LFXO_CAP_INT_6PF)
+#define LFXO_CAP NRF_OSCILLATORS_LFXO_CAP_6PF
+#elif defined(CONFIG_SOC_LFXO_CAP_INT_7PF)
+#define LFXO_CAP NRF_OSCILLATORS_LFXO_CAP_7PF
+#elif defined(CONFIG_SOC_LFXO_CAP_INT_9PF)
+#define LFXO_CAP NRF_OSCILLATORS_LFXO_CAP_9PF
+#else
+#define LFXO_CAP NRF_OSCILLATORS_LFXO_CAP_EXTERNAL
 #endif
+#endif
+
+/* HFXO config from DT */
+#if DT_ENUM_HAS_VALUE(HFXO_NODE, load_capacitors, internal)
+#define HFXO_CAP_VAL_X2 (DT_PROP(HFXO_NODE, load_capacitance_femtofarad)) * 2U / 1000U
+#elif defined(CONFIG_SOC_HFXO_CAP_INTERNAL)
+/* HFXO config from legacy Kconfig */
+#define HFXO_CAP_VAL_X2 CONFIG_SOC_HFXO_CAP_INT_VALUE_X2
+#endif
+#endif /* CONFIG_SOC_NRF5340_CPUAPP */
 
 #define LOG_LEVEL CONFIG_SOC_LOG_LEVEL
 LOG_MODULE_REGISTER(soc);
@@ -472,15 +494,9 @@ static int nordicsemi_nrf53_init(void)
 	nrf_nvmc_icache_config_set(NRF_NVMC, NRF_NVMC_ICACHE_ENABLE);
 #endif
 
-#if defined(CONFIG_SOC_ENABLE_LFXO)
-	nrf_oscillators_lfxo_cap_set(NRF_OSCILLATORS,
-		IS_ENABLED(CONFIG_SOC_LFXO_CAP_INT_6PF) ?
-			NRF_OSCILLATORS_LFXO_CAP_6PF :
-		IS_ENABLED(CONFIG_SOC_LFXO_CAP_INT_7PF) ?
-			NRF_OSCILLATORS_LFXO_CAP_7PF :
-		IS_ENABLED(CONFIG_SOC_LFXO_CAP_INT_9PF) ?
-			NRF_OSCILLATORS_LFXO_CAP_9PF :
-			NRF_OSCILLATORS_LFXO_CAP_EXTERNAL);
+#ifdef CONFIG_SOC_NRF5340_CPUAPP
+#if defined(LFXO_CAP)
+	nrf_oscillators_lfxo_cap_set(NRF_OSCILLATORS, LFXO_CAP);
 #if !defined(CONFIG_BUILD_WITH_TFM)
 	/* This can only be done from secure code.
 	 * This is handled by the TF-M platform so we skip it when TF-M is
@@ -489,8 +505,8 @@ static int nordicsemi_nrf53_init(void)
 	nrf_gpio_pin_control_select(PIN_XL1, NRF_GPIO_PIN_SEL_PERIPHERAL);
 	nrf_gpio_pin_control_select(PIN_XL2, NRF_GPIO_PIN_SEL_PERIPHERAL);
 #endif /* !defined(CONFIG_BUILD_WITH_TFM) */
-#endif /* defined(CONFIG_SOC_ENABLE_LFXO) */
-#if defined(CONFIG_SOC_HFXO_CAP_INTERNAL)
+#endif /* defined(LFXO_CAP) */
+#if defined(HFXO_CAP_VAL_X2)
 	/* This register is only accessible from secure code. */
 	uint32_t xosc32mtrim = soc_secure_read_xosc32mtrim();
 	/* The SLOPE field is in the two's complement form, hence this special
@@ -515,13 +531,15 @@ static int nordicsemi_nrf53_init(void)
 	 * value between 7.0 pF and 20.0 pF in 0.5 pF steps.
 	 */
 	uint32_t capvalue =
-		((slope + 56) * (CONFIG_SOC_HFXO_CAP_INT_VALUE_X2 - 14)
+		((slope + 56) * (HFXO_CAP_VAL_X2 - 14)
 		 + ((offset - 8) << 4) + 32) >> 6;
 
 	nrf_oscillators_hfxo_cap_set(NRF_OSCILLATORS, true, capvalue);
-#elif defined(CONFIG_SOC_HFXO_CAP_EXTERNAL)
+#elif defined(CONFIG_SOC_HFXO_CAP_EXTERNAL) || \
+	DT_ENUM_HAS_VALUE(HFXO_NODE, load_capacitors, external)
 	nrf_oscillators_hfxo_cap_set(NRF_OSCILLATORS, false, 0);
 #endif
+#endif /* CONFIG_SOC_NRF5340_CPUAPP */
 
 #if defined(CONFIG_SOC_DCDC_NRF53X_APP) || \
 	(DT_PROP(DT_NODELABEL(vregmain), regulator_initial_mode) == NRF5X_REG_MODE_DCDC)
@@ -531,19 +549,8 @@ static int nordicsemi_nrf53_init(void)
 	(DT_PROP(DT_NODELABEL(vregradio), regulator_initial_mode) == NRF5X_REG_MODE_DCDC)
 	nrf_regulators_vreg_enable_set(NRF_REGULATORS, NRF_REGULATORS_VREG_RADIO, true);
 #endif
-#if defined(CONFIG_SOC_DCDC_NRF53X_HV) || DT_NODE_HAS_STATUS(DT_NODELABEL(vregh), okay)
+#if defined(CONFIG_SOC_DCDC_NRF53X_HV) || DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(vregh))
 	nrf_regulators_vreg_enable_set(NRF_REGULATORS, NRF_REGULATORS_VREG_HIGH, true);
-#endif
-
-#if defined(CONFIG_SOC_NRF_GPIO_FORWARDER_FOR_NRF5340)
-	static const uint8_t forwarded_psels[] = {
-		DT_FOREACH_STATUS_OKAY(nordic_nrf_gpio_forwarder, ALL_GPIOS_IN_FORWARDER)
-	};
-
-	for (int i = 0; i < ARRAY_SIZE(forwarded_psels); i++) {
-		soc_secure_gpio_pin_mcu_select(forwarded_psels[i], NRF_GPIO_PIN_SEL_NETWORK);
-	}
-
 #endif
 
 	return 0;

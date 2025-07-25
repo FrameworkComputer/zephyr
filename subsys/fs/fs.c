@@ -686,7 +686,7 @@ int fs_mount(struct fs_mount_t *mp)
 
 	len = strlen(mp->mnt_point);
 
-	if ((len <= 1) || (mp->mnt_point[0] != '/')) {
+	if ((len == 0) || (mp->mnt_point[0] != '/')) {
 		LOG_ERR("invalid mount point!!");
 		return -EINVAL;
 	}
@@ -814,9 +814,6 @@ int fs_unmount(struct fs_mount_t *mp)
 		LOG_ERR("fs unmount error (%d)", rc);
 		goto unmount_err;
 	}
-
-	/* clear file system interface */
-	mp->fs = NULL;
 
 	/* remove mount node from the list */
 	sys_dlist_remove(&mp->node);

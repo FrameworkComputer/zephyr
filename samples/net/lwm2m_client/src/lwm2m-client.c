@@ -13,7 +13,6 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #include <zephyr/drivers/hwinfo.h>
 #include <zephyr/kernel.h>
-#include <zephyr/drivers/gpio.h>
 #include <zephyr/drivers/sensor.h>
 #include <zephyr/net/lwm2m.h>
 #include <zephyr/net/conn_mgr_monitor.h>
@@ -34,7 +33,11 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define TEMP_SENSOR_UNITS	"Celcius"
 
 /* Macros used to subscribe to specific Zephyr NET management events. */
+#if defined(CONFIG_WAIT_DNS_SERVER_ADDITION)
+#define L4_EVENT_MASK (NET_EVENT_DNS_SERVER_ADD | NET_EVENT_L4_DISCONNECTED)
+#else
 #define L4_EVENT_MASK (NET_EVENT_L4_CONNECTED | NET_EVENT_L4_DISCONNECTED)
+#endif
 #define CONN_LAYER_EVENT_MASK (NET_EVENT_CONN_IF_FATAL_ERROR)
 
 static uint8_t bat_idx = LWM2M_DEVICE_PWR_SRC_TYPE_BAT_INT;
@@ -127,9 +130,6 @@ static int lwm2m_setup(void)
 #if defined(CONFIG_LWM2M_RD_CLIENT_SUPPORT_BOOTSTRAP)
 	/* Mark 1st instance of security object as a bootstrap server */
 	lwm2m_set_u8(&LWM2M_OBJ(0, 0, 1), 1);
-
-	/* Create 2nd instance of security object needed for bootstrap */
-	lwm2m_create_object_inst(&LWM2M_OBJ(0, 1));
 #else
 	/* Match Security object instance with a Server object instance with
 	 * Short Server ID.
@@ -338,7 +338,11 @@ static void l4_event_handler(struct net_mgmt_event_callback *cb,
 			     struct net_if *iface)
 {
 	switch (event) {
+#if defined(CONFIG_WAIT_DNS_SERVER_ADDITION)
+	case NET_EVENT_DNS_SERVER_ADD:
+#else
 	case NET_EVENT_L4_CONNECTED:
+#endif
 		LOG_INF("IP Up");
 		on_net_event_l4_connected();
 		break;
@@ -388,12 +392,10 @@ int main(void)
 			return ret;
 		}
 
-		ret = conn_mgr_if_connect(net_if_get_default());
-		/* Ignore errors from interfaces not requiring connectivity */
-		if (ret == 0) {
-			LOG_INF("Connecting to network");
-			k_sem_take(&network_connected_sem, K_FOREVER);
-		}
+		(void)conn_mgr_if_connect(net_if_get_default());
+
+		LOG_INF("Waiting for network connection...");
+		k_sem_take(&network_connected_sem, K_FOREVER);
 	}
 
 	ret = lwm2m_setup();

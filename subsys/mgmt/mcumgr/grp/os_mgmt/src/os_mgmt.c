@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 mcumgr authors
- * Copyright (c) 2021-2023 Nordic Semiconductor ASA
+ * Copyright (c) 2021-2024 Nordic Semiconductor ASA
  * Copyright (c) 2022 Laird Connectivity
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -423,13 +423,17 @@ os_mgmt_mcumgr_params(struct smp_streamer *ctxt)
 
 #if defined(CONFIG_MCUMGR_GRP_OS_BOOTLOADER_INFO)
 
+#if defined(CONFIG_BOOTLOADER_MCUBOOT)
 #if defined(CONFIG_MCUBOOT_BOOTLOADER_MODE_SINGLE_APP)
 #define BOOTLOADER_MODE MCUBOOT_MODE_SINGLE_SLOT
 #elif defined(CONFIG_MCUBOOT_BOOTLOADER_MODE_SWAP_SCRATCH)
 #define BOOTLOADER_MODE MCUBOOT_MODE_SWAP_USING_SCRATCH
 #elif defined(CONFIG_MCUBOOT_BOOTLOADER_MODE_OVERWRITE_ONLY)
 #define BOOTLOADER_MODE MCUBOOT_MODE_UPGRADE_ONLY
-#elif defined(CONFIG_MCUBOOT_BOOTLOADER_MODE_SWAP_WITHOUT_SCRATCH)
+#elif defined(CONFIG_MCUBOOT_BOOTLOADER_MODE_SWAP_USING_OFFSET)
+#define BOOTLOADER_MODE MCUBOOT_MODE_SWAP_USING_OFFSET
+#elif defined(CONFIG_MCUBOOT_BOOTLOADER_MODE_SWAP_USING_MOVE) || \
+defined(CONFIG_MCUBOOT_BOOTLOADER_MODE_SWAP_WITHOUT_SCRATCH)
 #define BOOTLOADER_MODE MCUBOOT_MODE_SWAP_USING_MOVE
 #elif defined(CONFIG_MCUBOOT_BOOTLOADER_MODE_DIRECT_XIP)
 #define BOOTLOADER_MODE MCUBOOT_MODE_DIRECT_XIP
@@ -440,6 +444,7 @@ os_mgmt_mcumgr_params(struct smp_streamer *ctxt)
 #else
 #define BOOTLOADER_MODE -1
 #endif
+#endif
 
 static int
 os_mgmt_bootloader_info(struct smp_streamer *ctxt)
@@ -448,7 +453,20 @@ os_mgmt_bootloader_info(struct smp_streamer *ctxt)
 	zcbor_state_t *zsd = ctxt->reader->zs;
 	struct zcbor_string query = { 0 };
 	size_t decoded;
-	bool ok;
+	bool ok = true;
+	bool has_output = false;
+
+#if defined(CONFIG_MCUMGR_GRP_OS_BOOTLOADER_INFO_HOOK)
+	enum mgmt_cb_return status;
+	int32_t err_rc;
+	uint16_t err_group;
+	struct os_mgmt_bootloader_info_data bootloader_info_data = {
+		.zse = zse,
+		.decoded = &decoded,
+		.query = &query,
+		.has_output = &has_output
+	};
+#endif
 
 	struct zcbor_map_decode_key_val bootloader_info[] = {
 		ZCBOR_MAP_DECODE_KEY_DECODER("query", zcbor_tstr_decode, &query),
@@ -458,23 +476,46 @@ os_mgmt_bootloader_info(struct smp_streamer *ctxt)
 		return MGMT_ERR_EINVAL;
 	}
 
-	/* If no parameter is recognized then just introduce the bootloader. */
-	if (decoded == 0) {
-		ok = zcbor_tstr_put_lit(zse, "bootloader") &&
-		     zcbor_tstr_put_lit(zse, "MCUboot");
-	} else if (zcbor_map_decode_bulk_key_found(bootloader_info, ARRAY_SIZE(bootloader_info),
-		   "query") &&
-		   (sizeof("mode") - 1) == query.len &&
-		   memcmp("mode", query.value, query.len) == 0) {
+#if defined(CONFIG_MCUMGR_GRP_OS_BOOTLOADER_INFO_HOOK)
+	status = mgmt_callback_notify(MGMT_EVT_OP_OS_MGMT_BOOTLOADER_INFO, &bootloader_info_data,
+				      sizeof(bootloader_info_data), &err_rc, &err_group);
 
-		ok = zcbor_tstr_put_lit(zse, "mode") &&
-		     zcbor_int32_put(zse, BOOTLOADER_MODE);
-#ifdef CONFIG_MCUBOOT_BOOTLOADER_NO_DOWNGRADE
-		ok = ok && zcbor_tstr_put_lit(zse, "no-downgrade") &&
-		     zcbor_bool_encode(zse, &(bool){true});
+	if (status != MGMT_CB_OK) {
+		if (status == MGMT_CB_ERROR_RC) {
+			return err_rc;
+		}
+
+		ok = smp_add_cmd_err(zse, err_group, (uint16_t)err_rc);
+
+		return ok ? MGMT_ERR_EOK : MGMT_ERR_EMSGSIZE;
+	}
 #endif
-	} else {
-		return OS_MGMT_ERR_QUERY_YIELDS_NO_ANSWER;
+
+	/* If no parameter is recognized then just introduce the bootloader. */
+	if (!has_output) {
+#if defined(CONFIG_BOOTLOADER_MCUBOOT)
+		if (decoded == 0) {
+			ok = zcbor_tstr_put_lit(zse, "bootloader") &&
+			     zcbor_tstr_put_lit(zse, "MCUboot");
+			has_output = true;
+		} else if (zcbor_map_decode_bulk_key_found(bootloader_info,
+							   ARRAY_SIZE(bootloader_info),
+			   "query") && (sizeof("mode") - 1) == query.len &&
+			   memcmp("mode", query.value, query.len) == 0) {
+
+			ok = zcbor_tstr_put_lit(zse, "mode") &&
+			     zcbor_int32_put(zse, BOOTLOADER_MODE);
+#ifdef CONFIG_MCUBOOT_BOOTLOADER_NO_DOWNGRADE
+			ok = ok && zcbor_tstr_put_lit(zse, "no-downgrade") &&
+			     zcbor_bool_encode(zse, &(bool){true});
+#endif
+			has_output = true;
+		}
+#endif
+	}
+
+	if (!has_output) {
+		ok = smp_add_cmd_err(zse, MGMT_GROUP_ID_OS, OS_MGMT_ERR_QUERY_YIELDS_NO_ANSWER);
 	}
 
 	return ok ? MGMT_ERR_EOK : MGMT_ERR_EMSGSIZE;
@@ -836,7 +877,7 @@ static int os_mgmt_datetime_read(struct smp_streamer *ctxt)
 
 	sprintf(date_string, "%4d-%02d-%02dT%02d:%02d:%02d"
 #ifdef CONFIG_MCUMGR_GRP_OS_DATETIME_MS
-		".%d"
+		".%03d"
 #endif
 		, (uint16_t)(current_time.tm_year + RTC_DATETIME_YEAR_OFFSET),
 		(uint8_t)(current_time.tm_mon + RTC_DATETIME_MONTH_OFFSET),
@@ -1015,6 +1056,7 @@ static int os_mgmt_translate_error_code(uint16_t err)
 
 	case OS_MGMT_ERR_QUERY_YIELDS_NO_ANSWER:
 	case OS_MGMT_ERR_RTC_NOT_SET:
+	case OS_MGMT_ERR_QUERY_RESPONSE_VALUE_NOT_VALID:
 		rc = MGMT_ERR_ENOENT;
 		break;
 
@@ -1076,6 +1118,9 @@ static struct mgmt_group os_mgmt_group = {
 	.mg_group_id = MGMT_GROUP_ID_OS,
 #ifdef CONFIG_MCUMGR_SMP_SUPPORT_ORIGINAL_PROTOCOL
 	.mg_translate_error = os_mgmt_translate_error_code,
+#endif
+#ifdef CONFIG_MCUMGR_GRP_ENUM_DETAILS_NAME
+	.mg_group_name = "os mgmt",
 #endif
 };
 

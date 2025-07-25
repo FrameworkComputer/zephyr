@@ -1,7 +1,4 @@
-.. _max32672_evkit:
-
-MAX32672EVKIT
-#############
+.. zephyr:board:: max32672evkit
 
 Overview
 ********
@@ -12,10 +9,6 @@ for motion/motor control, industrial sensors, and battery-powered medical device
 designs an easy, cost-optimal upgrade path from 8-bit or 16-bit microcontrollers.
 
 The Zephyr port is running on the MAX32672 MCU.
-
-.. image:: img/max32672evkit.webp
-   :align: center
-   :alt: MAX32672EVKIT
 
 Hardware
 ********
@@ -104,6 +97,18 @@ Below interfaces are supported by Zephyr on MAX32672EVKIT.
 | I2C       | on-chip    | i2c                                 |
 +-----------+------------+-------------------------------------+
 | DMA       | on-chip    | dma controller                      |
++-----------+------------+-------------------------------------+
+| Watchdog  | on-chip    | watchdog                            |
++-----------+------------+-------------------------------------+
+| SPI       | on-chip    | spi                                 |
++-----------+------------+-------------------------------------+
+| ADC       | on-chip    | adc                                 |
++-----------+------------+-------------------------------------+
+| Timer     | on-chip    | counter                             |
++-----------+------------+-------------------------------------+
+| PWM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
+| Flash     | on-chip    | flash                               |
 +-----------+------------+-------------------------------------+
 
 
@@ -322,7 +327,8 @@ is supplied externally. Be sure to remove jumper JP15 (LDO_DUT_EN) to disconnect
 LDO if supplying VDD and VDDA externally.
 
 Once the debug probe is connected to your host computer, then you can simply run the
-``west flash`` command to write a firmware image into flash.
+``west flash`` command to write a firmware image into flash. To perform a full erase,
+pass the ``--erase`` option when executing ``west flash``.
 
 .. note::
 

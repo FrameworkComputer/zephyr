@@ -182,6 +182,7 @@ enum lwm2m_rd_client_event {
 typedef void (*lwm2m_ctx_event_cb_t)(struct lwm2m_ctx *ctx,
 				     enum lwm2m_rd_client_event event);
 
+typedef int (*lwm2m_set_sockopt_cb_t)(struct lwm2m_ctx *client_ctx);
 
 /**
  * @brief Different traffic states of the LwM2M socket.
@@ -217,6 +218,7 @@ struct lwm2m_ctx {
 	sys_slist_t queued_messages;
 #endif
 	sys_slist_t observer;
+	struct k_mutex lock;
 	/** @endcond */
 
 	/** A pointer to currently processed request, for internal LwM2M engine
@@ -245,8 +247,6 @@ struct lwm2m_ctx {
 	char *desthostname;
 	/** Destination hostname length */
 	uint16_t desthostnamelen;
-	/** Flag to indicate if hostname verification is enabled */
-	bool hostname_verify;
 
 	/** Custom load_credentials function.
 	 *  Client can set load_credentials function as a way of overriding
@@ -260,7 +260,7 @@ struct lwm2m_ctx {
 	 * a callback that is called after a socket is created and before
 	 * connect.
 	 */
-	int (*set_socketoptions)(struct lwm2m_ctx *client_ctx);
+	lwm2m_set_sockopt_cb_t set_socketoptions;
 
 	/** Flag to indicate if context should use DTLS.
 	 *  Enabled via the use of coaps:// protocol prefix in connection
@@ -915,21 +915,6 @@ int lwm2m_set_u16(const struct lwm2m_obj_path *path, uint16_t value);
 int lwm2m_set_u32(const struct lwm2m_obj_path *path, uint32_t value);
 
 /**
- * @brief Set resource (instance) value (u64)
- *
- * @deprecated Unsigned 64bit value type does not exits.
- *             This is internally handled as a int64_t.
- *             Use lwm2m_set_s64() instead.
- *
- * @param[in] path LwM2M path as a struct
- * @param[in] value u64 value
- *
- * @return 0 for success or negative in case of error.
- */
-__deprecated
-int lwm2m_set_u64(const struct lwm2m_obj_path *path, uint64_t value);
-
-/**
  * @brief Set resource (instance) value (s8)
  *
  * @param[in] path LwM2M path as a struct
@@ -1106,21 +1091,6 @@ int lwm2m_get_u16(const struct lwm2m_obj_path *path, uint16_t *value);
  * @return 0 for success or negative in case of error.
  */
 int lwm2m_get_u32(const struct lwm2m_obj_path *path, uint32_t *value);
-
-/**
- * @brief Get resource (instance) value (u64)
- *
- * @deprecated Unsigned 64bit value type does not exits.
- *             This is internally handled as a int64_t.
- *             Use lwm2m_get_s64() instead.
-
- * @param[in] path LwM2M path as a struct
- * @param[out] value u64 buffer to copy data into
- *
- * @return 0 for success or negative in case of error.
- */
-__deprecated
-int lwm2m_get_u64(const struct lwm2m_obj_path *path, uint64_t *value);
 
 /**
  * @brief Get resource (instance) value (s8)
@@ -1652,6 +1622,17 @@ int lwm2m_security_mode(struct lwm2m_ctx *ctx);
  * @return 0 for success or negative in case of error.
  */
 int lwm2m_set_default_sockopt(struct lwm2m_ctx *ctx);
+
+/**
+ * @brief Set the @ref lwm2m_ctx::set_socketoptions callback for the pull context's client.
+ *
+ * This allows setting specific socket options on the socket that is used to pull
+ * firmware updates. The callback will be called after the pull context socket has been
+ * created and before it will connect.
+ *
+ * @param[in] set_sockopt_cb A callback function to set sockopts for the pull context client.
+ */
+void lwm2m_pull_context_set_sockopt_callback(lwm2m_set_sockopt_cb_t set_sockopt_cb);
 
 #ifdef __cplusplus
 }

@@ -114,6 +114,7 @@ static log_timestamp_t proc_latency;
 static log_timestamp_t prev_timestamp;
 static atomic_t unordered_cnt;
 static uint64_t last_failure_report;
+static struct k_spinlock process_lock;
 
 static STRUCT_SECTION_ITERABLE(log_msg_ptr, log_msg_ptr);
 static STRUCT_SECTION_ITERABLE_ALTERNATE(log_mpsc_pbuf, mpsc_pbuf_buffer, log_buffer);
@@ -163,7 +164,6 @@ static void z_log_msg_post_finalize(void)
 	atomic_val_t cnt = atomic_inc(&buffered_cnt);
 
 	if (panic_mode) {
-		static struct k_spinlock process_lock;
 		k_spinlock_key_t key = k_spin_lock(&process_lock);
 		(void)log_process();
 
@@ -257,8 +257,10 @@ void log_core_init(void)
 	if (IS_ENABLED(CONFIG_LOG_FRONTEND)) {
 		log_frontend_init();
 
-		for (uint16_t s = 0; s < log_src_cnt_get(0); s++) {
-			log_frontend_filter_set(s, CONFIG_LOG_MAX_LEVEL);
+		if (IS_ENABLED(CONFIG_LOG_RUNTIME_FILTERING)) {
+			for (uint16_t s = 0; s < log_src_cnt_get(0); s++) {
+				log_frontend_filter_set(s, CONFIG_LOG_MAX_LEVEL);
+			}
 		}
 
 		if (IS_ENABLED(CONFIG_LOG_FRONTEND_ONLY)) {
@@ -328,8 +330,14 @@ static uint32_t z_log_init(bool blocking, bool can_sleep)
 
 	int backend_index = 0;
 
-	/* Activate autostart backends */
 	STRUCT_SECTION_FOREACH(log_backend, backend) {
+		uint32_t id;
+		/* As first slot in filtering mask is reserved, backend ID has offset.*/
+		id = LOG_FILTER_FIRST_BACKEND_SLOT_IDX;
+		id += backend - log_backend_get(0);
+		log_backend_id_set(backend, id);
+
+		/* Activate autostart backends */
 		if (backend->autostart) {
 			log_backend_init(backend);
 
@@ -555,9 +563,9 @@ bool z_impl_log_process(void)
 	msg = z_log_msg_claim(&backoff);
 
 	if (msg) {
-		atomic_dec(&buffered_cnt);
 		msg_process(msg);
 		z_log_msg_free(msg);
+		atomic_dec(&buffered_cnt);
 	} else if (CONFIG_LOG_PROCESSING_LATENCY_US > 0 && !K_TIMEOUT_EQ(backoff, K_NO_WAIT)) {
 		/* If backoff is requested, it means that there are pending
 		 * messages but they are too new and processing shall back off
@@ -664,7 +672,17 @@ static void msg_commit(struct mpsc_pbuf_buffer *buffer, struct log_msg *msg)
 	union log_msg_generic *m = (union log_msg_generic *)msg;
 
 	if (IS_ENABLED(CONFIG_LOG_MODE_IMMEDIATE)) {
+		k_spinlock_key_t key;
+
+		if (IS_ENABLED(CONFIG_LOG_IMMEDIATE_CLEAN_OUTPUT)) {
+			key = k_spin_lock(&process_lock);
+		}
+
 		msg_process(m);
+
+		if (IS_ENABLED(CONFIG_LOG_IMMEDIATE_CLEAN_OUTPUT)) {
+			k_spin_unlock(&process_lock, key);
+		}
 
 		return;
 	}
@@ -695,7 +713,7 @@ union log_msg_generic *z_log_msg_local_claim(void)
 union log_msg_generic *z_log_msg_claim_oldest(k_timeout_t *backoff)
 {
 	union log_msg_generic *msg = NULL;
-	struct log_msg_ptr *chosen;
+	struct log_msg_ptr *chosen = NULL;
 	log_timestamp_t t_min = sizeof(log_timestamp_t) > sizeof(uint32_t) ?
 				UINT64_MAX : UINT32_MAX;
 	int i = 0;
@@ -979,5 +997,19 @@ static int enable_logger(void)
 
 	return 0;
 }
+
+#ifdef CONFIG_LOG_MODE_DEFERRED
+void log_flush(void)
+{
+	if (IS_ENABLED(CONFIG_LOG_PROCESS_THREAD)) {
+		while (atomic_get(&buffered_cnt)) {
+			k_sleep(K_MSEC(10));
+		}
+	} else {
+		while (LOG_PROCESS()) {
+		}
+	}
+}
+#endif
 
 SYS_INIT(enable_logger, POST_KERNEL, CONFIG_LOG_CORE_INIT_PRIORITY);

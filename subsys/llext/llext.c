@@ -23,12 +23,39 @@ static sys_slist_t _llext_list = SYS_SLIST_STATIC_INIT(&_llext_list);
 
 static struct k_mutex llext_lock = Z_MUTEX_INITIALIZER(llext_lock);
 
+int llext_section_shndx(const struct llext_loader *ldr, const struct llext *ext,
+			const char *sect_name)
+{
+	unsigned int i;
+
+	for (i = 1; i < ext->sect_cnt; i++) {
+		const char *name = llext_string(ldr, ext, LLEXT_MEM_SHSTRTAB,
+						ext->sect_hdrs[i].sh_name);
+
+		if (!strcmp(name, sect_name)) {
+			return i;
+		}
+	}
+
+	return -ENOENT;
+}
+
+int llext_get_section_header(struct llext_loader *ldr, struct llext *ext, const char *search_name,
+			     elf_shdr_t *shdr)
+{
+	int ret;
+
+	ret = llext_section_shndx(ldr, ext, search_name);
+	if (ret < 0) {
+		return ret;
+	}
+
+	*shdr = ext->sect_hdrs[ret];
+	return 0;
+}
+
 ssize_t llext_find_section(struct llext_loader *ldr, const char *search_name)
 {
-	/* Note that this API is used after llext_load(), so the ldr->sect_hdrs
-	 * cache is already freed. A direct search covers all situations.
-	 */
-
 	elf_shdr_t *shdr;
 	unsigned int i;
 	size_t pos;
@@ -82,14 +109,13 @@ struct llext *llext_by_name(const char *name)
 int llext_iterate(int (*fn)(struct llext *ext, void *arg), void *arg)
 {
 	sys_snode_t *node;
-	unsigned int i;
 	int ret = 0;
 
 	k_mutex_lock(&llext_lock, K_FOREVER);
 
-	for (node = sys_slist_peek_head(&_llext_list), i = 0;
+	for (node = sys_slist_peek_head(&_llext_list);
 	     node;
-	     node = sys_slist_peek_next(node), i++) {
+	     node = sys_slist_peek_next(node)) {
 		struct llext *ext = CONTAINER_OF(node, struct llext, _llext_list);
 
 		ret = fn(ext, arg);
@@ -140,7 +166,7 @@ const void *llext_find_sym(const struct llext_symtable *sym_table, const char *s
 }
 
 int llext_load(struct llext_loader *ldr, const char *name, struct llext **ext,
-	       struct llext_load_param *ldr_parm)
+	       const struct llext_load_param *ldr_parm)
 {
 	int ret;
 
@@ -180,12 +206,20 @@ out:
 	return ret;
 }
 
+#include <zephyr/logging/log_ctrl.h>
+
 int llext_unload(struct llext **ext)
 {
 	__ASSERT(*ext, "Expected non-null extension");
 	struct llext *tmp = *ext;
 
+	/* Flush pending log messages, as the deferred formatting may be referencing
+	 * strings/args in the extension we are about to unload
+	 */
+	log_flush();
+
 	k_mutex_lock(&llext_lock, K_FOREVER);
+
 	__ASSERT(tmp->use_count, "A valid LLEXT cannot have a zero use-count!");
 
 	if (tmp->use_count-- != 1) {
@@ -198,8 +232,14 @@ int llext_unload(struct llext **ext)
 	/* FIXME: protect the global list */
 	sys_slist_find_and_remove(&_llext_list, &tmp->_llext_list);
 
+	llext_dependency_remove_all(tmp);
+
 	*ext = NULL;
 	k_mutex_unlock(&llext_lock);
+
+	if (tmp->sect_hdrs_on_heap) {
+		llext_free(tmp->sect_hdrs);
+	}
 
 	llext_free_regions(tmp);
 	llext_free(tmp->sym_tab.syms);
@@ -220,4 +260,67 @@ int llext_call_fn(struct llext *ext, const char *sym_name)
 	fn();
 
 	return 0;
+}
+
+static int call_fn_table(struct llext *ext, bool is_init)
+{
+	ssize_t ret;
+
+	ret = llext_get_fn_table(ext, is_init, NULL, 0);
+	if (ret < 0) {
+		LOG_ERR("Failed to get table size: %d", (int)ret);
+		return ret;
+	}
+
+	typedef void (*elf_void_fn_t)(void);
+
+	int fn_count = ret / sizeof(elf_void_fn_t);
+	elf_void_fn_t fn_table[fn_count];
+
+	ret = llext_get_fn_table(ext, is_init, &fn_table, sizeof(fn_table));
+	if (ret < 0) {
+		LOG_ERR("Failed to get function table: %d", (int)ret);
+		return ret;
+	}
+
+	for (int i = 0; i < fn_count; i++) {
+		LOG_DBG("calling %s function %p()",
+			is_init ? "bringup" : "teardown", (void *)fn_table[i]);
+		fn_table[i]();
+	}
+
+	return 0;
+}
+
+inline int llext_bringup(struct llext *ext)
+{
+	return call_fn_table(ext, true);
+}
+
+inline int llext_teardown(struct llext *ext)
+{
+	return call_fn_table(ext, false);
+}
+
+void llext_bootstrap(struct llext *ext, llext_entry_fn_t entry_fn, void *user_data)
+{
+	int ret;
+
+	/* Call initialization functions */
+	ret = llext_bringup(ext);
+	if (ret < 0) {
+		LOG_ERR("Failed to call init functions: %d", ret);
+		return;
+	}
+
+	/* Start extension main function */
+	LOG_DBG("calling entry function %p(%p)", (void *)entry_fn, user_data);
+	entry_fn(user_data);
+
+	/* Call de-initialization functions */
+	ret = llext_teardown(ext);
+	if (ret < 0) {
+		LOG_ERR("Failed to call de-init functions: %d", ret);
+		return;
+	}
 }

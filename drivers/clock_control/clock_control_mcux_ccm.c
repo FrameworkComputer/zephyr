@@ -1,5 +1,5 @@
 /*
- * Copyright 2017,2024 NXP
+ * Copyright 2017, 2024-2025 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -71,6 +71,28 @@ static const uint32_t lpuart_rate = MHZ(80);
 
 #endif /* CONFIG_UART_MCUX_LPUART */
 
+#ifdef CONFIG_DAI_NXP_SAI
+#if defined(CONFIG_SOC_MIMX8QX6_ADSP) || defined(CONFIG_SOC_MIMX8QM6_ADSP)
+static const clock_ip_name_t sai_clocks[] = {
+	kCLOCK_AUDIO_Sai1,
+	kCLOCK_AUDIO_Sai2,
+	kCLOCK_AUDIO_Sai3,
+};
+#endif
+#endif /* CONFIG_DAI_NXP_SAI */
+
+#if defined(CONFIG_I2C_NXP_II2C)
+static const clock_ip_name_t i2c_clk_root[] = {
+	kCLOCK_RootI2c1,
+	kCLOCK_RootI2c2,
+	kCLOCK_RootI2c3,
+	kCLOCK_RootI2c4,
+#ifdef CONFIG_SOC_MIMX8ML8
+	kCLOCK_RootI2c5,
+	kCLOCK_RootI2c6,
+#endif
+};
+#endif
 
 static int mcux_ccm_on(const struct device *dev,
 			      clock_control_subsys_t sub_system)
@@ -107,6 +129,16 @@ static int mcux_ccm_on(const struct device *dev,
 		return 0;
 #endif
 
+#ifdef CONFIG_DAI_NXP_SAI
+#if defined(CONFIG_SOC_MIMX8QM6_ADSP) || defined(CONFIG_SOC_MIMX8QX6_ADSP)
+	case IMX_CCM_SAI1_CLK:
+	case IMX_CCM_SAI2_CLK:
+	case IMX_CCM_SAI3_CLK:
+		CLOCK_EnableClock(sai_clocks[instance]);
+		return 0;
+#endif
+#endif /* CONFIG_DAI_NXP_SAI */
+
 #if defined(CONFIG_ETH_NXP_ENET)
 #ifdef CONFIG_SOC_SERIES_IMX8M
 #define ENET_CLOCK	kCLOCK_Enet1
@@ -138,6 +170,16 @@ static int mcux_ccm_off(const struct device *dev,
 		CLOCK_DisableClock(uart_clocks[instance]);
 		return 0;
 #endif
+
+#ifdef CONFIG_DAI_NXP_SAI
+#if defined(CONFIG_SOC_MIMX8QM6_ADSP) || defined(CONFIG_SOC_MIMX8QX6_ADSP)
+	case IMX_CCM_SAI1_CLK:
+	case IMX_CCM_SAI2_CLK:
+	case IMX_CCM_SAI3_CLK:
+		CLOCK_DisableClock(sai_clocks[instance]);
+		return 0;
+#endif
+#endif /* CONFIG_DAI_NXP_SAI */
 	default:
 		(void)instance;
 		return 0;
@@ -216,14 +258,14 @@ static int mcux_ccm_get_subsys_rate(const struct device *dev,
 #endif
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(usdhc1), okay) && CONFIG_IMX_USDHC
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(usdhc1)) && CONFIG_IMX_USDHC
 	case IMX_CCM_USDHC1_CLK:
 		*rate = CLOCK_GetSysPfdFreq(kCLOCK_Pfd0) /
 				(CLOCK_GetDiv(kCLOCK_Usdhc1Div) + 1U);
 		break;
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(usdhc2), okay) && CONFIG_IMX_USDHC
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(usdhc2)) && CONFIG_IMX_USDHC
 	case IMX_CCM_USDHC2_CLK:
 		*rate = CLOCK_GetSysPfdFreq(kCLOCK_Pfd0) /
 				(CLOCK_GetDiv(kCLOCK_Usdhc2Div) + 1U);
@@ -307,10 +349,11 @@ static int mcux_ccm_get_subsys_rate(const struct device *dev,
 	{
 		uint32_t mux = CLOCK_GetRootMux(kCLOCK_RootGpt1);
 
-		if (mux == 0)
+		if (mux == 0) {
 			*rate = OSC24M_CLK_FREQ;
-		else
+		} else {
 			*rate = 0;
+		}
 	} break;
 #endif
 #endif
@@ -338,12 +381,12 @@ static int mcux_ccm_get_subsys_rate(const struct device *dev,
 				/ (CLOCK_GetDiv(kCLOCK_Sai3Div) + 1);
 		break;
 #endif
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(flexspi), okay)
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexspi))
 	case IMX_CCM_FLEXSPI_CLK:
 		*rate = CLOCK_GetClockRootFreq(kCLOCK_FlexspiClkRoot);
 		break;
 #endif
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(flexspi2), okay)
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexspi2))
 	case IMX_CCM_FLEXSPI2_CLK:
 		*rate = CLOCK_GetClockRootFreq(kCLOCK_Flexspi2ClkRoot);
 		break;
@@ -353,7 +396,7 @@ static int mcux_ccm_get_subsys_rate(const struct device *dev,
 		*rate = CLOCK_GetFreq(kCLOCK_PerClk);
 		break;
 #endif
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(flexio1), okay) && CONFIG_MCUX_FLEXIO
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexio1)) && CONFIG_MCUX_FLEXIO
 	case IMX_CCM_FLEXIO1_CLK:
 	{
 		uint32_t flexio_mux = CLOCK_GetMux(kCLOCK_Flexio1Mux);
@@ -375,8 +418,8 @@ static int mcux_ccm_get_subsys_rate(const struct device *dev,
 					/ (CLOCK_GetDiv(kCLOCK_Flexio1Div) + 1);
 	} break;
 #endif
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(flexio2), okay) \
-		 || DT_NODE_HAS_STATUS(DT_NODELABEL(flexio3), okay)) && CONFIG_MCUX_FLEXIO
+#if (DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexio2)) \
+		 || DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(flexio3))) && CONFIG_MCUX_FLEXIO
 	case IMX_CCM_FLEXIO2_3_CLK:
 	{
 		uint32_t flexio_mux = CLOCK_GetMux(kCLOCK_Flexio2Mux);
@@ -416,6 +459,31 @@ static int mcux_ccm_get_subsys_rate(const struct device *dev,
 			(CLOCK_GetRootPostDivider(kCLOCK_RootEcspi3));
 		break;
 #endif /* CONFIG_SPI_MCUX_ECSPI */
+
+#if defined(CONFIG_I2C_NXP_II2C)
+	case IMX_CCM_I2C1_CLK:
+	case IMX_CCM_I2C2_CLK:
+	case IMX_CCM_I2C3_CLK:
+	case IMX_CCM_I2C4_CLK:
+#ifdef CONFIG_SOC_MIMX8ML8
+	case IMX_CCM_I2C5_CLK:
+	case IMX_CCM_I2C6_CLK:
+#endif
+	{
+		uint32_t instance = clock_name & IMX_CCM_INSTANCE_MASK;
+		uint32_t i2c_mux = CLOCK_GetRootMux(i2c_clk_root[instance]);
+
+		if (i2c_mux == 0) {
+			*rate = MHZ(24);
+		} else if (i2c_mux == 1) {
+			*rate = CLOCK_GetPllFreq(kCLOCK_SystemPll1Ctrl) /
+				(CLOCK_GetRootPreDivider(i2c_clk_root[instance])) /
+				(CLOCK_GetRootPostDivider(i2c_clk_root[instance])) /
+				5; /* SYSTEM PLL1 DIV5 */
+		}
+
+	} break;
+#endif
 	}
 
 	return 0;
@@ -458,7 +526,7 @@ static int CCM_SET_FUNC_ATTR mcux_ccm_set_subsys_rate(const struct device *dev,
 
 
 
-static const struct clock_control_driver_api mcux_ccm_driver_api = {
+static DEVICE_API(clock_control, mcux_ccm_driver_api) = {
 	.on = mcux_ccm_on,
 	.off = mcux_ccm_off,
 	.get_rate = mcux_ccm_get_subsys_rate,

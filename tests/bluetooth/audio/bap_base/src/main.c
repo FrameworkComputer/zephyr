@@ -6,9 +6,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
+#include <errno.h>
 
+#include <zephyr/bluetooth/audio/audio.h>
 #include <zephyr/bluetooth/audio/bap.h>
+#include <zephyr/bluetooth/bluetooth.h>
+#include <zephyr/ztest_assert.h>
+#include <zephyr/ztest_test.h>
 #include <zephyr/fff.h>
 
 DEFINE_FFF_GLOBALS;
@@ -357,7 +364,8 @@ ZTEST_F(bap_base_test_suite, test_base_get_subgroup_codec_id_inval_param_null)
 
 	zassert_not_null(base);
 
-	ret = bt_bap_base_foreach_subgroup(base, test_base_get_subgroup_codec_id_cb, NULL);
+	ret = bt_bap_base_foreach_subgroup(
+		base, test_base_get_subgroup_codec_id_inval_param_null_cb, NULL);
 	zassert_equal(ret, 0, "Unexpected return value: %d", ret);
 }
 
@@ -432,7 +440,8 @@ ZTEST_F(bap_base_test_suite, test_base_get_subgroup_codec_data_inval_param_null)
 
 	zassert_not_null(base);
 
-	ret = bt_bap_base_foreach_subgroup(base, test_base_get_subgroup_codec_data_cb, NULL);
+	ret = bt_bap_base_foreach_subgroup(
+		base, test_base_get_subgroup_codec_data_inval_param_null_cb, NULL);
 	zassert_equal(ret, 0, "Unexpected return value: %d", ret);
 }
 
@@ -504,7 +513,8 @@ ZTEST_F(bap_base_test_suite, test_base_get_subgroup_codec_meta_inval_param_null)
 
 	zassert_not_null(base);
 
-	ret = bt_bap_base_foreach_subgroup(base, test_base_get_subgroup_codec_meta_cb, NULL);
+	ret = bt_bap_base_foreach_subgroup(
+		base, test_base_get_subgroup_codec_meta_inval_param_null_cb, NULL);
 	zassert_equal(ret, 0, "Unexpected return value: %d", ret);
 }
 
@@ -582,7 +592,8 @@ ZTEST_F(bap_base_test_suite, test_base_subgroup_codec_to_codec_cfg_inval_param_n
 
 	zassert_not_null(base);
 
-	ret = bt_bap_base_foreach_subgroup(base, test_base_subgroup_codec_to_codec_cfg_cb, NULL);
+	ret = bt_bap_base_foreach_subgroup(
+		base, test_base_subgroup_codec_to_codec_cfg_inval_param_null_cb, NULL);
 	zassert_equal(ret, 0, "Unexpected return value: %d", ret);
 }
 
@@ -649,7 +660,6 @@ test_bt_bap_base_subgroup_get_bis_indexes_cb(const struct bt_bap_base_subgroup *
 ZTEST_F(bap_base_test_suite, test_bt_bap_base_subgroup_get_bis_indexes)
 {
 	const struct bt_bap_base *base = bt_bap_base_get_base_from_ad(&fixture->valid_base_ad);
-	uint32_t bis_indexes;
 	int ret;
 
 	zassert_not_null(base);

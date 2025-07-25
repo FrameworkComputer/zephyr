@@ -7,6 +7,7 @@
 
 #include <zephyr/toolchain.h>
 #include <zephyr/dt-bindings/gpio/gpio.h>
+#include <zephyr/sys/byteorder.h>
 #include <soc.h>
 
 #include <nrfx_gpiote.h>
@@ -15,6 +16,7 @@
 
 #include "hal/cpu.h"
 #include "hal/ccm.h"
+#include "hal/cntr.h"
 #include "hal/radio.h"
 #include "hal/radio_df.h"
 #include "hal/ticker.h"
@@ -78,9 +80,6 @@ BUILD_ASSERT(NRF_DT_GPIOTE_INST(FEM_NODE, HAL_RADIO_GPIO_PA_PROP) ==
 static const nrfx_gpiote_t gpiote_pdn = NRFX_GPIOTE_INSTANCE(
 	NRF_DT_GPIOTE_INST(FEM_NODE, pdn_gpios));
 static uint8_t gpiote_ch_pdn;
-static const nrfx_gpiote_t gpiote_csn = NRFX_GPIOTE_INSTANCE(
-	NRF_DT_GPIOTE_INST(DT_BUS(FEM_SPI_DEV_NODE), cs_gpios));
-static uint8_t gpiote_ch_csn;
 #endif
 
 /* These headers require the above gpiote-related variables to be declared. */
@@ -132,20 +131,6 @@ BUILD_ASSERT(!BAD_FLAGS(NRF_GPIO_LNA_FLAGS),
 #define NRF_GPIO_PDN_OFFSET DT_PROP(FEM_NODE, pdn_settle_time_us)
 NRF_DT_CHECK_GPIO_CTLR_IS_SOC(FEM_NODE, pdn_gpios, "pdn-gpios");
 #endif	/* DT_NODE_HAS_PROP(FEM_NODE, pdn_gpios) */
-
-/* CSN is special because it comes from the spi-if property. */
-#if defined(HAL_RADIO_FEM_NRF21540_HAS_CSN)
-#define NRF_GPIO_CSN_CTLR  DT_SPI_DEV_CS_GPIOS_CTLR(FEM_SPI_DEV_NODE)
-#define NRF_GPIO_CSN       ((NRF_GPIO_Type *)DT_REG_ADDR(NRF_GPIO_CSN_CTLR))
-#define NRF_GPIO_CSN_PIN   DT_SPI_DEV_CS_GPIOS_PIN(FEM_SPI_DEV_NODE)
-#define NRF_GPIO_CSN_FLAGS DT_SPI_DEV_CS_GPIOS_FLAGS(FEM_SPI_DEV_NODE)
-#define NRF_GPIO_CSN_PSEL  (NRF_GPIO_CSN_PIN + \
-			    (DT_PROP(NRF_GPIO_CSN_CTLR, port) << 5))
-BUILD_ASSERT(DT_NODE_HAS_COMPAT(NRF_GPIO_CSN_CTLR, nordic_nrf_gpio),
-	     "fem node " DT_NODE_PATH(FEM_NODE) " has a spi-if property, "
-	     " but the chip select pin is not on the SoC. Check cs-gpios in "
-	     DT_NODE_PATH(DT_BUS(FEM_SPI_DEV_NODE)));
-#endif	/* HAL_RADIO_FEM_NRF21540_HAS_CSN */
 
 #endif	/* HAL_RADIO_FEM_IS_NRF21540 */
 
@@ -207,15 +192,6 @@ void radio_setup(void)
 	}
 #endif /* NRF_GPIO_PDN_PIN */
 
-#if defined(NRF_GPIO_CSN_PIN)
-	NRF_GPIO_CSN->DIRSET = BIT(NRF_GPIO_CSN_PIN);
-	if (ACTIVE_LOW(NRF_GPIO_CSN_FLAGS)) {
-		NRF_GPIO_CSN->OUTSET = BIT(NRF_GPIO_CSN_PIN);
-	} else {
-		NRF_GPIO_CSN->OUTCLR = BIT(NRF_GPIO_CSN_PIN);
-	}
-#endif /* NRF_GPIO_CSN_PIN */
-
 	hal_radio_ram_prio_setup();
 }
 
@@ -243,8 +219,13 @@ void radio_reset(void)
 #endif
 
 #if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
-	NRF_RADIO->TIMING = (0U << RADIO_TIMING_RU_Pos) &
+#if defined(CONFIG_BT_CTLR_TIFS_HW)
+	NRF_RADIO->TIMING = (RADIO_TIMING_RU_Legacy << RADIO_TIMING_RU_Pos) &
 			    RADIO_TIMING_RU_Msk;
+#else /* !CONFIG_BT_CTLR_TIFS_HW */
+	NRF_RADIO->TIMING = (RADIO_TIMING_RU_Fast << RADIO_TIMING_RU_Pos) &
+			    RADIO_TIMING_RU_Msk;
+#endif /* !CONFIG_BT_CTLR_TIFS_HW */
 
 	NRF_POWER->TASKS_CONSTLAT = 1U;
 #endif /* CONFIG_SOC_COMPATIBLE_NRF54LX */
@@ -401,7 +382,15 @@ void radio_freq_chan_set(uint32_t chan)
 
 void radio_whiten_iv_set(uint32_t iv)
 {
+#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(RADIO_DATAWHITEIV_DATAWHITEIV_Msk)
+	NRF_RADIO->DATAWHITEIV = HAL_RADIO_RESET_VALUE_DATAWHITE | iv;
+#else /* !RADIO_DATAWHITEIV_DATAWHITEIV_Msk */
+	NRF_RADIO->DATAWHITE = HAL_RADIO_RESET_VALUE_DATAWHITE | iv;
+#endif /* !RADIO_DATAWHITEIV_DATAWHITEIV_Msk */
+#else /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
 	nrf_radio_datawhiteiv_set(NRF_RADIO, iv);
+#endif /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
 
 	NRF_RADIO->PCNF1 &= ~RADIO_PCNF1_WHITEEN_Msk;
 	NRF_RADIO->PCNF1 |= ((1UL) << RADIO_PCNF1_WHITEEN_Pos) &
@@ -416,7 +405,7 @@ void radio_aa_set(const uint8_t *aa)
 	NRF_RADIO->RXADDRESSES =
 	    ((RADIO_RXADDRESSES_ADDR0_Enabled) << RADIO_RXADDRESSES_ADDR0_Pos);
 	NRF_RADIO->PREFIX0 = aa[3];
-	NRF_RADIO->BASE0 = (((uint32_t) aa[2]) << 24) | (aa[1] << 16) | (aa[0] << 8);
+	NRF_RADIO->BASE0 = sys_get_le24(aa) << 8;
 }
 
 void radio_pkt_configure(uint8_t bits_len, uint8_t max_len, uint8_t flags)
@@ -596,6 +585,7 @@ void radio_status_reset(void)
 	 *       EVENT_* registers are not reset to save code and CPU time.
 	 */
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_READY);
+	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_ADDRESS);
 	nrf_radio_event_clear(NRF_RADIO, NRF_RADIO_EVENT_END);
 #if defined(CONFIG_BT_CTLR_DF_SUPPORT) && !defined(CONFIG_ZTEST)
 	/* Clear it only for SoCs supporting DF extension */
@@ -616,17 +606,29 @@ uint32_t radio_is_ready(void)
 	return (NRF_RADIO->EVENTS_READY != 0);
 }
 
+uint32_t radio_is_address(void)
+{
+	return (NRF_RADIO->EVENTS_ADDRESS != 0);
+}
+
 #if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
+static uint32_t last_pdu_end_latency_us;
 static uint32_t last_pdu_end_us;
+
+static void last_pdu_end_us_init(uint32_t latency_us)
+{
+	last_pdu_end_latency_us = latency_us;
+	last_pdu_end_us = 0U;
+}
 
 uint32_t radio_is_done(void)
 {
-	if (NRF_RADIO->NRF_RADIO_TRX_END_EVENT != 0) {
+	if (NRF_RADIO->HAL_RADIO_TRX_EVENTS_END != 0) {
 		/* On packet END event increment last packet end time value.
 		 * Note: this depends on the function being called exactly once
 		 * in the ISR function.
 		 */
-		last_pdu_end_us += EVENT_TIMER->CC[2];
+		last_pdu_end_us += EVENT_TIMER->CC[HAL_EVENT_TIMER_TRX_END_CC_OFFSET];
 		return 1;
 	} else {
 		return 0;
@@ -636,9 +638,18 @@ uint32_t radio_is_done(void)
 #else /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 uint32_t radio_is_done(void)
 {
-	return (NRF_RADIO->NRF_RADIO_TRX_END_EVENT != 0);
+	return (NRF_RADIO->HAL_RADIO_TRX_EVENTS_END != 0);
 }
 #endif /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
+
+uint32_t radio_is_tx_done(void)
+{
+	if (IS_ENABLED(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)) {
+		return radio_is_done();
+	} else {
+		return 1U;
+	}
+}
 
 uint32_t radio_has_disabled(void)
 {
@@ -664,7 +675,19 @@ uint32_t radio_crc_is_valid(void)
 	return (NRF_RADIO->CRCSTATUS != 0);
 }
 
-static uint8_t MALIGN(4) _pkt_empty[PDU_EM_LL_SIZE_MAX];
+/* Note: Only 3 bytes (PDU_EM_LL_SIZE_MAX) is required for empty PDU
+ *       transmission, but in case of Radio ISR latency if rx packet pointer
+ *       is not setup then Radio DMA will use previously assigned buffer which
+ *       can be this empty PDU buffer. Radio DMA will overrun this buffer and
+ *       cause memory corruption. Any detection of ISR latency will not happen
+ *       if the ISR function pointer in RAM is corrupted by this overrun.
+ *       Increasing ISR latencies in OS and CPU usage in the ULL_HIGH priority
+ *       if it is same as LLL priority in Controller implementation then it is
+ *       making it tight to execute Controller code in the tIFS between Tx-Rx
+ *       PDU's Radio ISRs.
+ */
+static uint8_t MALIGN(4) _pkt_empty[MAX(HAL_RADIO_PDU_LEN_MAX,
+					PDU_EM_LL_SIZE_MAX)];
 static uint8_t MALIGN(4) _pkt_scratch[MAX((HAL_RADIO_PDU_LEN_MAX + 3),
 				       PDU_AC_LL_SIZE_MAX)];
 
@@ -796,17 +819,12 @@ void sw_switch(uint8_t dir_curr, uint8_t dir_next, uint8_t phy_curr, uint8_t fla
 
 #if defined(CONFIG_BT_CTLR_PHY_CODED)
 #if defined(CONFIG_HAS_HW_NRF_RADIO_BLE_CODED)
-		uint8_t ppi_en =
-			HAL_SW_SWITCH_RADIO_ENABLE_S2_PPI(sw_tifs_toggle);
-		uint8_t ppi_dis =
-			HAL_SW_SWITCH_GROUP_TASK_DISABLE_PPI(sw_tifs_toggle);
+		uint8_t ppi_en = HAL_SW_SWITCH_RADIO_ENABLE_S2_PPI(sw_tifs_toggle);
+		uint8_t ppi_dis = HAL_SW_SWITCH_GROUP_TASK_DISABLE_PPI(sw_tifs_toggle);
+		uint8_t cc_s2 = SW_SWITCH_TIMER_S2_EVTS_COMP(sw_tifs_toggle);
 
 		if (dir_curr == SW_SWITCH_RX && (phy_curr & PHY_CODED)) {
 			/* Switching to TX after RX on LE Coded PHY. */
-
-			uint8_t cc_s2 =
-			    SW_SWITCH_TIMER_S2_EVTS_COMP(sw_tifs_toggle);
-
 			uint32_t delay_s2;
 			uint32_t new_cc_s2_value;
 
@@ -847,7 +865,7 @@ void sw_switch(uint8_t dir_curr, uint8_t dir_next, uint8_t phy_curr, uint8_t fla
 			 *       because the code is very fragile and hard to debug.
 			 */
 			if (end_evt_delay_en != END_EVT_DELAY_ENABLED) {
-				hal_radio_sw_switch_coded_config_clear(ppi_en, ppi_dis, cc,
+				hal_radio_sw_switch_coded_config_clear(ppi_en, ppi_dis, cc_s2,
 								       sw_tifs_toggle);
 			}
 
@@ -888,13 +906,12 @@ void sw_switch(uint8_t dir_curr, uint8_t dir_next, uint8_t phy_curr, uint8_t fla
 #if defined(CONFIG_BT_CTLR_PHY_CODED)
 #if defined(CONFIG_HAS_HW_NRF_RADIO_BLE_CODED)
 		if (1) {
-			uint8_t ppi_en = HAL_SW_SWITCH_RADIO_ENABLE_S2_PPI(
-						sw_tifs_toggle);
-			uint8_t ppi_dis = HAL_SW_SWITCH_GROUP_TASK_DISABLE_PPI(
-						sw_tifs_toggle);
+			uint8_t ppi_en = HAL_SW_SWITCH_RADIO_ENABLE_S2_PPI(sw_tifs_toggle);
+			uint8_t ppi_dis = HAL_SW_SWITCH_GROUP_TASK_DISABLE_PPI(sw_tifs_toggle);
+			uint8_t cc_s2 = SW_SWITCH_TIMER_S2_EVTS_COMP(sw_tifs_toggle);
 
-			hal_radio_sw_switch_coded_config_clear(ppi_en,
-				ppi_dis, cc, sw_tifs_toggle);
+			hal_radio_sw_switch_coded_config_clear(ppi_en, ppi_dis, cc_s2,
+							       sw_tifs_toggle);
 			hal_radio_sw_switch_disable_group_clear(ppi_dis, cc, sw_tifs_toggle);
 		}
 #endif /* CONFIG_HAS_HW_NRF_RADIO_BLE_CODED */
@@ -920,13 +937,13 @@ void sw_switch(uint8_t dir_curr, uint8_t dir_next, uint8_t phy_curr, uint8_t fla
 	 *       time-stamp.
 	 */
 	hal_radio_end_time_capture_ppi_config();
-#if !defined(CONFIG_SOC_COMPATIBLE_NRF53X)
+#if !defined(CONFIG_SOC_COMPATIBLE_NRF53X) && !defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
 	/* The function is not called for nRF5340 single timer configuration because
 	 * HAL_SW_SWITCH_TIMER_CLEAR_PPI is equal to HAL_RADIO_END_TIME_CAPTURE_PPI,
 	 * so channel is already enabled.
 	 */
 	hal_radio_nrf_ppi_channels_enable(BIT(HAL_RADIO_END_TIME_CAPTURE_PPI));
-#endif /* !CONFIG_SOC_COMPATIBLE_NRF53X */
+#endif /* !CONFIG_SOC_COMPATIBLE_NRF53X && !CONFIG_SOC_COMPATIBLE_NRF54LX */
 #endif /* CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 
 	sw_tifs_toggle += 1U;
@@ -1144,9 +1161,63 @@ uint32_t radio_bc_has_match(void)
 	return (NRF_RADIO->EVENTS_BCMATCH != 0);
 }
 
+#if defined(CONFIG_BT_CTLR_RADIO_TIMER_ISR)
+static radio_isr_cb_t isr_radio_tmr_cb;
+static void           *isr_radio_tmr_cb_param;
+
+void isr_radio_tmr(void)
+{
+	irq_disable(TIMER0_IRQn);
+	nrf_timer_int_disable(EVENT_TIMER, TIMER_INTENSET_COMPARE2_Msk);
+	nrf_timer_event_clear(EVENT_TIMER, HAL_EVENT_TIMER_DEFERRED_TX_EVENT);
+
+	isr_radio_tmr_cb(isr_radio_tmr_cb_param);
+}
+
+uint32_t radio_tmr_isr_set(uint32_t start_us, radio_isr_cb_t cb, void *param)
+{
+	irq_disable(TIMER0_IRQn);
+
+	isr_radio_tmr_cb_param = param;
+	isr_radio_tmr_cb = cb;
+
+	/* start_us could be the current count in the timer */
+	uint32_t now_us = start_us;
+
+	/* Setup timer compare while determining the latency in doing so */
+	do {
+		/* Set start to be, now plus the determined latency */
+		start_us = (now_us << 1) - start_us;
+
+		/* Setup compare event with min. 1 us offset */
+		nrf_timer_event_clear(EVENT_TIMER, HAL_EVENT_TIMER_DEFERRED_TX_EVENT);
+		nrf_timer_cc_set(EVENT_TIMER, HAL_EVENT_TIMER_DEFERRED_TRX_CC_OFFSET,
+				 start_us + 1U);
+
+		/* Capture the current time */
+		nrf_timer_task_trigger(EVENT_TIMER, HAL_EVENT_TIMER_SAMPLE_TASK);
+
+		now_us = EVENT_TIMER->CC[HAL_EVENT_TIMER_SAMPLE_CC_OFFSET];
+	} while ((now_us > start_us) &&
+		 (EVENT_TIMER->EVENTS_COMPARE[HAL_EVENT_TIMER_DEFERRED_TRX_CC_OFFSET] == 0U));
+
+	nrf_timer_int_enable(EVENT_TIMER, TIMER_INTENSET_COMPARE2_Msk);
+
+	NVIC_ClearPendingIRQ(TIMER0_IRQn);
+
+	irq_enable(TIMER0_IRQn);
+
+	return start_us + 1U;
+}
+#endif /* CONFIG_BT_CTLR_RADIO_TIMER_ISR */
+
 void radio_tmr_status_reset(void)
 {
+#if defined(CONFIG_BT_CTLR_NRF_GRTC)
+	nrf_grtc_sys_counter_compare_event_disable(NRF_GRTC, HAL_CNTR_GRTC_CC_IDX_RADIO);
+#else /* !CONFIG_BT_CTLR_NRF_GRTC */
 	nrf_rtc_event_disable(NRF_RTC, RTC_EVTENCLR_COMPARE2_Msk);
+#endif  /* !CONFIG_BT_CTLR_NRF_GRTC */
 
 #if defined(CONFIG_BT_CTLR_LE_ENC) || defined(CONFIG_BT_CTLR_BROADCAST_ISO_ENC)
 	hal_trigger_crypt_ppi_disable();
@@ -1185,7 +1256,11 @@ void radio_tmr_status_reset(void)
 
 void radio_tmr_tx_status_reset(void)
 {
+#if defined(CONFIG_BT_CTLR_NRF_GRTC)
+	nrf_grtc_sys_counter_compare_event_disable(NRF_GRTC, HAL_CNTR_GRTC_CC_IDX_RADIO);
+#else /* !CONFIG_BT_CTLR_NRF_GRTC */
 	nrf_rtc_event_disable(NRF_RTC, RTC_EVTENCLR_COMPARE2_Msk);
+#endif  /* !CONFIG_BT_CTLR_NRF_GRTC */
 
 #if defined(CONFIG_BT_CTLR_LE_ENC) || defined(CONFIG_BT_CTLR_BROADCAST_ISO_ENC)
 	hal_trigger_crypt_ppi_disable();
@@ -1228,7 +1303,11 @@ void radio_tmr_tx_status_reset(void)
 
 void radio_tmr_rx_status_reset(void)
 {
+#if defined(CONFIG_BT_CTLR_NRF_GRTC)
+	nrf_grtc_sys_counter_compare_event_disable(NRF_GRTC, HAL_CNTR_GRTC_CC_IDX_RADIO);
+#else /* !CONFIG_BT_CTLR_NRF_GRTC */
 	nrf_rtc_event_disable(NRF_RTC, RTC_EVTENCLR_COMPARE2_Msk);
+#endif  /* !CONFIG_BT_CTLR_NRF_GRTC */
 
 #if defined(CONFIG_BT_CTLR_LE_ENC) || defined(CONFIG_BT_CTLR_BROADCAST_ISO_ENC)
 	hal_trigger_crypt_ppi_disable();
@@ -1317,17 +1396,93 @@ void radio_tmr_tifs_set(uint32_t tifs)
 
 uint32_t radio_tmr_start(uint8_t trx, uint32_t ticks_start, uint32_t remainder)
 {
+	uint32_t remainder_us;
+
+	/* Convert jitter to positive offset remainder in microseconds */
 	hal_ticker_remove_jitter(&ticks_start, &remainder);
+	remainder_us = remainder;
+
+#if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
+	/* When using single timer for software tIFS switching, ensure that
+	 * the timer compare value is large enough to consider radio ISR
+	 * latency so that the ISR is able to disable the PPI/DPPI that again
+	 * could trigger the TXEN/RXEN task.
+	 * The timer is cleared on Radio End and if the PPI/DPPI is not disabled
+	 * by the Radio ISR, the compare will trigger again.
+	 */
+	uint32_t latency_ticks;
+	uint32_t latency_us;
+
+	latency_us = MAX(remainder_us, HAL_RADIO_ISR_LATENCY_MAX_US) - remainder_us;
+	latency_ticks = HAL_TICKER_US_TO_TICKS(latency_us);
+	ticks_start -= latency_ticks;
+	remainder_us += latency_us;
+#endif /* CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 
 	nrf_timer_task_trigger(EVENT_TIMER, NRF_TIMER_TASK_CLEAR);
 	EVENT_TIMER->MODE = 0;
 	EVENT_TIMER->PRESCALER = HAL_EVENT_TIMER_PRESCALER_VALUE;
 	EVENT_TIMER->BITMODE = 2;	/* 24 - bit */
 
-	nrf_timer_cc_set(EVENT_TIMER, 0, remainder);
+	nrf_timer_cc_set(EVENT_TIMER, HAL_EVENT_TIMER_TRX_CC_OFFSET, remainder_us);
 
+#if defined(CONFIG_BT_CTLR_NRF_GRTC)
+	uint32_t cntr_l, cntr_h, cntr_h_overflow, stale;
+
+	/* Disable capture/compare */
+	nrf_grtc_sys_counter_compare_event_disable(NRF_GRTC, HAL_CNTR_GRTC_CC_IDX_RADIO);
+
+	/* NOTE: We are going to use TASKS_CAPTURE to read current
+	 *       SYSCOUNTER H and L, so that COMPARE registers can be set
+	 *       considering that we need to set H compare value too.
+	 */
+
+	/* Read current syscounter value */
+	do {
+		cntr_h = nrf_grtc_sys_counter_high_get(NRF_GRTC);
+		cntr_l = nrf_grtc_sys_counter_low_get(NRF_GRTC);
+		cntr_h_overflow = nrf_grtc_sys_counter_high_get(NRF_GRTC);
+	} while ((cntr_h & GRTC_SYSCOUNTER_SYSCOUNTERH_BUSY_Msk) ||
+		 (cntr_h_overflow & GRTC_SYSCOUNTER_SYSCOUNTERH_OVERFLOW_Msk));
+
+	/* Set a stale value in capture value */
+	stale = cntr_l - 1U;
+	NRF_GRTC->CC[HAL_CNTR_GRTC_CC_IDX_RADIO].CCL = stale;
+
+	/* Trigger a capture */
+	nrf_grtc_task_trigger(NRF_GRTC, (NRF_GRTC_TASK_CAPTURE_0 +
+					 (HAL_CNTR_GRTC_CC_IDX_RADIO * sizeof(uint32_t))));
+
+	/* Wait to get a new L value */
+	do {
+		cntr_l = NRF_GRTC->CC[HAL_CNTR_GRTC_CC_IDX_RADIO].CCL;
+	} while (cntr_l == stale);
+
+	/* Read H value */
+	cntr_h = NRF_GRTC->CC[HAL_CNTR_GRTC_CC_IDX_RADIO].CCH;
+
+	/* NOTE: HERE, we have cntr_h and cntr_l in sync. */
+
+	/* Handle rollover between current and expected value */
+	if (ticks_start < cntr_l) {
+		cntr_h++;
+	}
+
+	/* Clear compare event, if any */
+	nrf_grtc_event_clear(NRF_GRTC, HAL_CNTR_GRTC_EVENT_COMPARE_RADIO);
+
+	/* Set compare register values */
+	nrf_grtc_sys_counter_cc_set(NRF_GRTC, HAL_CNTR_GRTC_CC_IDX_RADIO,
+				    ((((uint64_t)cntr_h & GRTC_CC_CCH_CCH_Msk) << 32) |
+				     ticks_start));
+
+	/* Enable compare */
+	nrf_grtc_sys_counter_compare_event_enable(NRF_GRTC, HAL_CNTR_GRTC_CC_IDX_RADIO);
+
+#else /* !CONFIG_BT_CTLR_NRF_GRTC */
 	nrf_rtc_cc_set(NRF_RTC, 2, ticks_start);
 	nrf_rtc_event_enable(NRF_RTC, RTC_EVTENSET_COMPARE2_Msk);
+#endif  /* !CONFIG_BT_CTLR_NRF_GRTC */
 
 	hal_event_timer_start_ppi_config();
 	hal_radio_nrf_ppi_channels_enable(BIT(HAL_EVENT_TIMER_START_PPI));
@@ -1336,7 +1491,7 @@ uint32_t radio_tmr_start(uint8_t trx, uint32_t ticks_start, uint32_t remainder)
 
 #if !defined(CONFIG_BT_CTLR_TIFS_HW)
 #if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
-	last_pdu_end_us = 0U;
+	last_pdu_end_us_init(latency_us);
 
 #else /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 	nrf_timer_task_trigger(SW_SWITCH_TIMER, NRF_TIMER_TASK_CLEAR);
@@ -1363,22 +1518,95 @@ uint32_t radio_tmr_start(uint8_t trx, uint32_t ticks_start, uint32_t remainder)
 #endif /* CONFIG_BT_CTLR_PHY_CODED && CONFIG_HAS_HW_NRF_RADIO_BLE_CODED */
 #endif /* !CONFIG_BT_CTLR_TIFS_HW */
 
-	return remainder;
+	return remainder_us;
 }
 
-uint32_t radio_tmr_start_tick(uint8_t trx, uint32_t tick)
+uint32_t radio_tmr_start_tick(uint8_t trx, uint32_t ticks_start)
 {
 	uint32_t remainder_us;
+
+	/* Setup compare event with min. 1 us offset */
+	remainder_us = 1U;
+
+#if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
+	/* When using single timer for software tIFS switching, ensure that
+	 * the timer compare value is large enough to consider radio ISR
+	 * latency so that the ISR is able to disable the PPI/DPPI that again
+	 * could trigger the TXEN/RXEN task.
+	 * The timer is cleared on Radio End and if the PPI/DPPI is not disabled
+	 * by the Radio ISR, the compare will trigger again.
+	 */
+	uint32_t latency_ticks;
+	uint32_t latency_us;
+
+	latency_us = MAX(remainder_us, HAL_RADIO_ISR_LATENCY_MAX_US) - remainder_us;
+	latency_ticks = HAL_TICKER_US_TO_TICKS(latency_us);
+	ticks_start -= latency_ticks;
+	remainder_us += latency_us;
+#endif /* CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 
 	nrf_timer_task_trigger(EVENT_TIMER, NRF_TIMER_TASK_STOP);
 	nrf_timer_task_trigger(EVENT_TIMER, NRF_TIMER_TASK_CLEAR);
 
-	/* Setup compare event with min. 1 us offset */
-	remainder_us = 1;
-	nrf_timer_cc_set(EVENT_TIMER, 0, remainder_us);
+	nrf_timer_cc_set(EVENT_TIMER, HAL_EVENT_TIMER_TRX_CC_OFFSET, remainder_us);
 
-	nrf_rtc_cc_set(NRF_RTC, 2, tick);
+#if defined(CONFIG_BT_CTLR_NRF_GRTC)
+	uint32_t cntr_l, cntr_h, cntr_h_overflow, stale;
+
+	/* Disable capture/compare */
+	nrf_grtc_sys_counter_compare_event_disable(NRF_GRTC, HAL_CNTR_GRTC_CC_IDX_RADIO);
+
+	/* NOTE: We are going to use TASKS_CAPTURE to read current
+	 *       SYSCOUNTER H and L, so that COMPARE registers can be set
+	 *       considering that we need to set H compare value too.
+	 */
+
+	/* Read current syscounter value */
+	do {
+		cntr_h = nrf_grtc_sys_counter_high_get(NRF_GRTC);
+		cntr_l = nrf_grtc_sys_counter_low_get(NRF_GRTC);
+		cntr_h_overflow = nrf_grtc_sys_counter_high_get(NRF_GRTC);
+	} while ((cntr_h & GRTC_SYSCOUNTER_SYSCOUNTERH_BUSY_Msk) ||
+		 (cntr_h_overflow & GRTC_SYSCOUNTER_SYSCOUNTERH_OVERFLOW_Msk));
+
+	/* Set a stale value in capture value */
+	stale = cntr_l - 1U;
+	NRF_GRTC->CC[HAL_CNTR_GRTC_CC_IDX_RADIO].CCL = stale;
+
+	/* Trigger a capture */
+	nrf_grtc_task_trigger(NRF_GRTC, (NRF_GRTC_TASK_CAPTURE_0 +
+					 (HAL_CNTR_GRTC_CC_IDX_RADIO * sizeof(uint32_t))));
+
+	/* Wait to get a new L value */
+	do {
+		cntr_l = NRF_GRTC->CC[HAL_CNTR_GRTC_CC_IDX_RADIO].CCL;
+	} while (cntr_l == stale);
+
+	/* Read H value */
+	cntr_h = NRF_GRTC->CC[HAL_CNTR_GRTC_CC_IDX_RADIO].CCH;
+
+	/* NOTE: HERE, we have cntr_h and cntr_l in sync. */
+
+	/* Handle rollover between current and expected value */
+	if (ticks_start < cntr_l) {
+		cntr_h++;
+	}
+
+	/* Clear compare event, if any */
+	nrf_grtc_event_clear(NRF_GRTC, HAL_CNTR_GRTC_EVENT_COMPARE_RADIO);
+
+	/* Set compare register values */
+	nrf_grtc_sys_counter_cc_set(NRF_GRTC, HAL_CNTR_GRTC_CC_IDX_RADIO,
+				    ((((uint64_t)cntr_h & GRTC_CC_CCH_CCH_Msk) << 32) |
+				     ticks_start));
+
+	/* Enable compare */
+	nrf_grtc_sys_counter_compare_event_enable(NRF_GRTC, HAL_CNTR_GRTC_CC_IDX_RADIO);
+
+#else /* !CONFIG_BT_CTLR_NRF_GRTC */
+	nrf_rtc_cc_set(NRF_RTC, 2, ticks_start);
 	nrf_rtc_event_enable(NRF_RTC, RTC_EVTENSET_COMPARE2_Msk);
+#endif  /* !CONFIG_BT_CTLR_NRF_GRTC */
 
 	hal_event_timer_start_ppi_config();
 	hal_radio_nrf_ppi_channels_enable(BIT(HAL_EVENT_TIMER_START_PPI));
@@ -1387,7 +1615,7 @@ uint32_t radio_tmr_start_tick(uint8_t trx, uint32_t tick)
 
 #if !defined(CONFIG_BT_CTLR_TIFS_HW)
 #if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
-	last_pdu_end_us = 0U;
+	last_pdu_end_us_init(latency_us);
 #endif /* CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 #if defined(CONFIG_SOC_COMPATIBLE_NRF53X) || defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
 	/* NOTE: Timer clear DPPI configuration is needed only for nRF53
@@ -1414,7 +1642,10 @@ uint32_t radio_tmr_start_us(uint8_t trx, uint32_t start_us)
 
 #if !defined(CONFIG_BT_CTLR_TIFS_HW)
 #if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
-	last_pdu_end_us = 0U;
+	/* As timer is reset on every radio end, remove the accumulated
+	 * last_pdu_end_us in the given start_us.
+	 */
+	start_us -= last_pdu_end_us;
 #endif /* CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 #if defined(CONFIG_SOC_COMPATIBLE_NRF53X) || defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
 	/* NOTE: Timer clear DPPI configuration is needed only for nRF53
@@ -1434,24 +1665,45 @@ uint32_t radio_tmr_start_us(uint8_t trx, uint32_t start_us)
 
 	/* start_us could be the current count in the timer */
 	uint32_t now_us = start_us;
+	uint32_t actual_us;
 
-	/* Setup PPI while determining the latency in doing so */
+	/* Setup timer compare while determining the latency in doing so */
 	do {
 		/* Set start to be, now plus the determined latency */
 		start_us = (now_us << 1) - start_us;
 
 		/* Setup compare event with min. 1 us offset */
-		nrf_timer_event_clear(EVENT_TIMER, NRF_TIMER_EVENT_COMPARE0);
-		nrf_timer_cc_set(EVENT_TIMER, 0, start_us + 1U);
+		actual_us = start_us + 1U;
+
+#if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
+		/* When using single timer for software tIFS switching, ensure that
+		 * the timer compare value is large enough to consider radio ISR
+		 * latency so that the ISR is able to disable the PPI/DPPI that again
+		 * could trigger the TXEN/RXEN task.
+		 * The timer is cleared on Radio End and if the PPI/DPPI is not disabled
+		 * by the Radio ISR, the compare will trigger again.
+		 */
+		uint32_t latency_us;
+
+		latency_us = MAX(actual_us, HAL_RADIO_ISR_LATENCY_MAX_US) - actual_us;
+		actual_us += latency_us;
+#endif /* CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
+
+		nrf_timer_event_clear(EVENT_TIMER, HAL_EVENT_TIMER_TRX_EVENT);
+		nrf_timer_cc_set(EVENT_TIMER, HAL_EVENT_TIMER_TRX_CC_OFFSET, actual_us);
 
 		/* Capture the current time */
-		nrf_timer_task_trigger(EVENT_TIMER,
-				       HAL_EVENT_TIMER_SAMPLE_TASK);
+		nrf_timer_task_trigger(EVENT_TIMER, HAL_EVENT_TIMER_SAMPLE_TASK);
 
 		now_us = EVENT_TIMER->CC[HAL_EVENT_TIMER_SAMPLE_CC_OFFSET];
-	} while ((now_us > start_us) && (EVENT_TIMER->EVENTS_COMPARE[0] == 0U));
+	} while ((now_us > start_us) &&
+		 (EVENT_TIMER->EVENTS_COMPARE[HAL_EVENT_TIMER_TRX_CC_OFFSET] == 0U));
 
-	return start_us + 1U;
+#if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
+	actual_us += last_pdu_end_us;
+#endif /* CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
+
+	return actual_us;
 }
 
 uint32_t radio_tmr_start_now(uint8_t trx)
@@ -1464,25 +1716,70 @@ uint32_t radio_tmr_start_now(uint8_t trx)
 	nrf_timer_task_trigger(EVENT_TIMER, HAL_EVENT_TIMER_SAMPLE_TASK);
 	start_us = EVENT_TIMER->CC[HAL_EVENT_TIMER_SAMPLE_CC_OFFSET];
 
+#if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
+	/* As timer is reset on every radio end, add the accumulated
+	 * last_pdu_end_us to the captured current time.
+	 */
+	start_us += last_pdu_end_us;
+#endif /* CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
+
 	/* Setup radio start at current time */
 	start_us = radio_tmr_start_us(trx, start_us);
+
+#if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
+	/* Remove the single timer start latency used to mitigate use of too
+	 * small compare register value. Thus, start_us returned be always
+	 * the value corresponding to the captured radio ready timestamp.
+	 * This is used in the calculation of aux_offset in subsequent
+	 * ADV_EXT_IND PDUs.
+	 */
+	start_us -= last_pdu_end_latency_us;
+#endif /* CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 
 	return start_us;
 }
 
 uint32_t radio_tmr_start_get(void)
 {
-	return nrf_rtc_cc_get(NRF_RTC, 2);
+	uint32_t start_ticks;
+
+#if defined(CONFIG_BT_CTLR_NRF_GRTC)
+	uint64_t cc;
+
+	cc = nrf_grtc_sys_counter_cc_get(NRF_GRTC, HAL_CNTR_GRTC_CC_IDX_RADIO);
+
+	start_ticks = cc & 0xffffffffUL;
+
+#else /* !CONFIG_BT_CTLR_NRF_GRTC */
+	start_ticks = nrf_rtc_cc_get(NRF_RTC, 2);
+#endif  /* !CONFIG_BT_CTLR_NRF_GRTC */
+
+	return start_ticks;
+}
+
+uint32_t radio_tmr_start_latency_get(void)
+{
+#if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
+	return last_pdu_end_latency_us;
+#else /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
+	return 0U;
+#endif /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 }
 
 void radio_tmr_stop(void)
 {
 	nrf_timer_task_trigger(EVENT_TIMER, NRF_TIMER_TASK_STOP);
+#if defined(TIMER_TASKS_SHUTDOWN_TASKS_SHUTDOWN_Msk)
 	nrf_timer_task_trigger(EVENT_TIMER, NRF_TIMER_TASK_SHUTDOWN);
+#endif /* TIMER_TASKS_SHUTDOWN_TASKS_SHUTDOWN_Msk */
 
 #if !defined(CONFIG_BT_CTLR_TIFS_HW)
+#if !defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
 	nrf_timer_task_trigger(SW_SWITCH_TIMER, NRF_TIMER_TASK_STOP);
+#if defined(TIMER_TASKS_SHUTDOWN_TASKS_SHUTDOWN_Msk)
 	nrf_timer_task_trigger(SW_SWITCH_TIMER, NRF_TIMER_TASK_SHUTDOWN);
+#endif /* TIMER_TASKS_SHUTDOWN_TASKS_SHUTDOWN_Msk */
+#endif /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 #endif /* !CONFIG_BT_CTLR_TIFS_HW */
 
 #if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
@@ -1490,15 +1787,27 @@ void radio_tmr_stop(void)
 #endif /* CONFIG_SOC_COMPATIBLE_NRF54LX */
 }
 
-void radio_tmr_hcto_configure(uint32_t hcto)
+void radio_tmr_hcto_configure(uint32_t hcto_us)
 {
-	nrf_timer_cc_set(EVENT_TIMER, 1, hcto);
+	nrf_timer_cc_set(EVENT_TIMER, HAL_EVENT_TIMER_HCTO_CC_OFFSET, hcto_us);
 
 	hal_radio_recv_timeout_cancel_ppi_config();
 	hal_radio_disable_on_hcto_ppi_config();
 	hal_radio_nrf_ppi_channels_enable(
 		BIT(HAL_RADIO_RECV_TIMEOUT_CANCEL_PPI) |
 		BIT(HAL_RADIO_DISABLE_ON_HCTO_PPI));
+}
+
+void radio_tmr_hcto_configure_abs(uint32_t hcto_from_start_us)
+{
+#if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
+	/* As timer is reset on every radio end, remove the accumulated
+	 * last_pdu_end_us in the given hcto_us.
+	 */
+	hcto_from_start_us -= last_pdu_end_us;
+#endif /* CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
+
+	radio_tmr_hcto_configure(hcto_from_start_us);
 }
 
 void radio_tmr_aa_capture(void)
@@ -1512,7 +1821,7 @@ void radio_tmr_aa_capture(void)
 
 uint32_t radio_tmr_aa_get(void)
 {
-	return EVENT_TIMER->CC[1];
+	return EVENT_TIMER->CC[HAL_EVENT_TIMER_HCTO_CC_OFFSET];
 }
 
 static uint32_t radio_tmr_aa;
@@ -1530,7 +1839,7 @@ uint32_t radio_tmr_aa_restore(void)
 
 uint32_t radio_tmr_ready_get(void)
 {
-	return EVENT_TIMER->CC[0];
+	return EVENT_TIMER->CC[HAL_EVENT_TIMER_TRX_CC_OFFSET];
 }
 
 static uint32_t radio_tmr_ready;
@@ -1553,12 +1862,14 @@ void radio_tmr_end_capture(void)
 	 *       hal_sw_switch_timer_clear_ppi_config() and sw_switch(). There is no need to
 	 *       configure the channel again in this function.
 	 */
-#if !defined(CONFIG_SOC_COMPATIBLE_NRF53X) ||                                                      \
-	(defined(CONFIG_SOC_COMPATIBLE_NRF53X) && !defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER))
+#if (!defined(CONFIG_SOC_COMPATIBLE_NRF53X) && !defined(CONFIG_SOC_COMPATIBLE_NRF54LX)) || \
+	((defined(CONFIG_SOC_COMPATIBLE_NRF53X) || defined(CONFIG_SOC_COMPATIBLE_NRF54LX)) && \
+	 !defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER))
 	hal_radio_end_time_capture_ppi_config();
 	hal_radio_nrf_ppi_channels_enable(BIT(HAL_RADIO_END_TIME_CAPTURE_PPI));
-#endif /* !CONFIG_SOC_COMPATIBLE_NRF53X ||
-	* (CONFIG_SOC_COMPATIBLE_NRF53X && !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
+#endif /* (!CONFIG_SOC_COMPATIBLE_NRF53X && !CONFIG_SOC_COMPATIBLE_NRF54LX) ||
+	* ((CONFIG_SOC_COMPATIBLE_NRF53X || CONFIG_SOC_COMPATIBLE_NRF54LX) &&
+	*  !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
 	*/
 }
 
@@ -1567,13 +1878,17 @@ uint32_t radio_tmr_end_get(void)
 #if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
 	return last_pdu_end_us;
 #else /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
-	return EVENT_TIMER->CC[2];
+	return EVENT_TIMER->CC[HAL_EVENT_TIMER_TRX_END_CC_OFFSET];
 #endif /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 }
 
 uint32_t radio_tmr_tifs_base_get(void)
 {
+#if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
+	return 0U;
+#else /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 	return radio_tmr_end_get();
+#endif /* !CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER */
 }
 
 #if defined(CONFIG_BT_CTLR_SW_SWITCH_SINGLE_TIMER)
@@ -1621,12 +1936,6 @@ int radio_gpio_pa_lna_init(void)
 	}
 #endif
 
-#if defined(NRF_GPIO_CSN_PIN)
-	if (nrfx_gpiote_channel_alloc(&gpiote_csn, &gpiote_ch_csn) != NRFX_SUCCESS) {
-		return -ENOMEM;
-	}
-#endif
-
 	return 0;
 }
 
@@ -1638,10 +1947,6 @@ void radio_gpio_pa_lna_deinit(void)
 
 #if defined(NRF_GPIO_PDN_PIN)
 	(void)nrfx_gpiote_channel_free(&gpiote_pdn, gpiote_ch_pdn);
-#endif
-
-#if defined(NRF_GPIO_CSN_PIN)
-	(void)nrfx_gpiote_channel_free(&gpiote_csn, gpiote_ch_csn);
 #endif
 }
 
@@ -1661,7 +1966,6 @@ void radio_gpio_pa_setup(void)
 #if defined(HAL_RADIO_FEM_IS_NRF21540)
 	hal_pa_ppi_setup();
 	radio_gpio_pdn_setup();
-	radio_gpio_csn_setup();
 #endif
 }
 #endif /* HAL_RADIO_GPIO_HAVE_PA_PIN */
@@ -1682,7 +1986,6 @@ void radio_gpio_lna_setup(void)
 #if defined(HAL_RADIO_FEM_IS_NRF21540)
 	hal_lna_ppi_setup();
 	radio_gpio_pdn_setup();
-	radio_gpio_csn_setup();
 #endif
 }
 
@@ -1700,22 +2003,6 @@ void radio_gpio_pdn_setup(void)
 		(OUTINIT_INACTIVE(NRF_GPIO_PDN_FLAGS) <<
 		 GPIOTE_CONFIG_OUTINIT_Pos);
 #endif /* NRF_GPIO_PDN_PIN */
-}
-
-void radio_gpio_csn_setup(void)
-{
-	/* Note: the spi-if property is optional. */
-#if defined(NRF_GPIO_CSN_PIN)
-	gpiote_csn.p_reg->CONFIG[gpiote_ch_csn] =
-		(GPIOTE_CONFIG_MODE_Task <<
-		 GPIOTE_CONFIG_MODE_Pos) |
-		(NRF_GPIO_CSN_PSEL <<
-		 GPIOTE_CONFIG_PSEL_Pos) |
-		(GPIOTE_CONFIG_POLARITY_Toggle <<
-		 GPIOTE_CONFIG_POLARITY_Pos) |
-		(OUTINIT_INACTIVE(NRF_GPIO_CSN_FLAGS) <<
-		 GPIOTE_CONFIG_OUTINIT_Pos);
-#endif /* NRF_GPIO_CSN_PIN */
 }
 
 void radio_gpio_lna_on(void)
@@ -1739,9 +2026,10 @@ void radio_gpio_lna_off(void)
 
 void radio_gpio_pa_lna_enable(uint32_t trx_us)
 {
-	nrf_timer_cc_set(EVENT_TIMER, 2, trx_us);
+	nrf_timer_cc_set(EVENT_TIMER, HAL_EVENT_TIMER_PA_LNA_CC_OFFSET, trx_us);
 #if defined(HAL_RADIO_FEM_IS_NRF21540) && DT_NODE_HAS_PROP(FEM_NODE, pdn_gpios)
-	nrf_timer_cc_set(EVENT_TIMER, 3, (trx_us - NRF_GPIO_PDN_OFFSET));
+	nrf_timer_cc_set(EVENT_TIMER, HAL_EVENT_TIMER_PA_LNA_PDN_CC_OFFSET,
+			 (trx_us - NRF_GPIO_PDN_OFFSET));
 	hal_radio_nrf_ppi_channels_enable(BIT(HAL_ENABLE_PALNA_PPI) |
 					  BIT(HAL_DISABLE_PALNA_PPI) |
 					  BIT(HAL_ENABLE_FEM_PPI) |
@@ -1761,7 +2049,6 @@ void radio_gpio_pa_lna_disable(void)
 					   BIT(HAL_DISABLE_FEM_PPI));
 	gpiote_palna.p_reg->CONFIG[gpiote_ch_palna] = 0;
 	gpiote_pdn.p_reg->CONFIG[gpiote_ch_pdn] = 0;
-	gpiote_csn.p_reg->CONFIG[gpiote_ch_csn] = 0;
 #else
 	hal_radio_nrf_ppi_channels_disable(BIT(HAL_ENABLE_PALNA_PPI) |
 					   BIT(HAL_DISABLE_PALNA_PPI));
@@ -1771,7 +2058,33 @@ void radio_gpio_pa_lna_disable(void)
 #endif /* HAL_RADIO_GPIO_HAVE_PA_PIN || HAL_RADIO_GPIO_HAVE_LNA_PIN */
 
 #if defined(CONFIG_BT_CTLR_LE_ENC) || defined(CONFIG_BT_CTLR_BROADCAST_ISO_ENC)
+#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+struct ccm_job_ptr {
+	void *ptr;
+	struct {
+		uint32_t length:24;
+		uint32_t attribute:8;
+	} __packed;
+} __packed;
+
+#define CCM_JOB_PTR_ATTRIBUTE_ALEN  11U
+#define CCM_JOB_PTR_ATTRIBUTE_MLEN  12U
+#define CCM_JOB_PTR_ATTRIBUTE_ADATA 13U
+#define CCM_JOB_PTR_ATTRIBUTE_MDATA 14U
+
+static struct {
+	uint16_t in_alen;
+	uint16_t in_mlen;
+	uint8_t  in_mlen_msb;
+	uint8_t  out_mlen_msb;
+	uint16_t out_alen;
+	struct ccm_job_ptr in[6];
+	struct ccm_job_ptr out[6];
+} ccm_job;
+
+#else /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
 static uint8_t MALIGN(4) _ccm_scratch[(HAL_RADIO_PDU_LEN_MAX - 4) + 16];
+#endif /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
 
 #if defined(CONFIG_BT_CTLR_LE_ENC) || defined(CONFIG_BT_CTLR_SYNC_ISO)
 static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_type, void *pkt)
@@ -1780,21 +2093,34 @@ static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_
 
 	NRF_CCM->ENABLE = CCM_ENABLE_ENABLE_Disabled;
 	NRF_CCM->ENABLE = CCM_ENABLE_ENABLE_Enabled;
+
 	mode = (CCM_MODE_MODE_Decryption << CCM_MODE_MODE_Pos) &
 	       CCM_MODE_MODE_Msk;
 
-#if !defined(CONFIG_SOC_SERIES_NRF51X)
+#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+	/* Enable CCM Protocol Mode Bluetooth LE */
+	mode |= (CCM_MODE_PROTOCOL_Ble << CCM_MODE_PROTOCOL_Pos) &
+		CCM_MODE_PROTOCOL_Msk;
+
+	/* Enable CCM MAC Length 4 bytes */
+	mode |= (CCM_MODE_MACLEN_M4 << CCM_MODE_MACLEN_Pos) &
+		CCM_MODE_MACLEN_Msk;
+
+#elif !defined(CONFIG_SOC_SERIES_NRF51X)
 	/* Enable CCM support for 8-bit length field PDUs. */
 	mode |= (CCM_MODE_LENGTH_Extended << CCM_MODE_LENGTH_Pos) &
 		CCM_MODE_LENGTH_Msk;
+#endif /* !CONFIG_SOC_SERIES_NRF51X */
 
 	/* Select CCM data rate based on current PHY in use. */
 	switch (phy) {
 	default:
 	case PHY_1M:
+#if !defined(CONFIG_SOC_SERIES_NRF51X)
 		mode |= (CCM_MODE_DATARATE_1Mbit <<
 			 CCM_MODE_DATARATE_Pos) &
 			CCM_MODE_DATARATE_Msk;
+#endif /* !CONFIG_SOC_SERIES_NRF51X */
 
 		if (false) {
 
@@ -1817,9 +2143,11 @@ static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_
 		break;
 
 	case PHY_2M:
+#if !defined(CONFIG_SOC_SERIES_NRF51X)
 		mode |= (CCM_MODE_DATARATE_2Mbit <<
 			 CCM_MODE_DATARATE_Pos) &
 			CCM_MODE_DATARATE_Msk;
+#endif /* !CONFIG_SOC_SERIES_NRF51X */
 
 		hal_trigger_crypt_ppi_config();
 		hal_radio_nrf_ppi_channels_enable(BIT(HAL_TRIGGER_CRYPT_PPI));
@@ -1849,45 +2177,132 @@ static void *radio_ccm_ext_rx_pkt_set(struct ccm *cnf, uint8_t phy, uint8_t pdu_
 #endif /* CONFIG_HAS_HW_NRF_RADIO_BLE_CODED */
 #endif /* CONFIG_BT_CTLR_PHY_CODED */
 	}
-#endif /* !CONFIG_SOC_SERIES_NRF51X */
+
+	NRF_CCM->MODE = mode;
+
+#if defined(CONFIG_HAS_HW_NRF_CCM_HEADERMASK) || \
+	defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(CONFIG_HAS_HW_NRF_CCM_HEADERMASK)
+#define ADATAMASK HEADERMASK
+#endif /* CONFIG_HAS_HW_NRF_CCM_HEADERMASK */
+	switch (pdu_type) {
+	case RADIO_PKT_CONF_PDU_TYPE_BIS:
+		NRF_CCM->ADATAMASK = 0xC3; /* mask CSSN and CSTF */
+		break;
+	case RADIO_PKT_CONF_PDU_TYPE_CIS:
+		NRF_CCM->ADATAMASK = 0xA3; /* mask SN, NESN, CIE and NPI */
+		break;
+	default:
+		/* Using default reset value of ADATAMASK */
+		NRF_CCM->ADATAMASK = 0xE3; /* mask SN, NESN and MD */
+		break;
+	}
+#if defined(CONFIG_HAS_HW_NRF_CCM_HEADERMASK)
+#undef ADATAMASK
+#endif /* CONFIG_HAS_HW_NRF_CCM_HEADERMASK */
+#endif /* CONFIG_HAS_HW_NRF_CCM_HEADERMASK ||
+	* CONFIG_SOC_COMPATIBLE_NRF54LX
+	*/
 
 #if !defined(CONFIG_SOC_SERIES_NRF51X) && \
 	!defined(CONFIG_SOC_NRF52832) && \
+	!defined(CONFIG_SOC_COMPATIBLE_NRF54LX) && \
 	(!defined(CONFIG_BT_CTLR_DATA_LENGTH_MAX) || \
 	 (CONFIG_BT_CTLR_DATA_LENGTH_MAX < ((HAL_RADIO_PDU_LEN_MAX) - 4U)))
-	uint8_t max_len = (NRF_RADIO->PCNF1 & RADIO_PCNF1_MAXLEN_Msk) >>
-			RADIO_PCNF1_MAXLEN_Pos;
+	const uint8_t max_len = (NRF_RADIO->PCNF1 & RADIO_PCNF1_MAXLEN_Msk) >>
+				RADIO_PCNF1_MAXLEN_Pos;
 
 	/* MAXPACKETSIZE value 0x001B (27) - 0x00FB (251) bytes */
 	NRF_CCM->MAXPACKETSIZE = max_len - 4U;
 #endif
 
-#if defined(CONFIG_HAS_HW_NRF_CCM_HEADERMASK)
-	switch (pdu_type) {
-	case RADIO_PKT_CONF_PDU_TYPE_BIS:
-		NRF_CCM->HEADERMASK = 0xC3; /* mask CSSN and CSTF */
-		break;
-	case RADIO_PKT_CONF_PDU_TYPE_CIS:
-		NRF_CCM->HEADERMASK = 0xA3; /* mask SN, NESN, CIE and NPI */
-		break;
-	default:
-		/* Using default reset value of HEADERMASK */
-		NRF_CCM->HEADERMASK = 0xE3; /* mask SN, NESN and MD */
-		break;
-	}
-#endif /* CONFIG_HAS_HW_NRF_CCM_HEADERMASK */
+#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+	/* Configure the CCM key, nonce and pointers */
+	NRF_CCM->KEY.VALUE[3] = sys_get_be32(&cnf->key[0]);
+	NRF_CCM->KEY.VALUE[2] = sys_get_be32(&cnf->key[4]);
+	NRF_CCM->KEY.VALUE[1] = sys_get_be32(&cnf->key[8]);
+	NRF_CCM->KEY.VALUE[0] = sys_get_be32(&cnf->key[12]);
 
-	NRF_CCM->MODE = mode;
+	NRF_CCM->NONCE.VALUE[3] = ((uint8_t *)&cnf->counter)[0];
+	NRF_CCM->NONCE.VALUE[2] = sys_get_be32(&((uint8_t *)&cnf->counter)[1]) |
+				  (cnf->direction << 7);
+	NRF_CCM->NONCE.VALUE[1] = sys_get_be32(&cnf->iv[0]);
+	NRF_CCM->NONCE.VALUE[0] = sys_get_be32(&cnf->iv[4]);
+
+	const uint8_t mlen = (NRF_RADIO->PCNF1 & RADIO_PCNF1_MAXLEN_Msk) >>
+			     RADIO_PCNF1_MAXLEN_Pos;
+
+	const uint8_t alen = sizeof(uint8_t);
+
+	ccm_job.in_alen = alen;
+	ccm_job.in[0].ptr = &ccm_job.in_alen;
+	ccm_job.in[0].length = sizeof(ccm_job.in_alen);
+	ccm_job.in[0].attribute = CCM_JOB_PTR_ATTRIBUTE_ALEN;
+
+	ccm_job.in[1].ptr = (void *)((uint8_t *)_pkt_scratch + 1U);
+	ccm_job.in[1].length = sizeof(uint8_t);
+	ccm_job.in[1].attribute = CCM_JOB_PTR_ATTRIBUTE_MLEN;
+
+	ccm_job.in_mlen_msb = 0U;
+	ccm_job.in[2].ptr = &ccm_job.in_mlen_msb;
+	ccm_job.in[2].length = sizeof(ccm_job.in_mlen_msb);
+	ccm_job.in[2].attribute = CCM_JOB_PTR_ATTRIBUTE_MLEN;
+
+	ccm_job.in[3].ptr = (void *)((uint8_t *)_pkt_scratch + 0U);
+	ccm_job.in[3].length = sizeof(uint8_t);
+	ccm_job.in[3].attribute = CCM_JOB_PTR_ATTRIBUTE_ADATA;
+
+	ccm_job.in[4].ptr = (void *)((uint8_t *)_pkt_scratch + 3U);
+	ccm_job.in[4].length = mlen;
+	ccm_job.in[4].attribute = CCM_JOB_PTR_ATTRIBUTE_MDATA;
+
+	ccm_job.in[5].ptr = NULL;
+	ccm_job.in[5].length = 0U;
+	ccm_job.in[5].attribute = 0U;
+
+	ccm_job.out[0].ptr = &ccm_job.out_alen;
+	ccm_job.out[0].length = sizeof(ccm_job.out_alen);
+	ccm_job.out[0].attribute = CCM_JOB_PTR_ATTRIBUTE_ALEN;
+
+	ccm_job.out[1].ptr = (void *)((uint8_t *)pkt + 1U);
+	ccm_job.out[1].length = sizeof(uint8_t);
+	ccm_job.out[1].attribute = CCM_JOB_PTR_ATTRIBUTE_MLEN;
+
+	ccm_job.out[2].ptr = &ccm_job.out_mlen_msb;
+	ccm_job.out[2].length = sizeof(ccm_job.out_mlen_msb);
+	ccm_job.out[2].attribute = CCM_JOB_PTR_ATTRIBUTE_MLEN;
+
+	ccm_job.out[3].ptr = (void *)((uint8_t *)pkt + 0U);
+	ccm_job.out[3].length = sizeof(uint8_t);
+	ccm_job.out[3].attribute = CCM_JOB_PTR_ATTRIBUTE_ADATA;
+
+	ccm_job.out[4].ptr = (void *)((uint8_t *)pkt + 3U);
+	ccm_job.out[4].length = mlen - sizeof(uint32_t);
+	ccm_job.out[4].attribute = CCM_JOB_PTR_ATTRIBUTE_MDATA;
+
+	ccm_job.out[5].ptr = NULL;
+	ccm_job.out[5].length = 0U;
+	ccm_job.out[5].attribute = 0U;
+
+	NRF_CCM->IN.PTR = (uint32_t)ccm_job.in;
+	NRF_CCM->OUT.PTR = (uint32_t)ccm_job.out;
+
+	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_END);
+	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_ERROR);
+
+#else /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
 	NRF_CCM->CNFPTR = (uint32_t)cnf;
 	NRF_CCM->INPTR = (uint32_t)_pkt_scratch;
 	NRF_CCM->OUTPTR = (uint32_t)pkt;
 	NRF_CCM->SCRATCHPTR = (uint32_t)_ccm_scratch;
 	NRF_CCM->SHORTS = 0;
+
 	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_ENDKSGEN);
-	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_ENDCRYPT);
+	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_END);
 	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_ERROR);
 
 	nrf_ccm_task_trigger(NRF_CCM, NRF_CCM_TASK_KSGEN);
+#endif /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
 
 	return _pkt_scratch;
 }
@@ -1910,11 +2325,12 @@ static void *radio_ccm_ext_tx_pkt_set(struct ccm *cnf, uint8_t pdu_type, void *p
 
 	NRF_CCM->ENABLE = CCM_ENABLE_ENABLE_Disabled;
 	NRF_CCM->ENABLE = CCM_ENABLE_ENABLE_Enabled;
+
 	mode = (CCM_MODE_MODE_Encryption << CCM_MODE_MODE_Pos) &
 	       CCM_MODE_MODE_Msk;
+
 #if defined(CONFIG_SOC_COMPATIBLE_NRF52X) || \
-	defined(CONFIG_SOC_COMPATIBLE_NRF53X) || \
-	defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+	defined(CONFIG_SOC_COMPATIBLE_NRF53X)
 	/* Enable CCM support for 8-bit length field PDUs. */
 	mode |= (CCM_MODE_LENGTH_Extended << CCM_MODE_LENGTH_Pos) &
 		CCM_MODE_LENGTH_Msk;
@@ -1924,45 +2340,145 @@ static void *radio_ccm_ext_tx_pkt_set(struct ccm *cnf, uint8_t pdu_type, void *p
 	 */
 	mode |= (CCM_MODE_DATARATE_2Mbit << CCM_MODE_DATARATE_Pos) &
 		CCM_MODE_DATARATE_Msk;
+
+#elif defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+	/* Enable CCM Protocol Mode Bluetooth LE */
+	mode |= (CCM_MODE_PROTOCOL_Ble << CCM_MODE_PROTOCOL_Pos) &
+		CCM_MODE_PROTOCOL_Msk;
+
+	/* NOTE: use fastest data rate as tx data needs to be prepared before
+	 * radio Tx on any PHY.
+	 */
+	mode |= (CCM_MODE_DATARATE_4Mbit << CCM_MODE_DATARATE_Pos) &
+		CCM_MODE_DATARATE_Msk;
+
+	/* Enable CCM MAC Length 4 bytes */
+	mode |= (CCM_MODE_MACLEN_M4 << CCM_MODE_MACLEN_Pos) &
+		CCM_MODE_MACLEN_Msk;
 #endif
+
+	NRF_CCM->MODE = mode;
+
+#if defined(CONFIG_HAS_HW_NRF_CCM_HEADERMASK) || \
+	defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+#if defined(CONFIG_HAS_HW_NRF_CCM_HEADERMASK)
+#define ADATAMASK HEADERMASK
+#endif /* CONFIG_HAS_HW_NRF_CCM_HEADERMASK */
+	switch (pdu_type) {
+	case RADIO_PKT_CONF_PDU_TYPE_BIS:
+		NRF_CCM->ADATAMASK = 0xC3; /* mask CSSN and CSTF */
+		break;
+	case RADIO_PKT_CONF_PDU_TYPE_CIS:
+		NRF_CCM->ADATAMASK = 0xA3; /* mask SN, NESN, CIE and NPI */
+		break;
+	default:
+		/* Using default reset value of ADATAMASK */
+		NRF_CCM->ADATAMASK = 0xE3; /* mask SN, NESN and MD */
+		break;
+	}
+#if defined(CONFIG_HAS_HW_NRF_CCM_HEADERMASK)
+#undef ADATAMASK
+#endif /* CONFIG_HAS_HW_NRF_CCM_HEADERMASK */
+#endif /* CONFIG_HAS_HW_NRF_CCM_HEADERMASK ||
+	* CONFIG_SOC_COMPATIBLE_NRF54LX
+	*/
 
 #if !defined(CONFIG_SOC_SERIES_NRF51X) && \
 	!defined(CONFIG_SOC_NRF52832) && \
+	!defined(CONFIG_SOC_COMPATIBLE_NRF54LX) && \
 	(!defined(CONFIG_BT_CTLR_DATA_LENGTH_MAX) || \
-	 (CONFIG_BT_CTLR_DATA_LENGTH_MAX < ((HAL_RADIO_PDU_LEN_MAX) - 4)))
-	uint8_t max_len = (NRF_RADIO->PCNF1 & RADIO_PCNF1_MAXLEN_Msk) >>
-			RADIO_PCNF1_MAXLEN_Pos;
+	 (CONFIG_BT_CTLR_DATA_LENGTH_MAX < ((HAL_RADIO_PDU_LEN_MAX) - 4U)))
+	const uint8_t max_len = (NRF_RADIO->PCNF1 & RADIO_PCNF1_MAXLEN_Msk) >>
+				RADIO_PCNF1_MAXLEN_Pos;
 
 	/* MAXPACKETSIZE value 0x001B (27) - 0x00FB (251) bytes */
 	NRF_CCM->MAXPACKETSIZE = max_len - 4U;
 #endif
 
-#if defined(CONFIG_HAS_HW_NRF_CCM_HEADERMASK)
-	switch (pdu_type) {
-	case RADIO_PKT_CONF_PDU_TYPE_BIS:
-		NRF_CCM->HEADERMASK = 0xC3; /* mask CSSN and CSTF */
-		break;
-	case RADIO_PKT_CONF_PDU_TYPE_CIS:
-		NRF_CCM->HEADERMASK = 0xA3; /* mask SN, NESN, CIE and NPI */
-		break;
-	default:
-		/* Using default reset value of HEADERMASK */
-		NRF_CCM->HEADERMASK = 0xE3; /* mask SN, NESN and MD */
-		break;
-	}
-#endif /* CONFIG_HAS_HW_NRF_CCM_HEADERMASK */
+#if defined(CONFIG_SOC_COMPATIBLE_NRF54LX)
+	/* Configure the CCM key, nonce and pointers */
+	NRF_CCM->KEY.VALUE[3] = sys_get_be32(&cnf->key[0]);
+	NRF_CCM->KEY.VALUE[2] = sys_get_be32(&cnf->key[4]);
+	NRF_CCM->KEY.VALUE[1] = sys_get_be32(&cnf->key[8]);
+	NRF_CCM->KEY.VALUE[0] = sys_get_be32(&cnf->key[12]);
 
-	NRF_CCM->MODE = mode;
+	NRF_CCM->NONCE.VALUE[3] = ((uint8_t *)&cnf->counter)[0];
+	NRF_CCM->NONCE.VALUE[2] = sys_get_be32(&((uint8_t *)&cnf->counter)[1]) |
+				  (cnf->direction << 7);
+	NRF_CCM->NONCE.VALUE[1] = sys_get_be32(&cnf->iv[0]);
+	NRF_CCM->NONCE.VALUE[0] = sys_get_be32(&cnf->iv[4]);
+
+	const uint8_t alen = sizeof(uint8_t);
+
+	ccm_job.in_alen = alen;
+	ccm_job.in[0].ptr = &ccm_job.in_alen;
+	ccm_job.in[0].length = sizeof(ccm_job.in_alen);
+	ccm_job.in[0].attribute = CCM_JOB_PTR_ATTRIBUTE_ALEN;
+
+	const uint8_t mlen = *((uint8_t *)pkt + 1U);
+
+	ccm_job.in_mlen = mlen;
+	ccm_job.in[1].ptr = &ccm_job.in_mlen;
+	ccm_job.in[1].length = sizeof(ccm_job.in_mlen);
+	ccm_job.in[1].attribute = CCM_JOB_PTR_ATTRIBUTE_MLEN;
+
+	ccm_job.in[2].ptr = (void *)((uint8_t *)pkt + 0U);
+	ccm_job.in[2].length = alen;
+	ccm_job.in[2].attribute = CCM_JOB_PTR_ATTRIBUTE_ADATA;
+
+	ccm_job.in[3].ptr = (void *)((uint8_t *)pkt + 3U);
+	ccm_job.in[3].length = mlen;
+	ccm_job.in[3].attribute = CCM_JOB_PTR_ATTRIBUTE_MDATA;
+
+	ccm_job.in[4].ptr = NULL;
+	ccm_job.in[4].length = 0U;
+	ccm_job.in[4].attribute = 0U;
+
+	ccm_job.out[0].ptr = &ccm_job.out_alen;
+	ccm_job.out[0].length = sizeof(ccm_job.out_alen);
+	ccm_job.out[0].attribute = CCM_JOB_PTR_ATTRIBUTE_ALEN;
+
+	ccm_job.out[1].ptr = (void *)((uint8_t *)_pkt_scratch + 1U);
+	ccm_job.out[1].length = sizeof(uint8_t);
+	ccm_job.out[1].attribute = CCM_JOB_PTR_ATTRIBUTE_MLEN;
+
+	ccm_job.out[2].ptr = &ccm_job.out_mlen_msb;
+	ccm_job.out[2].length = sizeof(ccm_job.out_mlen_msb);
+	ccm_job.out[2].attribute = CCM_JOB_PTR_ATTRIBUTE_MLEN;
+
+	ccm_job.out[3].ptr = (void *)((uint8_t *)_pkt_scratch + 0U);
+	ccm_job.out[3].length = sizeof(uint8_t);
+	ccm_job.out[3].attribute = CCM_JOB_PTR_ATTRIBUTE_ADATA;
+
+	ccm_job.out[4].ptr = (void *)((uint8_t *)_pkt_scratch + 3U);
+	ccm_job.out[4].length = mlen + sizeof(uint32_t);
+	ccm_job.out[4].attribute = CCM_JOB_PTR_ATTRIBUTE_MDATA;
+
+	ccm_job.out[5].ptr = NULL;
+	ccm_job.out[5].length = 0U;
+	ccm_job.out[5].attribute = 0U;
+
+	NRF_CCM->IN.PTR = (uint32_t)ccm_job.in;
+	NRF_CCM->OUT.PTR = (uint32_t)ccm_job.out;
+
+	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_END);
+	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_ERROR);
+
+	nrf_ccm_task_trigger(NRF_CCM, NRF_CCM_TASK_START);
+
+#else /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
 	NRF_CCM->CNFPTR = (uint32_t)cnf;
 	NRF_CCM->INPTR = (uint32_t)pkt;
 	NRF_CCM->OUTPTR = (uint32_t)_pkt_scratch;
 	NRF_CCM->SCRATCHPTR = (uint32_t)_ccm_scratch;
 	NRF_CCM->SHORTS = CCM_SHORTS_ENDKSGEN_CRYPT_Msk;
+
 	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_ENDKSGEN);
-	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_ENDCRYPT);
+	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_END);
 	nrf_ccm_event_clear(NRF_CCM, NRF_CCM_EVENT_ERROR);
 
 	nrf_ccm_task_trigger(NRF_CCM, NRF_CCM_TASK_KSGEN);
+#endif /* !CONFIG_SOC_COMPATIBLE_NRF54LX */
 
 	return _pkt_scratch;
 }

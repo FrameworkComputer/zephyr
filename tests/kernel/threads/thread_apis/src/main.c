@@ -157,7 +157,7 @@ ZTEST_USER(threads_lifecycle, test_thread_name_user_get_set)
 	/* Non-Secure images cannot normally access memory outside the image
 	 * flash and ram.
 	 */
-	ret = k_thread_name_set(NULL, (const char *)0xFFFFFFF0);
+	ret = k_thread_name_set(NULL, (const char *)CONFIG_THREAD_API_UNMAPPED_ADDRESS);
 	zassert_equal(ret, -EFAULT, "accepted nonsense string (%d)", ret);
 #endif
 	ret = k_thread_name_set(NULL, unreadable_string);
@@ -326,7 +326,7 @@ static void do_join_from_isr(const void *arg)
 static int join_scenario_interval(enum control_method m, int64_t *interval)
 {
 	k_timeout_t timeout = K_FOREVER;
-	int ret;
+	int ret = 0;
 
 	LOG_DBG("ztest_thread: method %d, create join_thread", m);
 	k_thread_create(&join_thread, join_stack, STACK_SIZE, join_entry,
@@ -636,7 +636,7 @@ ZTEST_USER(threads_lifecycle, test_k_thread_stack_space_get_user)
 	large_stack(&b);
 	/* FIXME: Ideally, the follow condition will assert true:
 	 * (a - b) == INT_ARRAY_SIZE * sizeof(int)
-	 * but it is not the case in native_posix, qemu_leon3 and
+	 * but it is not the case in native_sim, qemu_leon3 and
 	 * qemu_cortex_a53. Relax check condition here
 	 */
 	zassert_true(b <= a);

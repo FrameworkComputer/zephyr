@@ -22,6 +22,7 @@
 		zephyr,flash = &flash0;
 		zephyr,display = &ltdc;
 		zephyr,canbus = &fdcan1;
+		zephyr,touch = &ft5336;
 	};
 
 	leds {
@@ -72,6 +73,28 @@
 		standby-gpios = <&gpioh 8 GPIO_ACTIVE_HIGH>;
 		max-bitrate = <5000000>;
 		#phy-cells = <0>;
+	};
+
+	dmci_camera_connector: connector_dcmi_camera {
+		compatible = "st,stm32-dcmi-camera-fpu-330zh";
+		#gpio-cells = <2>;
+		gpio-map-mask = <0xffffffff 0xffffffc0>;
+		gpio-map-pass-thru = <0 0x3f>;
+		gpio-map = <3  0 &gpiod 12  0>,  /* I2C4_SCL */
+			   <4  0 &gpiod 13  0>,  /* I2C4_SDA */
+			   <5  0 &gpioa  0  0>,  /* RESET# */
+			   <6  0 &gpioa  7  0>,  /* PWDN_EN */
+			   <12 0 &gpiob  7  0>,  /* DCMI_VSYNC */
+			   <14 0 &gpioa  4  0>,  /* DCMI_HSYNC */
+			   <16 0 &gpioa  6  0>,  /* DCMI_PIXCK */
+			   <20 0 &gpiob  9  0>,  /* DCMI_D7 */
+			   <21 0 &gpiob  8  0>,  /* DCMI_D6 */
+			   <22 0 &gpiod  3  0>,  /* DCMI_D5 */
+			   <23 0 &gpioc 11  0>,  /* DCMI_D4 */
+			   <24 0 &gpioc  9  0>,  /* DCMI_D3 */
+			   <25 0 &gpiog 10  0>,  /* DCMI_D2 */
+			   <26 0 &gpioc  7  0>,  /* DCMI_D1 */
+			   <27 0 &gpioc  6  0>;  /* DCMI_D0 */
 	};
 
 	aliases {
@@ -277,3 +300,7 @@
 		};
 	};
 };
+
+st_cam_i2c: &i2c4 {};
+
+st_cam_dvp: &dcmi {};

@@ -36,18 +36,12 @@ enum {
 	BT_DEV_READY,
 	BT_DEV_PRESET_ID,
 	BT_DEV_HAS_PUB_KEY,
-	BT_DEV_PUB_KEY_BUSY,
-
-	/** The application explicitly instructed the stack to scan for advertisers
-	 * using the API @ref bt_le_scan_start().
-	 */
-	BT_DEV_EXPLICIT_SCAN,
 
 	/** The application either explicitly or implicitly instructed the stack to scan
 	 * for advertisers.
 	 *
 	 * Examples of such cases
-	 *  - Explicit scanning, @ref BT_DEV_EXPLICIT_SCAN.
+	 *  - Explicit scanning, @ref BT_LE_SCAN_USER_EXPLICIT_SCAN.
 	 *  - The application instructed the stack to automatically connect if a given device
 	 *    is detected.
 	 *  - The application wants to connect to a peer device using private addresses, but
@@ -63,13 +57,9 @@ enum {
 	 */
 	BT_DEV_SCANNING,
 
-	/* Cached parameters used when initially enabling the scanner.
-	 * These are needed to ensure the same parameters are used when restarting
-	 * the scanner after refreshing an RPA.
+	/**
+	 * Scanner is configured with a timeout.
 	 */
-	BT_DEV_ACTIVE_SCAN,
-	BT_DEV_SCAN_FILTER_DUP,
-	BT_DEV_SCAN_FILTERED,
 	BT_DEV_SCAN_LIMITED,
 
 	BT_DEV_INITIATING,
@@ -412,12 +402,7 @@ struct bt_dev {
 	/* Queue for outgoing HCI commands */
 	struct k_fifo		cmd_tx_queue;
 
-#if DT_HAS_CHOSEN(zephyr_bt_hci)
 	const struct device *hci;
-#else
-	/* Registered HCI driver */
-	const struct bt_hci_driver *drv;
-#endif
 
 #if defined(CONFIG_BT_PRIVACY)
 	/* Local Identity Resolving Key */
@@ -452,9 +437,7 @@ extern sys_slist_t bt_auth_info_cbs;
 enum bt_security_err bt_security_err_get(uint8_t hci_err);
 #endif /* CONFIG_BT_SMP || CONFIG_BT_CLASSIC */
 
-#if DT_HAS_CHOSEN(zephyr_bt_hci)
 int bt_hci_recv(const struct device *dev, struct net_buf *buf);
-#endif
 
 /* Data type to store state related with command to be updated
  * when command completes successfully.
@@ -488,30 +471,6 @@ uint8_t bt_get_phy(uint8_t hci_phy);
  * @return CTE type (@ref bt_df_cte_type).
  */
 int bt_get_df_cte_type(uint8_t hci_cte_type);
-
-/** Start or restart scanner if needed
- *
- * Examples of cases where it may be required to start/restart a scanner:
- * - When the auto-connection establishement feature is used:
- *   - When the host sets a connection context for auto-connection establishment.
- *   - When a connection was established.
- *     The host may now be able to retry to automatically set up a connection.
- *   - When a connection was disconnected/lost.
- *     The host may now be able to retry to automatically set up a connection.
- *   - When the application stops explicit scanning.
- *     The host may now be able to retry to automatically set up a connection.
- *   - The application tries to connect to another device, but fails.
- *     The host may now be able to retry to automatically set up a connection.
- * - When the application wants to connect to a device, but we need
- *   to fallback to host privacy.
- * - When the application wants to establish a periodic sync to a device
- *   and the application has not already started scanning.
- *
- * @param fast_scan Use fast scan parameters or slow scan parameters
- *
- * @return 0 in case of success, or a negative error code on failure.
- */
-int bt_le_scan_update(bool fast_scan);
 
 int bt_le_create_conn(const struct bt_conn *conn);
 int bt_le_create_conn_cancel(void);
@@ -549,10 +508,6 @@ void bt_hci_user_passkey_notify(struct net_buf *buf);
 void bt_hci_user_passkey_req(struct net_buf *buf);
 void bt_hci_auth_complete(struct net_buf *buf);
 
-/* ECC HCI event handlers */
-void bt_hci_evt_le_pkey_complete(struct net_buf *buf);
-void bt_hci_evt_le_dhkey_complete(struct net_buf *buf);
-
 /* Common HCI event handlers */
 void bt_hci_le_enh_conn_complete(struct bt_hci_evt_le_enh_conn_complete *evt);
 
@@ -570,6 +525,16 @@ void bt_hci_le_df_connectionless_iq_report(struct net_buf *buf);
 void bt_hci_le_vs_df_connectionless_iq_report(struct net_buf *buf);
 void bt_hci_le_past_received(struct net_buf *buf);
 void bt_hci_le_past_received_v2(struct net_buf *buf);
+
+/* CS HCI event handlers */
+void bt_hci_le_cs_read_remote_supported_capabilities_complete(struct net_buf *buf);
+void bt_hci_le_cs_read_remote_fae_table_complete(struct net_buf *buf);
+void bt_hci_le_cs_config_complete_event(struct net_buf *buf);
+void bt_hci_le_cs_security_enable_complete(struct net_buf *buf);
+void bt_hci_le_cs_procedure_enable_complete(struct net_buf *buf);
+void bt_hci_le_cs_subevent_result(struct net_buf *buf);
+void bt_hci_le_cs_subevent_result_continue(struct net_buf *buf);
+void bt_hci_le_cs_test_end_complete(struct net_buf *buf);
 
 /* Adv HCI event handlers */
 void bt_hci_le_adv_set_terminated(struct net_buf *buf);
@@ -596,6 +561,12 @@ void bt_hci_le_df_cte_req_failed(struct net_buf *buf);
 
 void bt_hci_le_per_adv_subevent_data_request(struct net_buf *buf);
 void bt_hci_le_per_adv_response_report(struct net_buf *buf);
+
+int bt_hci_read_remote_version(struct bt_conn *conn);
+int bt_hci_le_read_remote_features(struct bt_conn *conn);
+int bt_hci_le_read_max_data_len(uint16_t *tx_octets, uint16_t *tx_time);
+
+bool bt_drv_quirk_no_auto_dle(void);
 
 void bt_tx_irq_raise(void);
 void bt_send_one_host_num_completed_packets(uint16_t handle);

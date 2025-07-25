@@ -5,18 +5,16 @@
  */
 
 #define DT_DRV_COMPAT ovti_ov7725
+
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
-
 #include <zephyr/sys/byteorder.h>
-
+#include <zephyr/logging/log.h>
 #include <zephyr/drivers/video.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/drivers/gpio.h>
 
-#define LOG_LEVEL CONFIG_LOG_DEFAULT_LEVEL
-#include <zephyr/logging/log.h>
-LOG_MODULE_REGISTER(ov7725);
+LOG_MODULE_REGISTER(video_ov7725, CONFIG_VIDEO_LOG_LEVEL);
 
 #define OV7725_REVISION  0x7721U
 
@@ -519,12 +517,7 @@ static int ov7725_get_fmt(const struct device *dev,
 	return 0;
 }
 
-static int ov7725_stream_start(const struct device *dev)
-{
-	return 0;
-}
-
-static int ov7725_stream_stop(const struct device *dev)
+static int ov7725_set_stream(const struct device *dev, bool enable)
 {
 	return 0;
 }
@@ -550,12 +543,11 @@ static int ov7725_get_caps(const struct device *dev,
 	return 0;
 }
 
-static const struct video_driver_api ov7725_driver_api = {
+static DEVICE_API(video, ov7725_driver_api) = {
 	.set_format = ov7725_set_fmt,
 	.get_format = ov7725_get_fmt,
 	.get_caps = ov7725_get_caps,
-	.stream_start = ov7725_stream_start,
-	.stream_stop = ov7725_stream_stop,
+	.set_stream = ov7725_set_stream,
 };
 
 static int ov7725_init(const struct device *dev)

@@ -1,7 +1,4 @@
-.. _max32675_evkit:
-
-MAX32675EVKIT
-#############
+.. zephyr:board:: max32675evkit
 
 Overview
 ********
@@ -12,10 +9,6 @@ HART modem which enables the bidirectional transfer of digital data over a curre
 industrial sensors for configuration and diagnostics.
 
 The Zephyr port is running on the MAX32675 MCU.
-
-.. image:: img/max32675evkit.webp
-   :align: center
-   :alt: MAX32675EVKIT
 
 Hardware
 ********
@@ -91,6 +84,16 @@ Below interfaces are supported by Zephyr on MAX32675EVKIT.
 | UART      | on-chip    | serial                              |
 +-----------+------------+-------------------------------------+
 | TRNG      | on-chip    | entropy                             |
++-----------+------------+-------------------------------------+
+| SPI       | on-chip    | spi                                 |
++-----------+------------+-------------------------------------+
+| DMA       | on-chip    | dma controller                      |
++-----------+------------+-------------------------------------+
+| I2C       | on-chip    | i2c                                 |
++-----------+------------+-------------------------------------+
+| PWM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
+| Flash     | on-chip    | flash                               |
 +-----------+------------+-------------------------------------+
 
 Connections and IOs
@@ -376,7 +379,8 @@ is supplied externally. Be sure to remove jumper JP15 (LDO_DUT_EN) to disconnect
 the 3.3V LDO if supplying VDD and VDDA externally.
 
 Once the debug probe is connected to your host computer, then you can simply run the
-``west flash`` command to write a firmware image into flash.
+``west flash`` command to write a firmware image into flash. To perform a full erase,
+pass the ``--erase`` option when executing ``west flash``.
 
 .. note::
 

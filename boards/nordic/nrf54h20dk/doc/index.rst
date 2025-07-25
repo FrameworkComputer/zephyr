@@ -39,6 +39,7 @@ nRF54H20 SoC provides support for the following devices:
 * :abbr:`GPIO (General Purpose Input Output)`
 * :abbr:`GRTC (Global real-time counter)`
 * :abbr:`I2C (Inter-Integrated Circuit)`
+* MEMCONF
 * MRAM
 * :abbr:`PWM (Pulse Width Modulation)`
 * RADIO (Bluetooth Low Energy and 802.15.4)
@@ -70,6 +71,8 @@ hardware features:
 +-----------+------------+----------------------+
 | I2C(M)    | on-chip    | i2c                  |
 +-----------+------------+----------------------+
+| MEMCONF   | on-chip    | retained_mem         |
++-----------+------------+----------------------+
 | SPI(M/S)  | on-chip    | spi                  |
 +-----------+------------+----------------------+
 | UART      | on-chip    | serial               |
@@ -88,6 +91,8 @@ hardware features:
 | GRTC      | on-chip    | system clock         |
 +-----------+------------+----------------------+
 | I2C(M)    | on-chip    | i2c                  |
++-----------+------------+----------------------+
+| MEMCONF   | on-chip    | retained_mem         |
 +-----------+------------+----------------------+
 | SPI(M/S)  | on-chip    | spi                  |
 +-----------+------------+----------------------+
@@ -121,6 +126,10 @@ Push buttons
 Programming and Debugging
 *************************
 
+.. note::
+   When first using the nRF54H20 DK, you must program the `nRF54H20 SoC binaries`_ on the development kit.
+   To do so, follow the bring up steps instructions on the `Getting started with the nRF54H20 DK`_ documentation.
+
 Applications for all targets can be built and flashed the usual way.
 See :ref:`build_an_application` and :ref:`application_run` for more details on
 building and running. Debugging is for now limited to the application and radio
@@ -129,7 +138,7 @@ cores only, using :ref:`nordic_segger`.
 Flashing
 ========
 
-As an example, this section shows how to build and flash the :ref:`hello_world`
+As an example, this section shows how to build and flash the :zephyr:code-sample:`hello_world`
 application.
 
 To build and program the sample to the nRF54H20 DK, complete the following steps:
@@ -158,3 +167,9 @@ your board. The button and LED definitions can be found in
 
 .. _nRF Util:
    https://www.nordicsemi.com/Products/Development-tools/nrf-util
+
+.. _Getting started with the nRF54H20 DK:
+   https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/app_dev/device_guides/nrf54h/ug_nrf54h20_gs.html
+
+.. _nRF54H20 SoC binaries:
+   https://docs.nordicsemi.com/bundle/ncs-latest/page/nrf/releases_and_maturity/abi_compatibility.html

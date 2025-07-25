@@ -45,15 +45,24 @@ if(CONFIG_RISCV_ISA_EXT_C)
     string(CONCAT riscv_march ${riscv_march} "c")
 endif()
 
-# TODO(b/245409408): Revert this when coreboot-sdk supports isa-spec=20191213
-if (NOT ZEPHYR_TOOLCHAIN_VARIANT STREQUAL "coreboot-sdk")
-    if(CONFIG_RISCV_ISA_EXT_ZICSR)
-        string(CONCAT riscv_march ${riscv_march} "_zicsr")
-    endif()
+if(CONFIG_RISCV_ISA_EXT_ZICSR)
+    string(CONCAT riscv_march ${riscv_march} "_zicsr")
+endif()
 
-    if(CONFIG_RISCV_ISA_EXT_ZIFENCEI)
-        string(CONCAT riscv_march ${riscv_march} "_zifencei")
-    endif()
+if(CONFIG_RISCV_ISA_EXT_ZIFENCEI)
+    string(CONCAT riscv_march ${riscv_march} "_zifencei")
+endif()
+
+# Check whether we already imply Zaamo/Zlrsc by selecting the A extension; if not - check them
+# individually and enable them as needed
+if(NOT CONFIG_RISCV_ISA_EXT_A)
+  if(CONFIG_RISCV_ISA_EXT_ZAAMO)
+    string(CONCAT riscv_march ${riscv_march} "_zaamo")
+  endif()
+
+  if(CONFIG_RISCV_ISA_EXT_ZLRSC)
+    string(CONCAT riscv_march ${riscv_march} "_zlrsc")
+  endif()
 endif()
 
 if(CONFIG_RISCV_ISA_EXT_ZBA)
@@ -74,3 +83,23 @@ endif()
 
 list(APPEND TOOLCHAIN_C_FLAGS -mabi=${riscv_mabi} -march=${riscv_march})
 list(APPEND TOOLCHAIN_LD_FLAGS NO_SPLIT -mabi=${riscv_mabi} -march=${riscv_march})
+
+# Flags not supported by llext linker
+# (regexps are supported and match whole word)
+set(LLEXT_REMOVE_FLAGS
+  -fno-pic
+  -fno-pie
+  -ffunction-sections
+  -fdata-sections
+  -g.*
+  -Os
+)
+
+# Flags to be added to llext code compilation
+# mno-relax is needed to stop gcc from generating R_RISCV_ALIGN relocations,
+# which are currently not supported
+set(LLEXT_APPEND_FLAGS
+  -mabi=${riscv_mabi}
+  -march=${riscv_march}
+  -mno-relax
+)

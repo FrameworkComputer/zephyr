@@ -473,8 +473,9 @@ static int optee_notif_wait(const struct device *dev, uint32_t key)
 	k_spinlock_key_t sp_key;
 	int prev_val;
 
-	if (key > CONFIG_OPTEE_MAX_NOTIF)
+	if (key > CONFIG_OPTEE_MAX_NOTIF) {
 		return -EINVAL;
+	}
 
 	entry = k_malloc(sizeof(*entry));
 	if (!entry) {
@@ -1258,7 +1259,7 @@ static int optee_init(const struct device *dev)
 	return 0;
 }
 
-static const struct tee_driver_api optee_driver_api = {
+static DEVICE_API(tee, optee_driver_api) = {
 	.get_version = optee_get_version,
 	.open_session = optee_open_session,
 	.close_session = optee_close_session,

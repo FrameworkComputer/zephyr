@@ -17,10 +17,13 @@ pykwalify
 canopen
 packaging
 progress
+patool
 psutil
 pylink-square
 pyserial
 requests
+semver
+tqdm
 
 # for ram/rom reports
 anytree

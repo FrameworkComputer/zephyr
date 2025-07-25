@@ -536,8 +536,9 @@ static int peek_ring_cmpl(const struct device *dev,
 	do {
 		wr_offs = sys_read32(RM_RING_REG(pd, idx,
 						 RING_CMPL_WRITE_PTR));
-		if (PAX_DMA_GET_CMPL_COUNT(wr_offs, rd_offs) >= pl_len)
+		if (PAX_DMA_GET_CMPL_COUNT(wr_offs, rd_offs) >= pl_len) {
 			break;
+		}
 		k_busy_wait(1);
 	} while (--timeout);
 
@@ -964,7 +965,7 @@ static int dma_iproc_pax_transfer_stop(const struct device *dev,
 	return 0;
 }
 
-static const struct dma_driver_api pax_dma_driver_api = {
+static DEVICE_API(dma, pax_dma_driver_api) = {
 	.config = dma_iproc_pax_configure,
 	.start = dma_iproc_pax_transfer_start,
 	.stop = dma_iproc_pax_transfer_stop,

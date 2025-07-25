@@ -23,7 +23,7 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(gpio_mcp23xxx);
 
-#define MCP23XXX_RESET_TIME_US 1
+#define MCP23XXX_RESET_TIME_US 2
 
 /**
  * @brief Reads given register from mcp23xxx.
@@ -464,7 +464,7 @@ static void mcp23xxx_int_gpio_handler(const struct device *port, struct gpio_cal
 	k_work_submit(&drv_data->work);
 }
 
-const struct gpio_driver_api gpio_mcp23xxx_api_table = {
+DEVICE_API(gpio, gpio_mcp23xxx_api_table) = {
 	.pin_configure = mcp23xxx_pin_cfg,
 	.port_get_raw = mcp23xxx_port_get_raw,
 	.port_set_masked_raw = mcp23xxx_port_set_masked_raw,

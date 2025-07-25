@@ -21,10 +21,24 @@ family:
               - name: cpunet
       - name: nrf54l
         socs:
+          - name: nrf54l05
+            cpuclusters:
+              - name: cpuapp
+              - name: cpuflpr
+          - name: nrf54l09
+            cpuclusters:
+              - name: cpuapp
+          - name: nrf54l10
+            cpuclusters:
+              - name: cpuapp
+              - name: cpuflpr
           - name: nrf54l15
             cpuclusters:
               - name: cpuapp
               - name: cpuflpr
+          - name: nrf54l20
+            cpuclusters:
+              - name: cpuapp
       - name: nrf54h
         socs:
           - name: nrf54h20
@@ -39,6 +53,13 @@ family:
           - name: nrf9151
           - name: nrf9160
           - name: nrf9161
+      - name: nrf92
+        socs:
+          - name: nrf9280
+            cpuclusters:
+              - name: cpuapp
+              - name: cpurad
+              - name: cpuppr
 
 # Recovery/erase is only needed once per core. Prevent resetting the cores whilst flashing
 # multiple images until all images for each core have been flashed, this allows security
@@ -85,12 +106,27 @@ runners:
               - nrf9161
               - nrf9161/ns
           - qualifiers:
+              - nrf54l05/cpuapp
+              - nrf54l05/cpuflpr
+          - qualifiers:
+              - nrf54l09/cpuapp
+          - qualifiers:
+              - nrf54l10/cpuapp
+              - nrf54l10/cpuflpr
+          - qualifiers:
               - nrf54l15/cpuapp
               - nrf54l15/cpuflpr
+          - qualifiers:
+              - nrf54l20/cpuapp
           - qualifiers:
               - nrf54h20/cpuapp
               - nrf54h20/cpurad
               - nrf54h20/cpuppr
+              - nrf54h20/cpuflpr
+          - qualifiers:
+              - nrf9280/cpuapp
+              - nrf9280/cpurad
+              - nrf9280/cpuppr
     '--erase':
       - runners:
           - nrfjprog
@@ -132,12 +168,27 @@ runners:
               - nrf9161
               - nrf9161/ns
           - qualifiers:
+              - nrf54l05/cpuapp
+              - nrf54l05/cpuflpr
+          - qualifiers:
+              - nrf54l09/cpuapp
+          - qualifiers:
+              - nrf54l10/cpuapp
+              - nrf54l10/cpuflpr
+          - qualifiers:
               - nrf54l15/cpuapp
               - nrf54l15/cpuflpr
+          - qualifiers:
+              - nrf54l20/cpuapp
           - qualifiers:
               - nrf54h20/cpuapp
               - nrf54h20/cpurad
               - nrf54h20/cpuppr
+              - nrf54h20/cpuflpr
+          - qualifiers:
+              - nrf9280/cpuapp
+              - nrf9280/cpurad
+              - nrf9280/cpuppr
     '--reset':
       - runners:
           - nrfjprog
@@ -179,9 +230,20 @@ runners:
               - nrf9161
               - nrf9161/ns
           - qualifiers:
+              - nrf54l05/cpuapp
+              - nrf54l05/cpuflpr
+          - qualifiers:
+              - nrf54l10/cpuapp
+              - nrf54l10/cpuflpr
+          - qualifiers:
               - nrf54l15/cpuapp
               - nrf54l15/cpuflpr
           - qualifiers:
               - nrf54h20/cpuapp
               - nrf54h20/cpurad
               - nrf54h20/cpuppr
+              - nrf54h20/cpuflpr
+          - qualifiers:
+              - nrf9280/cpuapp
+              - nrf9280/cpurad
+              - nrf9280/cpuppr

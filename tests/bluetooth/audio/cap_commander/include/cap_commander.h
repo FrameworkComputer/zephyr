@@ -7,6 +7,8 @@
 #ifndef MOCKS_CAP_COMMANDER_H_
 #define MOCKS_CAP_COMMANDER_H_
 
+#include <zephyr/bluetooth/audio/csip.h>
+#include <zephyr/bluetooth/conn.h>
 #include <zephyr/fff.h>
 #include <zephyr/bluetooth/audio/cap.h>
 
@@ -24,5 +26,7 @@ DECLARE_FAKE_VOID_FUNC(mock_cap_commander_volume_offset_changed_cb, struct bt_co
 DECLARE_FAKE_VOID_FUNC(mock_cap_commander_microphone_mute_changed_cb, struct bt_conn *, int);
 DECLARE_FAKE_VOID_FUNC(mock_cap_commander_microphone_gain_changed_cb, struct bt_conn *, int);
 DECLARE_FAKE_VOID_FUNC(mock_cap_commander_broadcast_reception_start_cb, struct bt_conn *, int);
+DECLARE_FAKE_VOID_FUNC(mock_cap_commander_broadcast_reception_stop_cb, struct bt_conn *, int);
+DECLARE_FAKE_VOID_FUNC(mock_cap_commander_distribute_broadcast_code_cb, struct bt_conn *, int);
 
 #endif /* MOCKS_CAP_COMMANDER_H_ */

@@ -1,11 +1,4 @@
-# This list should be kept in sync with the downstreaming rotation:
-# https://rotations.corp.google.com/rotation/4735002850885632
+include chromiumos/owners:v1:/firmware/OWNERS.zephyr
 
-dawidn@google.com
-fabiobaltieri@google.com
-honscheid@google.com
-jbettis@chromium.org
-keithshort@chromium.org
-peress@chromium.org
-phoenixshen@google.com
-yllin@google.com
+# ChromeOS Prod
+chromeos-ci-prod@chromeos-bot.iam.gserviceaccount.com #{LAST_RESORT_SUGGESTION}

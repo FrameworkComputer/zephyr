@@ -1,5 +1,6 @@
 /*
  * Copyright 2023 NXP
+ * Copyright (c) 2025 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -16,7 +17,7 @@
 #include <zephyr/bluetooth/gap.h>
 #include <zephyr/bluetooth/uuid.h>
 #include <zephyr/bluetooth/gatt.h>
-#include <zephyr/net/buf.h>
+#include <zephyr/net_buf.h>
 #include <zephyr/sys/printk.h>
 #include <zephyr/types.h>
 #include <zephyr/sys/byteorder.h>
@@ -149,6 +150,7 @@ static void test_main(void)
 	/* Initialize TMAP */
 	err = bt_tmap_register(BT_TMAP_ROLE_CG | BT_TMAP_ROLE_UMS);
 	if (err != 0) {
+		FAIL("Failed to register TMAP (err %d)\n", err);
 		return;
 	}
 

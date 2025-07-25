@@ -1,7 +1,4 @@
-.. _max32655_fthr:
-
-MAX32655FTHR
-############
+.. zephyr:board:: max32655fthr
 
 Overview
 ********
@@ -106,6 +103,18 @@ Below are the interfaces supported by Zephyr on MAX32655FTHR.
 +-----------+------------+-------------------------------------+
 | DMA       | on-chip    | dma controller                      |
 +-----------+------------+-------------------------------------+
+| Watchdog  | on-chip    | watchdog                            |
++-----------+------------+-------------------------------------+
+| SPI       | on-chip    | spi                                 |
++-----------+------------+-------------------------------------+
+| ADC       | on-chip    | adc                                 |
++-----------+------------+-------------------------------------+
+| Timer     | on-chip    | counter                             |
++-----------+------------+-------------------------------------+
+| PWM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
+| Flash     | on-chip    | flash                               |
++-----------+------------+-------------------------------------+
 
 Push Buttons
 ************
@@ -182,7 +191,8 @@ The MAX32625 microcontroller on the board is flashed with DAPLink firmware at th
 It allows debugging and flashing the MAX32655 Arm Core over USB.
 
 Once the USB cable is connected to your host computer, then you can simply run the
-``west flash`` command to write a firmware image into flash.
+``west flash`` command to write a firmware image into flash. To perform a full erase,
+pass the ``--erase`` option when executing ``west flash``.
 
 Debugging
 =========

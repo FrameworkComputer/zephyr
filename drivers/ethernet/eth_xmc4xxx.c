@@ -639,7 +639,7 @@ static const struct device *eth_xmc4xxx_get_phy(const struct device *dev)
 {
 	const struct eth_xmc4xxx_config *dev_cfg = dev->config;
 
-	return config->phy_dev;
+	return dev_cfg->phy_dev;
 }
 
 static void eth_xmc4xxx_iface_init(struct net_if *iface)
@@ -1113,7 +1113,7 @@ static int eth_xmc4xxx_ptp_clock_rate_adjust(const struct device *dev, double ra
 	return 0;
 }
 
-static const struct ptp_clock_driver_api ptp_api_xmc4xxx = {
+static DEVICE_API(ptp_clock, ptp_api_xmc4xxx) = {
 	.set = eth_xmc4xxx_ptp_clock_set,
 	.get = eth_xmc4xxx_ptp_clock_get,
 	.adjust = eth_xmc4xxx_ptp_clock_adjust,

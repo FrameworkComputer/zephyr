@@ -87,6 +87,12 @@ config DNS_SERVER1
 	  192.0.2.1:5353
 	  2001:db8::1
 	  [2001:db8::1]:5353
+	  It is possible to bind the DNS connection via a certain network
+	  interface by appending "%" and network interface name to the server
+	  address. For example: 192.0.2.1%eth1 would bind the connection socket
+	  to the network interface eth1. This is optional and by default the
+	  resolver connects to server by selecting the output network interface
+	  using normal IP routing.
 	  It is not mandatory to use this Kconfig option at all.
 	  The one calling dns_resolve_init() can use this option or not
 	  to populate the server list. If the DNS server addresses are
@@ -181,6 +187,36 @@ config MDNS_RESPONDER_INIT_PRIO
 	help
 	  Note that if NET_CONFIG_AUTO_INIT is enabled, then this value
 	  should be bigger than its value.
+
+config MDNS_RESPONDER_PROBE
+	bool "mDNS probing support [EXPERIMENTAL]"
+	select NET_CONNECTION_MANAGER
+	select MDNS_RESOLVER
+	select DNS_RESOLVER
+	select EXPERIMENTAL
+	help
+	  Note that for probing to work, the mDNS and DNS resolver need to
+	  be enabled. The probing is made optional to allow smaller memory
+	  usage.
+
+config MDNS_WORKQ_STACK_SIZE
+	int "mDNS work queue thread stack size"
+	default 1200 if X86
+	default 1024
+	depends on MDNS_RESPONDER_PROBE
+	help
+	  Set the mDNS work queue thread stack size in bytes.
+
+config MDNS_WORKER_PRIO
+	int "Priority of the mDNS work queue"
+	default 2
+	depends on MDNS_RESPONDER_PROBE
+	help
+	  Set the priority of the mDNS worker queue, that handles all
+	  mDNS probing. Value 0 = highest priortity.
+	  When CONFIG_NET_TC_THREAD_COOPERATIVE = y, lowest priority is
+	  CONFIG_NUM_COOP_PRIORITIES-1 else lowest priority is
+	  CONFIG_NUM_PREEMPT_PRIORITIES-1.
 
 config MDNS_RESPONDER_DNS_SD
 	bool "DNS Service Discovery via mDNS"

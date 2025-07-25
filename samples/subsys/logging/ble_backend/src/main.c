@@ -26,7 +26,7 @@ static void start_adv(void)
 {
 	int err;
 
-	err = bt_le_adv_start(BT_LE_ADV_CONN_ONE_TIME, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
+	err = bt_le_adv_start(BT_LE_ADV_CONN_FAST_1, ad, ARRAY_SIZE(ad), sd, ARRAY_SIZE(sd));
 	if (err) {
 		LOG_ERR("Advertising failed to start (err %d)", err);
 		return;
@@ -73,9 +73,9 @@ void backend_ble_hook(bool status, void *ctx)
 	ARG_UNUSED(ctx);
 
 	if (status) {
-		LOG_INF("BLE Logger Backend enabled.");
+		LOG_INF("Bluetooth Logger Backend enabled.");
 	} else {
-		LOG_INF("BLE Logger Backend disabled.");
+		LOG_INF("Bluetooth Logger Backend disabled.");
 	}
 }
 
@@ -84,7 +84,7 @@ int main(void)
 {
 	int err;
 
-	LOG_INF("BLE LOG Demo");
+	LOG_INF("Bluetooth LOG Demo");
 	logger_backend_ble_set_hook(backend_ble_hook, NULL);
 	err = bt_enable(NULL);
 	if (err) {

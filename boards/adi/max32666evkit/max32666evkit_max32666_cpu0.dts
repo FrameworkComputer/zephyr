@@ -10,6 +10,7 @@
 #include <adi/max32/max32666-pinctrl.dtsi>
 #include <zephyr/dt-bindings/gpio/adi-max32-gpio.h>
 #include <zephyr/dt-bindings/input/input-event-codes.h>
+#include <zephyr/dt-bindings/dma/max32666_dma.h>
 
 / {
 	model = "Analog Devices MAX32666EVKIT";
@@ -56,6 +57,7 @@
 		led1 = &led2;
 		sw0 = &pb1;
 		sw1 = &pb2;
+		watchdog0 = &wdt0;
 	};
 };
 
@@ -72,6 +74,10 @@
 	status = "okay";
 };
 
+&dma0 {
+	status = "okay";
+};
+
 &gpio0 {
 	status = "okay";
 };
@@ -80,6 +86,31 @@
 	status = "okay";
 };
 
+&i2c1 {
+	status = "okay";
+	pinctrl-0 = <&i2c1_scl_p0_14 &i2c1_sda_p0_15>;
+	pinctrl-names = "default";
+};
+
+&i2c2 {
+	status = "okay";
+	pinctrl-0 = <&i2c2_scl_p1_14 &i2c2_sda_p1_15>;
+	pinctrl-names = "default";
+};
+
 &trng {
+	status = "okay";
+};
+
+&wdt0 {
+	status = "okay";
+};
+
+&w1 {
+	pinctrl-0 = <&owm_io_p0_4 &owm_pe_p0_5>;
+	pinctrl-names = "default";
+};
+
+&rtc_counter {
 	status = "okay";
 };

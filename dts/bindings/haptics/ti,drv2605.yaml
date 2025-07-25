@@ -11,6 +11,7 @@ include: i2c-device.yaml
 
 properties:
   actuator-mode:
+    required: true
     type: string
     enum:
       - "ERM"
@@ -26,6 +27,11 @@ properties:
       - "8X"
       - "16X"
       - "DISABLED"
+    default: "3X"
+    description: |
+      Selects the feedback gain ratio between braking gain and driving gain.
+      According to the datasheet, a value of 2 ("3X") is valid for most
+      actuators.
   loop-gain:
     type: string
     enum:
@@ -33,3 +39,25 @@ properties:
       - "MEDIUM"
       - "HIGH"
       - "VERY_HIGH"
+    default: "HIGH"
+    description: |
+      Selects a loop gain for the feedback control. According to the datasheet,
+      a value of 2 ("HIGH") is valid for most actuators.
+  vib-rated-mv:
+    type: int
+    default: 3200
+    description: |
+      Sets the reference voltage for full-scale output during closed-loop
+      operation. The default value is inherited from ti,drv260x.yaml in Linux.
+  vib-overdrive-mv:
+    type: int
+    default: 3200
+    description: |
+      Sets a clamp so that the automatic overdrive is bounded. The default
+      value is inherited from ti,drv260x.yaml in Linux.
+  en-gpios:
+    type: phandle-array
+    description: GPIO to enable and disable the device.
+  in-trig-gpios:
+    type: phandle-array
+    description: GPIO to trigger ROM waveforms or drive an input signal.

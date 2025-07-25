@@ -10,12 +10,15 @@
 #if defined(CONFIG_CLOCK_CONTROL_NRF)
 #include <zephyr/drivers/clock_control/nrf_clock_control.h>
 #endif
+#include <zephyr/drivers/pinctrl.h>
 #include <zephyr/drivers/timer/system_timer.h>
 #include <zephyr/drivers/timer/nrf_grtc_timer.h>
 #include <nrfx_grtc.h>
 #include <zephyr/sys/math_extras.h>
 
 #define GRTC_NODE DT_NODELABEL(grtc)
+#define HFCLK_NODE DT_PHANDLE_BY_NAME(GRTC_NODE, clocks, hfclock)
+#define LFCLK_NODE DT_PHANDLE_BY_NAME(GRTC_NODE, clocks, lfclock)
 
 /* Ensure that GRTC properties in devicetree are defined correctly. */
 #if !DT_NODE_HAS_PROP(GRTC_NODE, owned_channels)
@@ -49,7 +52,7 @@
 
 #define MAX_CYCLES (MAX_TICKS * CYC_PER_TICK)
 
-#define LFCLK_FREQUENCY_HZ 32768
+#define LFCLK_FREQUENCY_HZ DT_PROP(LFCLK_NODE, clock_frequency)
 
 #if defined(CONFIG_TEST)
 const int32_t z_sys_timer_irq_for_test = DT_IRQN(GRTC_NODE);
@@ -367,7 +370,7 @@ int z_nrf_grtc_timer_capture_read(int32_t chan, uint64_t *captured_time)
 	return 0;
 }
 
-#if defined(CONFIG_NRF_GRTC_SLEEP_ALLOWED)
+#if defined(CONFIG_POWEROFF) && defined(CONFIG_NRF_GRTC_START_SYSCOUNTER)
 int z_nrf_grtc_wakeup_prepare(uint64_t wake_time_us)
 {
 	nrfx_err_t err_code;
@@ -427,12 +430,16 @@ int z_nrf_grtc_wakeup_prepare(uint64_t wake_time_us)
 		MAX_CC_LATCH_WAIT_TIME_US;
 	k_busy_wait(wait_time);
 #if NRF_GRTC_HAS_CLKSEL
+#if defined(CONFIG_CLOCK_CONTROL_NRF_K32SRC_RC)
+	nrfx_grtc_clock_source_set(NRF_GRTC_CLKSEL_LFLPRC);
+#elif DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(lfxo))
 	nrfx_grtc_clock_source_set(NRF_GRTC_CLKSEL_LFXO);
+#endif
 #endif
 	k_spin_unlock(&lock, key);
 	return 0;
 }
-#endif /* CONFIG_NRF_GRTC_SLEEP_ALLOWED */
+#endif /* CONFIG_POWEROFF */
 
 uint32_t sys_clock_cycle_get_32(void)
 {
@@ -464,12 +471,6 @@ uint32_t sys_clock_elapsed(void)
 static int sys_clock_driver_init(void)
 {
 	nrfx_err_t err_code;
-
-#if defined(CONFIG_NRF_GRTC_TIMER_CLOCK_MANAGEMENT) &&                                             \
-	(defined(NRF_GRTC_HAS_CLKSEL) && (NRF_GRTC_HAS_CLKSEL == 1))
-	/* Use System LFCLK as the low-frequency clock source. */
-	nrfx_grtc_clock_source_set(NRF_GRTC_CLKSEL_LFCLK);
-#endif
 
 	IRQ_CONNECT(DT_IRQN(GRTC_NODE), DT_IRQ(GRTC_NODE, priority), nrfx_isr,
 		    nrfx_grtc_irq_handler, 0);
@@ -507,7 +508,48 @@ static int sys_clock_driver_init(void)
 	z_nrf_clock_control_lf_on(mode);
 #endif
 
+#if defined(CONFIG_NRF_GRTC_TIMER_CLOCK_MANAGEMENT) && NRF_GRTC_HAS_CLKSEL
+#if defined(CONFIG_CLOCK_CONTROL_NRF_K32SRC_RC)
+	/* Switch to LFPRC as the low-frequency clock source. */
+	nrfx_grtc_clock_source_set(NRF_GRTC_CLKSEL_LFLPRC);
+#elif DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(lfxo))
+	/* Switch to LFXO as the low-frequency clock source. */
+	nrfx_grtc_clock_source_set(NRF_GRTC_CLKSEL_LFXO);
+#endif
+#endif
+
+#if defined(CONFIG_NRF_GRTC_ALWAYS_ON)
+	nrfx_grtc_active_request_set(true);
+#endif
+
+#if DT_PROP(GRTC_NODE, clkout_32k)
+	nrfy_grtc_clkout_set(NRF_GRTC, NRF_GRTC_CLKOUT_32K, true);
+#endif
+
+#if DT_NODE_HAS_PROP(GRTC_NODE, clkout_fast_frequency_hz)
+#if !DT_NODE_HAS_PROP(HFCLK_NODE, clock_frequency)
+#error "hfclock reference required when fast clock output is enabled."
+#endif
+
+#if DT_PROP(GRTC_NODE, clkout_fast_frequency_hz) > (DT_PROP(HFCLK_NODE, clock_frequency) / 2)
+#error "Invalid frequency value for fast clock output."
+#endif
+	uint32_t base_frequency = DT_PROP(HFCLK_NODE, clock_frequency);
+	uint32_t requested_frequency = DT_PROP(GRTC_NODE, clkout_fast_frequency_hz);
+	uint32_t grtc_div = base_frequency / (requested_frequency * 2);
+
+	nrfy_grtc_clkout_divider_set(NRF_GRTC, (uint8_t)grtc_div);
+	nrfy_grtc_clkout_set(NRF_GRTC, NRF_GRTC_CLKOUT_FAST, true);
+#endif
+
+#if DT_PROP(GRTC_NODE, clkout_32k) || DT_NODE_HAS_PROP(GRTC_NODE, clkout_fast_frequency_hz)
+	PINCTRL_DT_DEFINE(GRTC_NODE);
+	const struct pinctrl_dev_config *pcfg = PINCTRL_DT_DEV_CONFIG_GET(GRTC_NODE);
+
+	return pinctrl_apply_state(pcfg, PINCTRL_STATE_DEFAULT);
+#else
 	return 0;
+#endif
 }
 
 void sys_clock_set_timeout(int32_t ticks, bool idle)

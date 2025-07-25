@@ -23,6 +23,7 @@ Click the operating system you are using.
    .. group-tab:: Ubuntu
 
       This guide covers Ubuntu version 20.04 LTS and later.
+      If you are using a different Linux distribution see :ref:`installation_linux`.
 
       .. code-block:: bash
 
@@ -94,6 +95,11 @@ The current minimum required version for the main dependencies are:
               python3-dev python3-pip python3-setuptools python3-tk python3-wheel xz-utils file \
               make gcc gcc-multilib g++-multilib libsdl2-dev libmagic1
 
+         .. note::
+
+            Due to the unavailability of ``gcc-multilib`` and ``g++-multilib`` on AArch64
+            (ARM64) systems, you may need to remove them from the list of packages to install.
+
       #. Verify the versions of the main dependencies installed on your system by entering:
 
          .. code-block:: bash
@@ -132,7 +138,7 @@ The current minimum required version for the main dependencies are:
 
          .. code-block:: bash
 
-            brew install cmake ninja gperf python3 ccache qemu dtc libmagic wget openocd
+            brew install cmake ninja gperf python3 python-tk ccache qemu dtc libmagic wget openocd
 
       #. Add the Homebrew Python folder to the path, in order to be able to
          execute ``python`` and ``pip`` as well ``python3`` and ``pip3``.
@@ -189,7 +195,7 @@ The current minimum required version for the main dependencies are:
 
          .. warning::
 
-            As of November 2023, Python 3.12 is not recommended for Zephyr development on Windows,
+            As of November 2024, Python 3.13 is not recommended for Zephyr development on Windows,
             as some required Python dependencies may be difficult to install.
 
       #. Close the terminal window.
@@ -206,8 +212,10 @@ Get Zephyr and install Python dependencies
 ******************************************
 
 Next, clone Zephyr and its :ref:`modules <modules>` into a new :ref:`west
-<west>` workspace named :file:`zephyrproject`. You'll also install Zephyr's
-additional Python dependencies in a `Python virtual environment`_.
+<west>` workspace. In the following instructions the name :file:`zephyrproject`
+is used for the workspace, however in practice its name and location can be freely
+chosen. You'll also install Zephyr's additional Python dependencies in a
+`Python virtual environment`_.
 
 .. _Python virtual environment: https://docs.python.org/3/library/venv.html
 
@@ -264,12 +272,12 @@ additional Python dependencies in a `Python virtual environment`_.
 
             west zephyr-export
 
-      #. Zephyr's ``scripts/requirements.txt`` file declares additional Python
-         dependencies. Install them with ``pip``.
+      #. The Zephyr west extension command, ``west packages`` can be used to install Python
+         dependencies.
 
          .. code-block:: bash
 
-            pip install -r ~/zephyrproject/zephyr/scripts/requirements.txt
+            west packages pip --install
 
    .. group-tab:: macOS
 
@@ -316,12 +324,12 @@ additional Python dependencies in a `Python virtual environment`_.
 
             west zephyr-export
 
-      #. Zephyr's ``scripts/requirements.txt`` file declares additional Python
-         dependencies. Install them with ``pip``.
+      #. The Zephyr west extension command, ``west packages`` can be used to install Python
+         dependencies.
 
          .. code-block:: bash
 
-            pip install -r ~/zephyrproject/zephyr/scripts/requirements.txt
+            west packages pip --install
 
    .. group-tab:: Windows
 
@@ -371,12 +379,12 @@ additional Python dependencies in a `Python virtual environment`_.
 
             west zephyr-export
 
-      #. Zephyr's ``scripts\requirements.txt`` file declares additional Python
-         dependencies. Install them with ``pip``.
+      #. The Zephyr west extension command, ``west packages`` can be used to install Python
+         dependencies.
 
          .. code-block:: bat
 
-            pip install -r %HOMEPATH%\zephyrproject\zephyr\scripts\requirements.txt
+            west packages pip --install
 
 Install the Zephyr SDK
 **********************
@@ -386,12 +394,61 @@ contains toolchains for each of Zephyr's supported architectures, which
 include a compiler, assembler, linker and other programs required to build
 Zephyr applications.
 
-It also contains additional host tools, such as custom QEMU and OpenOCD builds
+For Linux, it also contains additional host tools, such as custom QEMU and OpenOCD builds
 that are used to emulate, flash and debug Zephyr applications.
 
-.. include:: ../toolchains/zephyr_sdk.rst
-   :start-after: toolchain_zephyr_sdk_install_start
-   :end-before: toolchain_zephyr_sdk_install_end
+
+.. tabs::
+
+   .. group-tab:: Ubuntu
+
+      Install the Zephyr SDK using the ``west sdk install``.
+
+         .. code-block:: bash
+
+            cd ~/zephyrproject/zephyr
+            west sdk install
+
+      .. tip::
+
+          Using the command options, you can specify the SDK installation destination
+          and which architecture of toolchains to install.
+          See ``west sdk install --help`` for details.
+
+   .. group-tab:: macOS
+
+      Install the Zephyr SDK using the ``west sdk install``.
+
+         .. code-block:: bash
+
+            cd ~/zephyrproject/zephyr
+            west sdk install
+
+      .. tip::
+
+          Using the command options, you can specify the SDK installation destination
+          and which architecture of toolchains to install.
+          See ``west sdk install --help`` for details.
+
+   .. group-tab:: Windows
+
+      Install the Zephyr SDK using the ``west sdk install``.
+
+         .. code-block:: bat
+
+            cd %HOMEPATH%\zephyrproject\zephyr
+            west sdk install
+
+      .. tip::
+
+          Using the command options, you can specify the SDK installation destination
+          and which architecture of toolchains to install.
+          See ``west sdk install --help`` for details.
+
+.. note::
+
+    If you want to install Zephyr SDK without using the ``west sdk`` command,
+    please see :ref:`toolchain_zephyr_sdk_install`.
 
 .. _getting_started_run_sample:
 
@@ -402,7 +459,7 @@ Build the Blinky Sample
 
    :zephyr:code-sample:`blinky` is compatible with most, but not all, :ref:`boards`. If your board
    does not meet Blinky's :ref:`blinky-sample-requirements`, then
-   :ref:`hello_world` is a good alternative.
+   :zephyr:code-sample:`hello_world` is a good alternative.
 
    If you are unsure what name west uses for your board, ``west boards``
    can be used to obtain a list of all boards Zephyr supports.
@@ -461,9 +518,17 @@ Then flash the sample using :ref:`west flash <west-flashing>`:
 
    west flash
 
-You may need to install additional :ref:`host tools <flash-debug-host-tools>`
-required by your board. The ``west flash`` command will print an error if any
-required dependencies are missing.
+.. note::
+
+    You may need to install additional :ref:`host tools <flash-debug-host-tools>`
+    required by your board. The ``west flash`` command will print an error if any
+    required dependencies are missing.
+
+.. note::
+
+    When using Linux, you may need to configure udev rules the first time
+    of using a debug probe.
+    Please also see :ref:`setting-udev-rules`.
 
 If you're using blinky, the LED will start to blink as shown in this figure:
 
@@ -478,7 +543,7 @@ Next Steps
 
 Here are some next steps for exploring Zephyr:
 
-* Try other :ref:`samples-and-demos`
+* Try other :zephyr:code-sample-category:`samples`
 * Learn about :ref:`application` and the :ref:`west <west>` tool
 * Find out about west's :ref:`flashing and debugging <west-build-flash-debug>`
   features, or more about :ref:`flashing_and_debugging` in general

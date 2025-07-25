@@ -5,7 +5,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#define DT_DRV_COMPAT nxp_kinetis_lpuart
+#define DT_DRV_COMPAT nxp_lpuart
 
 #include <errno.h>
 #include <zephyr/device.h>
@@ -19,6 +19,7 @@
 #include <zephyr/drivers/dma.h>
 #endif
 #include <zephyr/logging/log.h>
+#include <zephyr/sys/util_macro.h>
 
 #include <fsl_lpuart.h>
 #if CONFIG_NXP_LP_FLEXCOMM
@@ -47,9 +48,6 @@ struct lpuart_dma_config {
 
 struct mcux_lpuart_config {
 	LPUART_Type *base;
-#ifdef CONFIG_NXP_LP_FLEXCOMM
-	const struct device *parent_dev;
-#endif
 	const struct device *clock_dev;
 	const struct pinctrl_dev_config *pincfg;
 	clock_control_subsys_t clock_subsys;
@@ -233,7 +231,7 @@ static int mcux_lpuart_fifo_fill(const struct device *dev,
 				 int len)
 {
 	const struct mcux_lpuart_config *config = dev->config;
-	uint8_t num_tx = 0U;
+	int num_tx = 0U;
 
 	while ((len - num_tx > 0) &&
 	       (LPUART_GetStatusFlags(config->base)
@@ -248,7 +246,7 @@ static int mcux_lpuart_fifo_read(const struct device *dev, uint8_t *rx_data,
 				 const int len)
 {
 	const struct mcux_lpuart_config *config = dev->config;
-	uint8_t num_rx = 0U;
+	int num_rx = 0U;
 
 	while ((len - num_rx > 0) &&
 	       (LPUART_GetStatusFlags(config->base)
@@ -515,10 +513,11 @@ static void mcux_lpuart_async_rx_flush(const struct device *dev)
 		const size_t rx_rcv_len = data->async.rx_dma_params.buf_len -
 					  status.pending_length;
 
-		if (rx_rcv_len > data->async.rx_dma_params.counter) {
+		if (rx_rcv_len > data->async.rx_dma_params.counter && status.pending_length) {
 			data->async.rx_dma_params.counter = rx_rcv_len;
 			async_evt_rx_rdy(dev);
 		}
+		LPUART_ClearStatusFlags(config->base, kLPUART_RxOverrunFlag);
 	} else {
 		LOG_ERR("Error getting DMA status");
 	}
@@ -620,15 +619,16 @@ static int uart_mcux_lpuart_dma_replace_rx_buffer(const struct device *dev)
 	/* There must be a buffer to replace this one with */
 	assert(data->async.next_rx_buffer != NULL);
 	assert(data->async.next_rx_buffer_len != 0U);
-	const int success = dma_reload(config->rx_dma_config.dma_dev,
-				       config->rx_dma_config.dma_channel,
-				       LPUART_GetDataRegisterAddress(lpuart),
-				       (uint32_t)data->async.next_rx_buffer,
-				       data->async.next_rx_buffer_len);
+
+	const int success =
+		dma_reload(config->rx_dma_config.dma_dev, config->rx_dma_config.dma_channel,
+			   LPUART_GetDataRegisterAddress(lpuart),
+			   (uint32_t)data->async.next_rx_buffer, data->async.next_rx_buffer_len);
 
 	if (success != 0) {
 		LOG_ERR("Error %d reloading DMA with next RX buffer", success);
 	}
+
 	return success;
 }
 
@@ -673,14 +673,14 @@ static void dma_callback(const struct device *dma_dev, void *callback_arg, uint3
 		async_evt_rx_rdy(dev);
 		async_evt_rx_buf_release(dev);
 
+		/* Remember the buf so it can be released after it is done. */
 		rx_dma_params->buf = data->async.next_rx_buffer;
 		rx_dma_params->buf_len = data->async.next_rx_buffer_len;
 		data->async.next_rx_buffer = NULL;
 		data->async.next_rx_buffer_len = 0U;
 
 		/* A new buffer was available (and already loaded into the DMA engine) */
-		if (rx_dma_params->buf != NULL &&
-		    rx_dma_params->buf_len > 0) {
+		if (rx_dma_params->buf != NULL && rx_dma_params->buf_len > 0) {
 			/* Request the next buffer */
 			async_evt_rx_buf_request(dev);
 		} else {
@@ -832,6 +832,8 @@ static int mcux_lpuart_rx_enable(const struct device *dev, uint8_t *buf, const s
 	rx_dma_params->timeout_us = timeout_us;
 	rx_dma_params->buf = buf;
 	rx_dma_params->buf_len = len;
+	data->async.next_rx_buffer = NULL;
+	data->async.next_rx_buffer_len = 0U;
 
 	LPUART_EnableInterrupts(config->base, kLPUART_IdleLineInterruptEnable);
 	prepare_rx_dma_block_config(dev);
@@ -841,10 +843,9 @@ static int mcux_lpuart_rx_enable(const struct device *dev, uint8_t *buf, const s
 	async_evt_rx_buf_request(dev);
 
 	/* Clear these status flags as they can prevent the UART device from receiving data */
-	LPUART_ClearStatusFlags(config->base, kLPUART_RxOverrunFlag |
-					      kLPUART_ParityErrorFlag |
-					      kLPUART_FramingErrorFlag |
-						  kLPUART_NoiseErrorFlag);
+	LPUART_ClearStatusFlags(config->base, kLPUART_RxOverrunFlag | kLPUART_ParityErrorFlag |
+							kLPUART_FramingErrorFlag |
+							kLPUART_NoiseErrorFlag);
 	LPUART_EnableRx(lpuart, true);
 	irq_unlock(key);
 	return ret;
@@ -853,13 +854,15 @@ static int mcux_lpuart_rx_enable(const struct device *dev, uint8_t *buf, const s
 static int mcux_lpuart_rx_buf_rsp(const struct device *dev, uint8_t *buf, size_t len)
 {
 	struct mcux_lpuart_data *data = dev->data;
+	unsigned int key;
 
+	key = irq_lock();
 	assert(data->async.next_rx_buffer == NULL);
 	assert(data->async.next_rx_buffer_len == 0);
 	data->async.next_rx_buffer = buf;
 	data->async.next_rx_buffer_len = len;
 	uart_mcux_lpuart_dma_replace_rx_buffer(dev);
-
+	irq_unlock(key);
 	return 0;
 }
 
@@ -920,6 +923,10 @@ static inline void mcux_lpuart_async_isr(struct mcux_lpuart_data *data,
 		async_timer_start(&data->async.rx_dma_params.timeout_work,
 				  data->async.rx_dma_params.timeout_us);
 		LPUART_ClearStatusFlags(config->base, kLPUART_IdleLineFlag);
+	}
+
+	if (status & kLPUART_RxOverrunFlag) {
+		LPUART_ClearStatusFlags(config->base, kLPUART_RxOverrunFlag);
 	}
 }
 #endif
@@ -1092,6 +1099,8 @@ static int mcux_lpuart_configure_init(const struct device *dev, const struct uar
 
 	LPUART_Init(config->base, &uart_config, clock_freq);
 
+#if defined(FSL_FEATURE_LPUART_HAS_MODEM_SUPPORT) && \
+	FSL_FEATURE_LPUART_HAS_MODEM_SUPPORT
 	if (cfg->flow_ctrl == UART_CFG_FLOW_CTRL_RS485) {
 		/* Set the LPUART into RS485 mode (tx driver enable using RTS) */
 		config->base->MODIR |= LPUART_MODIR_TXRTSE(true);
@@ -1099,6 +1108,8 @@ static int mcux_lpuart_configure_init(const struct device *dev, const struct uar
 			config->base->MODIR |= LPUART_MODIR_TXRTSPOL(1);
 		}
 	}
+#endif
+
 	/* Now can enable tx */
 	config->base->CTRL |= LPUART_CTRL_TE(true);
 
@@ -1198,19 +1209,11 @@ static int mcux_lpuart_init(const struct device *dev)
 	}
 
 #ifdef CONFIG_UART_MCUX_LPUART_ISR_SUPPORT
-#if CONFIG_NXP_LP_FLEXCOMM
-	/* When using LP Flexcomm driver, register the interrupt handler
-	 * so we receive notification from the LP Flexcomm interrupt handler.
-	 */
-	nxp_lp_flexcomm_setirqhandler(config->parent_dev, dev,
-				      LP_FLEXCOMM_PERIPH_LPUART, mcux_lpuart_isr);
-#else
-	/* Interrupt is managed by this driver */
 	config->irq_config_func(dev);
 #endif
+
 #ifdef CONFIG_UART_EXCLUSIVE_API_CALLBACKS
 	data->api_type = LPUART_NONE;
-#endif
 #endif
 
 #ifdef CONFIG_PM
@@ -1222,7 +1225,7 @@ static int mcux_lpuart_init(const struct device *dev)
 	return 0;
 }
 
-static const struct uart_driver_api mcux_lpuart_driver_api = {
+static DEVICE_API(uart, mcux_lpuart_driver_api) = {
 	.poll_in = mcux_lpuart_poll_in,
 	.poll_out = mcux_lpuart_poll_out,
 	.err_check = mcux_lpuart_err_check,
@@ -1266,15 +1269,26 @@ static const struct uart_driver_api mcux_lpuart_driver_api = {
 									\
 		irq_enable(DT_INST_IRQ_BY_IDX(n, i, irq));		\
 	} while (false)
+#define MCUX_LPUART_IRQS_INSTALL(n)					\
+		IF_ENABLED(DT_INST_IRQ_HAS_IDX(n, 0),			\
+			   (MCUX_LPUART_IRQ_INSTALL(n, 0);))		\
+		IF_ENABLED(DT_INST_IRQ_HAS_IDX(n, 1),			\
+			   (MCUX_LPUART_IRQ_INSTALL(n, 1);))
+/* When using LP Flexcomm driver, register the interrupt handler
+ * so we receive notification from the LP Flexcomm interrupt handler.
+ */
+#define MCUX_LPUART_LPFLEXCOMM_IRQ_CONFIG(n)				\
+	nxp_lp_flexcomm_setirqhandler(DEVICE_DT_GET(DT_INST_PARENT(n)),	\
+					DEVICE_DT_INST_GET(n),		\
+					LP_FLEXCOMM_PERIPH_LPUART,	\
+					mcux_lpuart_isr)
 #define MCUX_LPUART_IRQ_INIT(n) .irq_config_func = mcux_lpuart_config_func_##n,
 #define MCUX_LPUART_IRQ_DEFINE(n)						\
 	static void mcux_lpuart_config_func_##n(const struct device *dev)	\
 	{									\
-		IF_ENABLED(DT_INST_IRQ_HAS_IDX(n, 0),			\
-			   (MCUX_LPUART_IRQ_INSTALL(n, 0);))		\
-									\
-		IF_ENABLED(DT_INST_IRQ_HAS_IDX(n, 1),			\
-			   (MCUX_LPUART_IRQ_INSTALL(n, 1);))		\
+		COND_CODE_1(DT_NODE_HAS_COMPAT(DT_INST_PARENT(n), nxp_lp_flexcomm), \
+			    (MCUX_LPUART_LPFLEXCOMM_IRQ_CONFIG(n)),		\
+			    (MCUX_LPUART_IRQS_INSTALL(n)));			\
 	}
 #else
 #define MCUX_LPUART_IRQ_INIT(n)
@@ -1325,7 +1339,8 @@ static const struct uart_driver_api mcux_lpuart_driver_api = {
 			.dma_slot = DT_INST_DMAS_CELL_BY_NAME(				       \
 				id, rx, source),					       \
 			.dma_callback = dma_callback,					       \
-			.user_data = (void *)DEVICE_DT_INST_GET(id)			       \
+			.user_data = (void *)DEVICE_DT_INST_GET(id),			       \
+			.cyclic = 1,							       \
 		},									       \
 	},
 #else
@@ -1339,22 +1354,15 @@ static const struct uart_driver_api mcux_lpuart_driver_api = {
 		: DT_INST_PROP(n, nxp_rs485_mode)\
 				? UART_CFG_FLOW_CTRL_RS485   \
 				: UART_CFG_FLOW_CTRL_NONE
-#ifdef CONFIG_NXP_LP_FLEXCOMM
-#define PARENT_DEV(n) \
-	.parent_dev = DEVICE_DT_GET(DT_INST_PARENT(n)),
-#else
-#define PARENT_DEV(n)
-#endif /* CONFIG_NXP_LP_FLEXCOMM */
 
 #define LPUART_MCUX_DECLARE_CFG(n)                                      \
 static const struct mcux_lpuart_config mcux_lpuart_##n##_config = {     \
 	.base = (LPUART_Type *) DT_INST_REG_ADDR(n),                          \
-	PARENT_DEV(n)		\
 	.clock_dev = DEVICE_DT_GET(DT_INST_CLOCKS_CTLR(n)),                   \
 	.clock_subsys = (clock_control_subsys_t)DT_INST_CLOCKS_CELL(n, name),	\
 	.baud_rate = DT_INST_PROP(n, current_speed),                          \
 	.flow_ctrl = FLOW_CONTROL(n),                                         \
-	.parity = DT_INST_ENUM_IDX_OR(n, parity, UART_CFG_PARITY_NONE),       \
+	.parity = DT_INST_ENUM_IDX(n, parity),                                \
 	.rs485_de_active_low = DT_INST_PROP(n, nxp_rs485_de_active_low),      \
 	.loopback_en = DT_INST_PROP(n, nxp_loopback),                         \
 	.single_wire = DT_INST_PROP(n, single_wire),	                      \

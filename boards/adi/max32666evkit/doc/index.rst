@@ -1,20 +1,11 @@
-.. _max32666evkit:
-
-MAX32666EVKIT
-#############
+.. zephyr:board:: max32666evkit
 
 Overview
 ********
 The MAX32666EVKIT provides a platform for evaluating the capabilities of the MAX32665 and MAX32666
 high-efficiency Arm® microcontrollers and audio DSP for wearable and hearable device applications.
 
-
 The Zephyr port is running on the MAX32666 MCU.
-
-.. image:: img/max32666evkit.webp
-   :align: center
-   :alt: MAX32666EVKIT Front
-
 
 Hardware
 ********
@@ -111,6 +102,22 @@ Below interfaces are supported by Zephyr on MAX32666EVKIT.
 | UART      | on-chip    | serial                              |
 +-----------+------------+-------------------------------------+
 | TRNG      | on-chip    | entropy                             |
++-----------+------------+-------------------------------------+
+| Watchdog  | on-chip    | watchdog                            |
++-----------+------------+-------------------------------------+
+| DMA       | on-chip    | dma controller                      |
++-----------+------------+-------------------------------------+
+| I2C       | on-chip    | i2c                                 |
++-----------+------------+-------------------------------------+
+| ADC       | on-chip    | adc                                 |
++-----------+------------+-------------------------------------+
+| Timer     | on-chip    | counter                             |
++-----------+------------+-------------------------------------+
+| PWM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
+| W1        | on-chip    | one wire master                     |
++-----------+------------+-------------------------------------+
+| Flash     | on-chip    | flash                               |
 +-----------+------------+-------------------------------------+
 
 
@@ -289,7 +296,8 @@ SWD port. SWD debug can be accessed through the Cortex 10-pin connector, J6.
 Logic levels are fixed to VDDIOH (1.8V or 3.3V).
 
 Once the debug probe is connected to your host computer, then you can simply run the
-``west flash`` command to write a firmware image into flash.
+``west flash`` command to write a firmware image into flash. To perform a full erase,
+pass the ``--erase`` option when executing ``west flash``.
 
 .. note::
 

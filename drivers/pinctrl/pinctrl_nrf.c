@@ -7,6 +7,9 @@
 #include <zephyr/drivers/pinctrl.h>
 
 #include <hal/nrf_gpio.h>
+#ifdef CONFIG_SOC_NRF54H20_GPD
+#include <nrf/gpd.h>
+#endif
 
 BUILD_ASSERT(((NRF_PULL_NONE == NRF_GPIO_PIN_NOPULL) &&
 	      (NRF_PULL_DOWN == NRF_GPIO_PIN_PULLDOWN) &&
@@ -91,9 +94,27 @@ static const nrf_gpio_pin_drive_t drive_modes[NRF_DRIVE_COUNT] = {
 #define NRF_PSEL_QSPI(reg, line) ((NRF_QSPI_Type *)reg)->PSEL.line
 #endif
 
+#if DT_HAS_COMPAT_STATUS_OKAY(nordic_nrf_twis) || defined(CONFIG_NRFX_TWIS)
+#include <hal/nrf_twis.h>
+#define NRF_PSEL_TWIS(reg, line) ((NRF_TWIS_Type *)reg)->PSEL.line
+#endif
+
+#if DT_HAS_COMPAT_STATUS_OKAY(nordic_nrf_grtc) || defined(CONFIG_NRFX_GRTC)
+#if DT_NODE_HAS_PROP(DT_NODELABEL(grtc), clkout_fast_frequency_hz)
+#define NRF_GRTC_CLKOUT_FAST 1
+#endif
+#if DT_NODE_HAS_PROP(DT_NODELABEL(grtc), clkout_32k)
+#define NRF_GRTC_CLKOUT_SLOW 1
+#endif
+#endif
+
 int pinctrl_configure_pins(const pinctrl_soc_pin_t *pins, uint8_t pin_cnt,
 			   uintptr_t reg)
 {
+#ifdef CONFIG_SOC_NRF54H20_GPD
+	bool gpd_requested = false;
+#endif
+
 	for (uint8_t i = 0U; i < pin_cnt; i++) {
 		nrf_gpio_pin_drive_t drive;
 		uint8_t drive_idx = NRF_GET_DRIVE(pins[i]);
@@ -333,6 +354,24 @@ int pinctrl_configure_pins(const pinctrl_soc_pin_t *pins, uint8_t pin_cnt,
 			input = NRF_GPIO_PIN_INPUT_DISCONNECT;
 			break;
 #endif /* defined(NRF_PSEL_QSPI) */
+#if defined(NRF_GRTC_CLKOUT_FAST)
+		case NRF_FUN_GRTC_CLKOUT_FAST:
+#if NRF_GPIO_HAS_SEL && defined(GPIO_PIN_CNF_CTRLSEL_GRTC)
+			nrf_gpio_pin_control_select(psel, NRF_GPIO_PIN_SEL_GRTC);
+#endif
+			dir = NRF_GPIO_PIN_DIR_OUTPUT;
+			input = NRF_GPIO_PIN_INPUT_DISCONNECT;
+			break;
+#endif /* defined(NRF_GRTC_CLKOUT_FAST) */
+#if defined(NRF_GRTC_CLKOUT_SLOW)
+		case NRF_FUN_GRTC_CLKOUT_32K:
+#if NRF_GPIO_HAS_SEL && defined(GPIO_PIN_CNF_CTRLSEL_GRTC)
+			nrf_gpio_pin_control_select(psel, NRF_GPIO_PIN_SEL_GRTC);
+#endif
+			dir = NRF_GPIO_PIN_DIR_OUTPUT;
+			input = NRF_GPIO_PIN_INPUT_DISCONNECT;
+			break;
+#endif /* defined(NRF_GRTC_CLKOUT_SLOW) */
 #if DT_HAS_COMPAT_STATUS_OKAY(nordic_nrf_can)
 		/* Pin routing is controlled by secure domain, via UICR */
 		case NRF_FUN_CAN_TX:
@@ -344,6 +383,24 @@ int pinctrl_configure_pins(const pinctrl_soc_pin_t *pins, uint8_t pin_cnt,
 			input = NRF_GPIO_PIN_INPUT_CONNECT;
 			break;
 #endif /* DT_HAS_COMPAT_STATUS_OKAY(nordic_nrf_can) */
+#if defined(NRF_PSEL_TWIS)
+		case NRF_FUN_TWIS_SCL:
+			NRF_PSEL_TWIS(reg, SCL) = psel;
+			if (drive == NRF_GPIO_PIN_S0S1) {
+				drive = NRF_GPIO_PIN_S0D1;
+			}
+			dir = NRF_GPIO_PIN_DIR_INPUT;
+			input = NRF_GPIO_PIN_INPUT_CONNECT;
+			break;
+		case NRF_FUN_TWIS_SDA:
+			NRF_PSEL_TWIS(reg, SDA) = psel;
+			if (drive == NRF_GPIO_PIN_S0S1) {
+				drive = NRF_GPIO_PIN_S0D1;
+			}
+			dir = NRF_GPIO_PIN_DIR_INPUT;
+			input = NRF_GPIO_PIN_INPUT_CONNECT;
+			break;
+#endif /* defined(NRF_PSEL_TWIS) */
 		default:
 			return -ENOTSUP;
 		}
@@ -351,6 +408,22 @@ int pinctrl_configure_pins(const pinctrl_soc_pin_t *pins, uint8_t pin_cnt,
 		/* configure GPIO properties */
 		if (psel != PSEL_DISCONNECTED) {
 			uint32_t pin = psel;
+
+#ifdef CONFIG_SOC_NRF54H20_GPD
+			if (NRF_GET_GPD_FAST_ACTIVE1(pins[i]) == 1U) {
+				if (!gpd_requested) {
+					int ret;
+
+					ret = nrf_gpd_request(NRF_GPD_SLOW_ACTIVE);
+					if (ret < 0) {
+						return ret;
+					}
+					gpd_requested = true;
+				}
+
+				nrf_gpio_pin_retain_disable(pin);
+			}
+#endif /* CONFIG_SOC_NRF54H20_GPD */
 
 			if (write != NO_WRITE) {
 				nrf_gpio_pin_write(pin, write);
@@ -365,10 +438,26 @@ int pinctrl_configure_pins(const pinctrl_soc_pin_t *pins, uint8_t pin_cnt,
 			nrf_gpio_cfg(pin, dir, input, NRF_GET_PULL(pins[i]),
 				     drive, NRF_GPIO_PIN_NOSENSE);
 #if NRF_GPIO_HAS_CLOCKPIN
-			nrf_gpio_pin_clock_set(pin, NRF_GET_CLOCK_ENABLE(pins[i]));
+			nrf_gpio_pin_clock_set(pin, NRF_GET_CLOCKPIN_ENABLE(pins[i]));
 #endif
+#ifdef CONFIG_SOC_NRF54H20_GPD
+			if (NRF_GET_GPD_FAST_ACTIVE1(pins[i]) == 1U) {
+				nrf_gpio_pin_retain_enable(pin);
+			}
+#endif /* CONFIG_SOC_NRF54H20_GPD */
 		}
 	}
+
+#ifdef CONFIG_SOC_NRF54H20_GPD
+	if (gpd_requested) {
+		int ret;
+
+		ret = nrf_gpd_release(NRF_GPD_SLOW_ACTIVE);
+		if (ret < 0) {
+			return ret;
+		}
+	}
+#endif
 
 	return 0;
 }

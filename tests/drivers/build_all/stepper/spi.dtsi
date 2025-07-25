@@ -1,0 +1,26 @@
+/*
+ * SPDX-FileCopyrightText: Copyright (c) 2024 Carl Zeiss Meditec AG
+ * SPDX-License-Identifier: Apache-2.0
+ */
+/****************************************
+ * PLEASE KEEP REG ADDRESSES SEQUENTIAL *
+ ***************************************/
+
+test_spi_tmc50xx: tmc50xx@0 {
+	compatible = "adi,tmc50xx";
+	reg = <0x0>;
+	spi-max-frequency = <0>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	clock-frequency = <1>;
+
+	tmc50xx_0: tmc50xx_0@0 {
+		status = "okay";
+		reg = <0>;
+	};
+
+	tmc50xx_1: tmc50xx_1@1 {
+		status = "okay";
+		reg = <1>;
+	};
+};

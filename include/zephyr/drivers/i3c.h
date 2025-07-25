@@ -23,12 +23,14 @@
 
 #include <zephyr/device.h>
 #include <zephyr/drivers/i3c/addresses.h>
+#include <zephyr/drivers/i3c/error_types.h>
 #include <zephyr/drivers/i3c/ccc.h>
 #include <zephyr/drivers/i3c/devicetree.h>
 #include <zephyr/drivers/i3c/ibi.h>
 #include <zephyr/drivers/i2c.h>
 #include <zephyr/sys/slist.h>
 #include <zephyr/sys/util.h>
+#include <zephyr/rtio/rtio.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -292,87 +294,6 @@ enum i3c_data_rate {
 };
 
 /**
- * @brief I3C SDR Controller Error Codes
- *
- * These are error codes defined by the I3C specification.
- *
- * #I3C_ERROR_CE_UNKNOWN and #I3C_ERROR_CE_NONE are not
- * official error codes according to the specification.
- * These are there simply to aid in error handling during
- * interactions with the I3C drivers and subsystem.
- */
-enum i3c_sdr_controller_error_codes {
-	/** Transaction after sending CCC */
-	I3C_ERROR_CE0,
-
-	/** Monitoring Error */
-	I3C_ERROR_CE1,
-
-	/** No response to broadcast address (0x7E) */
-	I3C_ERROR_CE2,
-
-	/** Failed Controller Handoff */
-	I3C_ERROR_CE3,
-
-	/** Unknown error (not official error code) */
-	I3C_ERROR_CE_UNKNOWN,
-
-	/** No error (not official error code) */
-	I3C_ERROR_CE_NONE,
-
-	I3C_ERROR_CE_MAX = I3C_ERROR_CE_UNKNOWN,
-	I3C_ERROR_CE_INVALID,
-};
-
-/**
- * @brief I3C SDR Target Error Codes
- *
- * These are error codes defined by the I3C specification.
- *
- * #I3C_ERROR_TE_UNKNOWN and #I3C_ERROR_TE_NONE are not
- * official error codes according to the specification.
- * These are there simply to aid in error handling during
- * interactions with the I3C drivers and subsystem.
- */
-enum i3c_sdr_target_error_codes {
-	/**
-	 * Invalid Broadcast Address or
-	 * Dynamic Address after DA assignment
-	 */
-	I3C_ERROR_TE0,
-
-	/** CCC Code */
-	I3C_ERROR_TE1,
-
-	/** Write Data */
-	I3C_ERROR_TE2,
-
-	/** Assigned Address during Dynamic Address Arbitration */
-	I3C_ERROR_TE3,
-
-	/** 0x7E/R missing after RESTART during Dynamic Address Arbitration */
-	I3C_ERROR_TE4,
-
-	/** Transaction after detecting CCC */
-	I3C_ERROR_TE5,
-
-	/** Monitoring Error */
-	I3C_ERROR_TE6,
-
-	/** Dead Bus Recovery */
-	I3C_ERROR_DBR,
-
-	/** Unknown error (not official error code) */
-	I3C_ERROR_TE_UNKNOWN,
-
-	/** No error (not official error code) */
-	I3C_ERROR_TE_NONE,
-
-	I3C_ERROR_TE_MAX = I3C_ERROR_TE_UNKNOWN,
-	I3C_ERROR_TE_INVALID,
-};
-
-/**
  * @brief I3C Transfer API
  * @defgroup i3c_transfer_api I3C Transfer API
  * @{
@@ -484,6 +405,14 @@ struct i3c_msg {
 	 * write to this after the transfer.
 	 */
 	uint32_t		num_xfer;
+
+	/**
+	 * SDR Error Type
+	 *
+	 * Error from I3C Specification v1.1.1 section 5.1.10.2. It is expected
+	 * for the driver to write to this.
+	 */
+	enum i3c_sdr_controller_error_types err;
 
 	/** Flags for this message */
 	uint8_t			flags;
@@ -639,13 +568,11 @@ __subsystem struct i3c_driver_api {
 	 *
 	 * @param dev Pointer to controller device driver instance.
 	 * @param target Pointer to target device descriptor.
-	 * @param addr Address to attach with
 	 *
 	 * @return See i3c_attach_i3c_device()
 	 */
 	int (*attach_i3c_device)(const struct device *dev,
-			struct i3c_device_desc *target,
-			uint8_t addr);
+			struct i3c_device_desc *target);
 
 	/**
 	 * I3C Address Update
@@ -771,6 +698,19 @@ __subsystem struct i3c_driver_api {
 						   const struct i3c_device_id *id);
 
 	/**
+	 * ACK or NACK IBI HJ Requests
+	 *
+	 * @see ibi_hj_response()
+	 *
+	 * @param dev Pointer to controller device driver instance.
+	 * @param ack True to ack, False to nack
+	 *
+	 * @return See ibi_hj_response()
+	 */
+	int (*ibi_hj_response)(const struct device *dev,
+			       bool ack);
+
+	/**
 	 * Raise In-Band Interrupt (IBI).
 	 *
 	 * Target device only API.
@@ -869,6 +809,39 @@ __subsystem struct i3c_driver_api {
 	 */
 	int (*target_tx_write)(const struct device *dev,
 				 uint8_t *buf, uint16_t len, uint8_t hdr_mode);
+
+	/**
+	 * ACK or NACK controller handoffs
+	 *
+	 * This will tell the target to ACK or NACK controller handoffs
+	 * from the CCC GETACCCR
+	 *
+	 * Target device only API.
+	 *
+	 * @see i3c_target_controller_handoff()
+	 *
+	 * @param dev Pointer to the controller device driver instance.
+	 * @param accept True to ACK controller handoffs, False to NACK.
+	 *
+	 * @return See i3c_target_controller_handoff()
+	 */
+	int (*target_controller_handoff)(const struct device *dev,
+				      bool accept);
+
+#ifdef CONFIG_I3C_RTIO
+	/**
+	 * RTIO
+	 *
+	 * @see i3c_iodev_submit()
+	 *
+	 * @param dev Pointer to the controller device driver instance.
+	 * @param iodev_sqe Pointer to the
+	 *
+	 * @return See i3c_iodev_submit()
+	 */
+	void (*iodev_submit)(const struct device *dev,
+				 struct rtio_iodev_sqe *iodev_sqe);
+#endif
 };
 
 /**
@@ -922,7 +895,8 @@ struct i3c_device_desc {
 	const struct device * const dev;
 
 	/** Device Provisioned ID */
-	const uint64_t pid:48;
+	/* TODO: bring back the bitfield */
+	const uint64_t pid;
 
 	/**
 	 * Static address for this target device.
@@ -948,6 +922,14 @@ struct i3c_device_desc {
 	 * 0 if there is no preference.
 	 */
 	const uint8_t init_dynamic_addr;
+
+	/**
+	 * Device support for SETAASA
+	 *
+	 * This will be used as an optimization for bus initializtion if the
+	 * device supports SETAASA.
+	 */
+	const bool supports_setaasa;
 
 	/**
 	 * Dynamic Address for this target device used for communication.
@@ -1012,6 +994,9 @@ struct i3c_device_desc {
 		uint8_t max_ibi;
 	} data_length;
 
+	/** Controller Handoff Delay Parameters */
+	uint8_t crhdly1;
+
 	/** Describes advanced (Target) capabilities and features */
 	struct {
 		union {
@@ -1063,6 +1048,28 @@ struct i3c_device_desc {
 		 */
 		uint8_t getcap4;
 	} getcaps;
+
+	/* Describes Controller Feature Capabilities */
+	struct {
+		/**
+		 * CRCAPS1
+		 * - Bit[0]: Hot-Join Support
+		 * - Bit[1]: Group Management Support
+		 * - Bit[2]: Multi-Lane Support
+		 * - Bit[7:3]: Reserved
+		 */
+		uint8_t crcaps1;
+
+		/**
+		 * CRCAPS2
+		 * - Bit[0]: In-Band Interrupt Support
+		 * - Bit[1]: Controller Pass-Back
+		 * - Bit[2]: Deep Sleep Capable
+		 * - Bit[3]: Delayed Controller Handoff
+		 * - Bit[7:4]: Reserved
+		 */
+		uint8_t crcaps2;
+	} crcaps;
 
 	/** @cond INTERNAL_HIDDEN */
 	/**
@@ -1196,7 +1203,35 @@ struct i3c_driver_data {
 
 	/** Attached I3C/I2C devices and addresses */
 	struct i3c_dev_attached_list attached_dev;
+
+	/** Received DEFTGTS Pointer */
+	struct i3c_ccc_deftgts *deftgts;
+
+	/** DEFTGTS refreshed */
+	bool deftgts_refreshed;
 };
+
+/**
+ * @brief iterate over all I3C devices present on the bus
+ *
+ * @param bus: the I3C bus device pointer
+ * @param desc: an I3C device descriptor pointer updated to point to the current slot
+ *	 at each iteration of the loop
+ */
+#define I3C_BUS_FOR_EACH_I3CDEV(bus, desc)                                                         \
+	SYS_SLIST_FOR_EACH_CONTAINER(                                                              \
+		&((struct i3c_driver_data *)(bus->data))->attached_dev.devices.i3c, desc, node)
+
+/**
+ * @brief iterate over all I2C devices present on the bus
+ *
+ * @param bus: the I3C bus device pointer
+ * @param desc: an I2C device descriptor pointer updated to point to the current slot
+ *	 at each iteration of the loop
+ */
+#define I3C_BUS_FOR_EACH_I2CDEV(bus, desc)                                                         \
+	SYS_SLIST_FOR_EACH_CONTAINER(                                                              \
+		&((struct i3c_driver_data *)(bus->data))->attached_dev.devices.i2c, desc, node)
 
 /**
  * @brief Find a I3C target device descriptor by ID.
@@ -1219,14 +1254,29 @@ struct i3c_device_desc *i3c_dev_list_find(const struct i3c_dev_list *dev_list,
  * This finds the I3C target device descriptor in the attached
  * device list matching the dynamic address (@p addr)
  *
- * @param dev_list Pointer to the device list struct.
+ * @param dev Pointer to controller device driver instance.
  * @param addr Dynamic address to be matched.
  *
  * @return Pointer to the I3C target device descriptor, or
  *         `NULL` if none is found.
  */
-struct i3c_device_desc *i3c_dev_list_i3c_addr_find(struct i3c_dev_attached_list *dev_list,
+struct i3c_device_desc *i3c_dev_list_i3c_addr_find(const struct device *dev,
 						   uint8_t addr);
+
+/**
+ * @brief Find a I3C target device descriptor by static address.
+ *
+ * This finds the I3C target device descriptor in the attached
+ * device list matching the static address (@p addr)
+ *
+ * @param dev Pointer to controller device driver instance.
+ * @param addr static address to be matched.
+ *
+ * @return Pointer to the I3C target device descriptor, or
+ *         `NULL` if none is found.
+ */
+struct i3c_device_desc *i3c_dev_list_i3c_static_addr_find(const struct device *dev,
+							  uint8_t addr);
 
 /**
  * @brief Find a I2C target device descriptor by address.
@@ -1234,29 +1284,14 @@ struct i3c_device_desc *i3c_dev_list_i3c_addr_find(struct i3c_dev_attached_list 
  * This finds the I2C target device descriptor in the attached
  * device list matching the address (@p addr)
  *
- * @param dev_list Pointer to the device list struct.
+ * @param dev Pointer to controller device driver instance.
  * @param addr Address to be matched.
  *
  * @return Pointer to the I2C target device descriptor, or
  *         `NULL` if none is found.
  */
-struct i3c_i2c_device_desc *i3c_dev_list_i2c_addr_find(struct i3c_dev_attached_list *dev_list,
+struct i3c_i2c_device_desc *i3c_dev_list_i2c_addr_find(const struct device *dev,
 							   uint16_t addr);
-
-/**
- * @brief Helper function to find the default address an i3c device is attached with
- *
- * This is a helper function to find the default address the
- * device will be loaded with. This could be either it's static
- * address, a requested dynamic address, or just a dynamic address
- * that is available
- * @param[in] target The pointer of the device descriptor
- * @param[out] addr Address to be assigned to target device.
- *
- * @retval 0 if successful.
- * @retval -EINVAL if the expected default address is already in use
- */
-int i3c_determine_default_addr(struct i3c_device_desc *target, uint8_t *addr);
 
 /**
  * @brief Helper function to find a usable address during ENTDAA.
@@ -1647,6 +1682,31 @@ struct i3c_device_desc *i3c_device_find(const struct device *dev,
  */
 
 /**
+ * @brief ACK or NACK IBI HJ Requests
+ *
+ * This tells the controller to Acknowledge or Not Acknowledge
+ * In-Band Interrupt Hot-Join Requests.
+ *
+ * @param dev Pointer to controller device driver instance.
+ * @param ack True to ack, False to nack
+ *
+ * @retval 0 if operation is successful.
+ * @retval -EIO General input / output error.
+ */
+static inline int i3c_ibi_hj_response(const struct device *dev,
+				      bool ack)
+{
+	const struct i3c_driver_api *api =
+		(const struct i3c_driver_api *)dev->api;
+
+	if (api->ibi_hj_response == NULL) {
+		return -ENOSYS;
+	}
+
+	return api->ibi_hj_response(dev, ack);
+}
+
+/**
  * @brief Raise an In-Band Interrupt (IBI).
  *
  * This raises an In-Band Interrupt (IBI) to the active controller.
@@ -1752,6 +1812,23 @@ static inline int i3c_device_is_ibi_capable(struct i3c_device_desc *target)
 {
 	return (target->bcr & I3C_BCR_IBI_REQUEST_CAPABLE)
 		== I3C_BCR_IBI_REQUEST_CAPABLE;
+}
+
+/**
+ * @brief Check if the target is controller capable
+ *
+ * This reads the BCR from the device descriptor struct to determine
+ * whether the target is controller capable
+ *
+ * Note that BCR must have been obtained from device and
+ * i3c_device_desc::bcr must be set.
+ *
+ * @return True if target is controller capable, false otherwise.
+ */
+static inline int i3c_device_is_controller_capable(struct i3c_device_desc *target)
+{
+	return I3C_BCR_DEVICE_ROLE(target->bcr)
+		== I3C_BCR_DEVICE_ROLE_I3C_CONTROLLER_CAPABLE;
 }
 
 /** @} */
@@ -2060,8 +2137,6 @@ int i3c_bus_init(const struct device *dev,
  * This retrieves some basic information:
  *   * Bus Characteristics Register (GETBCR)
  *   * Device Characteristics Register (GETDCR)
- *   * Max Read Length (GETMRL)
- *   * Max Write Length (GETMWL)
  * from the device and update the corresponding fields of the device
  * descriptor.
  *
@@ -2074,6 +2149,308 @@ int i3c_bus_init(const struct device *dev,
  * @retval -EIO General Input/Output error.
  */
 int i3c_device_basic_info_get(struct i3c_device_desc *target);
+
+/**
+ * @brief Get advanced information from device and update device descriptor.
+ *
+ * This retrieves some information:
+ *   * Max Read Length (GETMRL)
+ *   * Max Write Length (GETMWL)
+ *   * Get Capabilities (GETCAPS)
+ *   * Max Device Speed (GETMXDS) (if applicable)
+ * from the device and update the corresponding fields of the device
+ * descriptor.
+ *
+ * This only updates the field(s) in device descriptor
+ * only if CCC operations succeed.
+ *
+ * @note This should only be called after i3c_device_basic_info_get() or
+ * if the BCR was already obtained through ENTDAA, DEFTGTS, or GETBCR.
+ *
+ * @param[in,out] target I3C target device descriptor.
+ *
+ * @retval 0 if successful.
+ * @retval -EIO General Input/Output error.
+ */
+int i3c_device_adv_info_get(struct i3c_device_desc *target);
+
+/**
+ * @brief Get all information from device and update device descriptor.
+ *
+ * This retrieves all information:
+ *   * Bus Characteristics Register (GETBCR)
+ *   * Device Characteristics Register (GETDCR)
+ *   * Max Read Length (GETMRL)
+ *   * Max Write Length (GETMWL)
+ *   * Get Capabilities (GETCAPS)
+ *   * Max Device Speed (GETMXDS) (if applicable)
+ * from the device and update the corresponding fields of the device
+ * descriptor.
+ *
+ * This only updates the field(s) in device descriptor
+ * only if CCC operations succeed.
+ *
+ * @param[in,out] target I3C target device descriptor.
+ *
+ * @retval 0 if successful.
+ * @retval -EIO General Input/Output error.
+ */
+static inline int i3c_device_info_get(struct i3c_device_desc *target)
+{
+	int rc;
+
+	rc = i3c_device_basic_info_get(target);
+	if (rc != 0) {
+		return rc;
+	}
+
+	return i3c_device_adv_info_get(target);
+}
+
+/**
+ * @brief Check if the bus has a secondary controller.
+ *
+ * This reads the BCR from the device descriptor struct of all targets
+ * to determine whether a device is a secondary controller.
+ *
+ * @param dev Pointer to controller device driver instance.
+ *
+ * @return True if the bus has a secondary controller, false otherwise.
+ */
+bool i3c_bus_has_sec_controller(const struct device *dev);
+
+/**
+ * @brief Send the CCC DEFTGTS
+ *
+ * This builds the payload required for DEFTGTS and transmits it out
+ *
+ * @param dev Pointer to controller device driver instance.
+ *
+ * @retval 0 if successful.
+ * @retval -ENOMEM No memory to build the payload.
+ * @retval -EIO General Input/Output error.
+ */
+int i3c_bus_deftgts(const struct device *dev);
+
+/**
+ * @brief Calculate odd parity
+ *
+ * Calculate the Odd Parity of a Target Address.
+ *
+ * @param p The 7b target dynamic address
+ *
+ * @return The odd parity bit
+ */
+uint8_t i3c_odd_parity(uint8_t p);
+
+/**
+ * @brief Perform Controller Handoff
+ *
+ * This performs the controller handoff according to 5.1.7.1 of
+ * I3C v1.1.1 Specification.
+ *
+ * @param target I3C target device descriptor.
+ * @param requested True if the target requested the Handoff, False if
+ * the active controller is passing it to a secondary controller
+ *
+ * @retval 0 if successful.
+ * @retval -EIO General Input/Output error.
+ * @retval -EBUSY Target cannot accept Controller Handoff
+ */
+int i3c_device_controller_handoff(const struct i3c_device_desc *target, bool requested);
+
+#ifdef CONFIG_I3C_USE_IBI
+/**
+ * @brief Call back for when Controllership is Handoffed to itself
+ *
+ * This reads the DEFTGTS it received earlier and processes it by reading
+ * the PIDs of all the devices with GETPID and then matching it with known
+ * PIDS. If it does not match, then it will attempt to grab a mem slab
+ * for i3c_device_desc. It will then obtain the standard I3C information
+ * from the device.
+ *
+ * @param work pointer to the work item.
+ */
+void i3c_sec_handoffed(struct k_work *work);
+#endif
+
+#if CONFIG_I3C_NUM_OF_DESC_MEM_SLABS > 0
+
+/**
+ * @brief Allocate memory for a i3c device descriptor
+ *
+ * This allocates memory from a mem slab for a i3c_device_desc
+ *
+ * @retval Pointer to allocated i3c_device_desc
+ * @retval NULL if no mem slabs available
+ */
+struct i3c_device_desc *i3c_device_desc_alloc(void);
+
+/**
+ * @brief Free memory from a i3c device descriptor
+ *
+ * This frees memory from a mem slab of a i3c_device_desc
+ *
+ * @param desc Pointer to allocated i3c_device_desc
+ */
+void i3c_device_desc_free(struct i3c_device_desc *desc);
+
+/**
+ * @brief Report if the i3c device descriptor was from a mem slab
+ *
+ * This reports if the i3c_device_desc was from a memory slab
+ *
+ * @param desc Pointer to a i3c_device_desc
+ *
+ * @return True if from a memory slab, False if not
+ */
+bool i3c_device_desc_in_pool(struct i3c_device_desc *desc);
+
+#else
+
+static inline struct i3c_device_desc *i3c_device_desc_alloc(void)
+{
+	return NULL;
+}
+
+static inline void i3c_device_desc_free(struct i3c_device_desc *desc)
+{
+	ARG_UNUSED(desc);
+}
+
+static inline bool i3c_device_desc_in_pool(struct i3c_device_desc *desc)
+{
+	ARG_UNUSED(desc);
+	return false;
+}
+
+#endif /* CONFIG_I3C_NUM_OF_DESC_MEM_SLABS > 0 */
+
+#if CONFIG_I3C_I2C_NUM_OF_DESC_MEM_SLABS > 0
+
+/**
+ * @brief Allocate memory for a i3c i2c device descriptor
+ *
+ * This allocates memory from a mem slab for a i3c_i2c_device_desc
+ *
+ * @return Pointer to allocated i3c_i2c_device_desc, NULL if none
+ *         available
+ */
+struct i3c_i2c_device_desc *i3c_i2c_device_desc_alloc(void);
+
+/**
+ * @brief Free memory from a i3c i2c device descriptor
+ *
+ * This frees memory from a mem slab of a i3c_i2c_device_desc
+ *
+ * @param desc Pointer to allocated i3c_i2c_device_desc
+ */
+void i3c_i2c_device_desc_free(struct i3c_i2c_device_desc *desc);
+
+/**
+ * @brief Report if the i3c i2c device descriptor was from a mem slab
+ *
+ * This reports if the i3c_i2c_device_desc was from a memory slab
+ *
+ * @param desc Pointer to a i3c_i2c_device_desc
+ *
+ * @return True if from a memory slab, False if not
+ */
+bool i3c_i2c_device_desc_in_pool(struct i3c_i2c_device_desc *desc);
+
+#else
+
+static inline struct i3c_i2c_device_desc *i3c_i2c_device_desc_alloc(void)
+{
+	return NULL;
+}
+
+static inline void i3c_i2c_device_desc_free(struct i3c_i2c_device_desc *desc)
+{
+	ARG_UNUSED(desc);
+}
+
+static inline bool i3c_i2c_device_desc_in_pool(struct i3c_i2c_device_desc *desc)
+{
+	ARG_UNUSED(desc);
+	return false;
+}
+
+#endif /* CONFIG_I3C_I2C_NUM_OF_DESC_MEM_SLABS > 0 */
+
+#if defined(CONFIG_I3C_RTIO) || defined(__DOXYGEN__)
+
+struct i3c_iodev_data {
+	const struct device *bus;
+	const struct i3c_device_id dev_id;
+};
+
+/**
+ * @brief Fallback submit implementation
+ *
+ * This implementation will schedule a blocking I3C transaction on the bus via the RTIO work
+ * queue. It is only used if the I3C driver did not implement the iodev_submit function.
+ *
+ * @param dev Pointer to the device structure for an I3C controller driver.
+ * @param iodev_sqe Prepared submissions queue entry connected to an iodev
+ *                  defined by I3C_DT_IODEV_DEFINE.
+ */
+void i3c_iodev_submit_fallback(const struct device *dev, struct rtio_iodev_sqe *iodev_sqe);
+
+/**
+ * @brief Submit request(s) to an I3C device with RTIO
+ *
+ * @param iodev_sqe Prepared submissions queue entry connected to an iodev
+ *                  defined by I3C_DT_IODEV_DEFINE.
+ */
+static inline void i3c_iodev_submit(struct rtio_iodev_sqe *iodev_sqe)
+{
+	const struct i3c_iodev_data *data =
+		(const struct i3c_iodev_data *)iodev_sqe->sqe.iodev->data;
+	const struct i3c_driver_api *api = (const struct i3c_driver_api *)data->bus->api;
+
+	if (api->iodev_submit == NULL) {
+		rtio_iodev_sqe_err(iodev_sqe, -ENOSYS);
+		return;
+	}
+	api->iodev_submit(data->bus, iodev_sqe);
+}
+
+extern const struct rtio_iodev_api i3c_iodev_api;
+
+/**
+ * @brief Define an iodev for a given dt node on the bus
+ *
+ * These do not need to be shared globally but doing so
+ * will save a small amount of memory.
+ *
+ * @param name Symbolic name of the iodev to define
+ * @param node_id Devicetree node identifier
+ */
+#define I3C_DT_IODEV_DEFINE(name, node_id)					\
+	const struct i3c_iodev_data _i3c_iodev_data_##name = {			\
+		.bus = DEVICE_DT_GET(DT_BUS(node_id)),				\
+		.dev_id = I3C_DEVICE_ID_DT(node_id),				\
+	};									\
+	RTIO_IODEV_DEFINE(name, &i3c_iodev_api, (void *)&_i3c_iodev_data_##name)
+
+/**
+ * @brief Copy the i3c_msgs into a set of RTIO requests
+ *
+ * @param r RTIO context
+ * @param iodev RTIO IODev to target for the submissions
+ * @param msgs Array of messages
+ * @param num_msgs Number of i3c msgs in array
+ *
+ * @retval sqe Last submission in the queue added
+ * @retval NULL Not enough memory in the context to copy the requests
+ */
+struct rtio_sqe *i3c_rtio_copy(struct rtio *r,
+			       struct rtio_iodev *iodev,
+			       const struct i3c_msg *msgs,
+			       uint8_t num_msgs);
+
+#endif /* CONFIG_I3C_RTIO */
 
 /*
  * This needs to be after declaration of struct i3c_driver_api,

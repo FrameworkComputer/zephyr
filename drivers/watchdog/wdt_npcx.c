@@ -4,12 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/*
- * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
- * #line marks the *next* line, so it is off by one.
- */
-#line 12
-
 #define DT_DRV_COMPAT nuvoton_npcx_watchdog
 
 /**
@@ -67,7 +61,8 @@ LOG_MODULE_REGISTER(wdt_npcx, CONFIG_WDT_LOG_LEVEL);
 #define NPCX_WDT_MIN_WND_TIME 100UL
 
 /* Timeout for reloading and restarting Timer 0. (Unit:ms) */
-#define NPCX_T0CSR_RST_TIMEOUT 2
+#define NPCX_T0CSR_RST_CLEAR_TIMEOUT 2
+#define NPCX_T0CSR_RST_SET_TIMEOUT   1
 
 /* Timeout for stopping watchdog. (Unit:ms) */
 #define NPCX_WATCHDOG_STOP_TIMEOUT 1
@@ -106,10 +101,22 @@ static inline int wdt_t0out_reload(const struct device *dev)
 	/* Reload and restart T0 timer */
 	inst->T0CSR = (inst->T0CSR & ~BIT(NPCX_T0CSR_WDRST_STS)) |
 		      BIT(NPCX_T0CSR_RST);
+	/*
+	 * Wait for the T0CSR_RST bit to change from 0 to 1. This transition is expected to occur
+	 * over multiple LFCLK cycles. If a timeout occurs, we can assume that the bit has changed
+	 * from 0 -> 1 -> 0, but the polling thread missed it because it was preempted by
+	 * higher-priority threads. In this case, we can simply return.
+	 */
+	st = k_uptime_get();
+	while (!IS_BIT_SET(inst->T0CSR, NPCX_T0CSR_RST)) {
+		if (k_uptime_get() - st > NPCX_T0CSR_RST_SET_TIMEOUT) {
+			return 0;
+		}
+	}
 	/* Wait for timer is loaded and restart */
 	st = k_uptime_get();
 	while (IS_BIT_SET(inst->T0CSR, NPCX_T0CSR_RST)) {
-		if (k_uptime_get() - st > NPCX_T0CSR_RST_TIMEOUT) {
+		if (k_uptime_get() - st > NPCX_T0CSR_RST_CLEAR_TIMEOUT) {
 			/* RST bit is still set? */
 			if (IS_BIT_SET(inst->T0CSR, NPCX_T0CSR_RST)) {
 				LOG_ERR("Timeout: reload T0 timer!");
@@ -334,7 +341,7 @@ static int wdt_npcx_feed(const struct device *dev, int channel_id)
 }
 
 /* WDT driver registration */
-static const struct wdt_driver_api wdt_npcx_driver_api = {
+static DEVICE_API(wdt, wdt_npcx_driver_api) = {
 	.setup = wdt_npcx_setup,
 	.disable = wdt_npcx_disable,
 	.install_timeout = wdt_npcx_install_timeout,

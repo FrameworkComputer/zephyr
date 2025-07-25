@@ -8,39 +8,12 @@ config SOC_SERIES_ESP32
 	select ARCH_HAS_GDBSTUB
 	select ARCH_SUPPORTS_COREDUMP
 	select PINCTRL
-	select XIP if !MCUBOOT
 	select HAS_ESPRESSIF_HAL
 	select CPU_HAS_FPU
 	select HAS_PM
 	select HAS_POWEROFF
 
 if SOC_SERIES_ESP32
-
-config IDF_TARGET_ESP32
-	bool "ESP32 as target board"
-	default y
-
-config ESP32_APPCPU_IRAM
-	hex "ESP32 APPCPU IRAM size"
-	depends on SOC_ESP32_PROCPU || SOC_ESP32_APPCPU
-	default 0x20000
-	help
-	  Defines APPCPU IRAM area in bytes.
-
-config ESP32_APPCPU_DRAM
-	hex "ESP32 APPCPU DRAM size"
-	depends on SOC_ESP32_PROCPU || SOC_ESP32_APPCPU
-	default 0x10000
-	help
-	  Defines APPCPU DRAM area in bytes.
-
-config SOC_ENABLE_APPCPU
-	bool
-	default y
-	depends on IPM && SOC_ESP32_PROCPU
-	depends on MBOX && SOC_ESP32_PROCPU
-	help
-	  This hidden configuration lets PROCPU core to map and start APPCPU whenever IPM is enabled.
 
 config ESP32_BT_RESERVE_DRAM
 	hex "Bluetooth controller reserved RAM region"

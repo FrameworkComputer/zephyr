@@ -739,10 +739,13 @@ int spi_atcspi200_init(const struct device *dev)
 	return 0;
 }
 
-static const struct spi_driver_api spi_atcspi200_api = {
+static DEVICE_API(spi, spi_atcspi200_api) = {
 	.transceive = spi_atcspi200_transceive,
 #ifdef CONFIG_SPI_ASYNC
 	.transceive_async = spi_atcspi200_transceive_async,
+#endif
+#ifdef CONFIG_SPI_RTIO
+	.iodev_submit = spi_rtio_iodev_default_submit,
 #endif
 	.release = spi_atcspi200_release
 };
@@ -954,7 +957,7 @@ static void spi_atcspi200_irq_handler(void *arg)
 		.xip = SPI_ROM_CFG_XIP(DT_DRV_INST(n)),			\
 	};								\
 									\
-	DEVICE_DT_INST_DEFINE(n,					\
+	SPI_DEVICE_DT_INST_DEFINE(n,					\
 		spi_atcspi200_init,					\
 		NULL,							\
 		&spi_atcspi200_dev_data_##n,				\

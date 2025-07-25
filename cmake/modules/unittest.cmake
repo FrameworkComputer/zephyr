@@ -4,6 +4,7 @@ cmake_minimum_required(VERSION 3.20.0)
 
 include(extensions)
 include(west)
+include(yaml)
 include(root)
 include(zephyr_module)
 include(boards)
@@ -111,6 +112,7 @@ target_compile_options(test_interface INTERFACE
   ${EXTRA_CFLAGS_AS_LIST}
   $<$<COMPILE_LANGUAGE:CXX>:${EXTRA_CXXFLAGS_AS_LIST}>
   $<$<COMPILE_LANGUAGE:ASM>:${EXTRA_AFLAGS_AS_LIST}>
+  -Wno-format-zero-length
   )
 
 target_link_options(testbinary PRIVATE
@@ -121,10 +123,16 @@ target_link_libraries(testbinary PRIVATE
   ${EXTRA_LDFLAGS_AS_LIST}
   )
 
+target_compile_options(test_interface INTERFACE $<TARGET_PROPERTY:compiler,debug>)
+
 if(CONFIG_COVERAGE)
   target_compile_options(test_interface INTERFACE $<TARGET_PROPERTY:compiler,coverage>)
 
   target_link_libraries(testbinary PRIVATE $<TARGET_PROPERTY:linker,coverage>)
+endif()
+
+if (CONFIG_COMPILER_WARNINGS_AS_ERRORS)
+  target_compile_options(test_interface INTERFACE $<TARGET_PROPERTY:compiler,warnings_as_errors>)
 endif()
 
 if(LIBS)
@@ -153,6 +161,13 @@ if(VALGRIND_PROGRAM)
     --log-file=valgrind.log
     )
 endif()
+
+add_custom_target(run
+  COMMAND
+  $<TARGET_FILE:testbinary>
+  DEPENDS testbinary
+  WORKING_DIRECTORY ${APPLICATION_BINARY_DIR}
+  )
 
 add_custom_target(run-test
   COMMAND

@@ -1,17 +1,10 @@
-.. _sam4s_xplained:
-
-SAM4S Xplained
-##############
+.. zephyr:board:: sam4s_xplained
 
 Overview
 ********
 
 The SAM4S Xplained evaluation kit is a development platform to evaluate the
 Atmel SAM4S series microcontrollers.
-
-.. image:: img/sam4s_xplained.jpg
-     :align: center
-     :alt: SAM4S Xplained
 
 Hardware
 ********
@@ -43,6 +36,8 @@ features:
 | ADC       | on-chip    | adc                                 |
 +-----------+------------+-------------------------------------+
 | COUNTER   | on-chip    | counter                             |
++-----------+------------+-------------------------------------+
+| DAC       | on-chip    | dac                                 |
 +-----------+------------+-------------------------------------+
 | GPIO      | on-chip    | gpio                                |
 +-----------+------------+-------------------------------------+
@@ -111,7 +106,7 @@ Using JLink
    accessible from your path.
 
 #. Connect the SAM4S Xplained board to your host computer using the USB debug
-   port. Then build and flash the :ref:`hello_world` application.
+   port. Then build and flash the :zephyr:code-sample:`hello_world` application.
 
    .. zephyr-app-commands::
       :zephyr-app: samples/hello_world
@@ -128,7 +123,7 @@ Using SAM-BA bootloader
 #. Open the ``J25`` jumper.
 
 #. Connect the SAM4S Xplained board to your host computer using the SoC USB
-   port. Then build and flash the :ref:`hello_world` application.
+   port. Then build and flash the :zephyr:code-sample:`hello_world` application.
 
    .. zephyr-app-commands::
       :zephyr-app: samples/hello_world
@@ -167,7 +162,7 @@ Debugging
 =========
 
 You can debug an application in the usual way.  Here is an example for the
-:ref:`hello_world` application.
+:zephyr:code-sample:`hello_world` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/hello_world

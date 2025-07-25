@@ -6,12 +6,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/*
- * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
- * #line marks the *next* line, so it is off by one.
- */
-#line 14
-
 #ifndef ZEPHYR_INCLUDE_SYS_ATOMIC_H_
 #define ZEPHYR_INCLUDE_SYS_ATOMIC_H_
 
@@ -22,8 +16,6 @@
 #include <zephyr/sys/atomic_types.h> /* IWYU pragma: export */
 #include <zephyr/types.h>
 #include <zephyr/sys/util.h>
-
-#line 27
 
 #ifdef __cplusplus
 extern "C" {
@@ -81,7 +73,7 @@ extern "C" {
  * @cond INTERNAL_HIDDEN
  */
 
-#define ATOMIC_BITS (sizeof(atomic_val_t) * 8)
+#define ATOMIC_BITS            (sizeof(atomic_val_t) * BITS_PER_BYTE)
 #define ATOMIC_MASK(bit) BIT((unsigned long)(bit) & (ATOMIC_BITS - 1U))
 #define ATOMIC_ELEM(addr, bit) ((addr) + ((bit) / ATOMIC_BITS))
 
@@ -120,9 +112,9 @@ extern "C" {
 	atomic_t name[ATOMIC_BITMAP_SIZE(num_bits)]
 
 /**
- * @brief Atomically test a bit.
+ * @brief Atomically get and test a bit.
  *
- * This routine tests whether bit number @a bit of @a target is set or not.
+ * Atomically get a value and then test whether bit number @a bit of @a target is set or not.
  * The target may be a single atomic variable or an array of them.
  *
  * @note @atomic_api
@@ -140,7 +132,7 @@ static inline bool atomic_test_bit(const atomic_t *target, int bit)
 }
 
 /**
- * @brief Atomically test and clear a bit.
+ * @brief Atomically clear a bit and test it.
  *
  * Atomically clear bit number @a bit of @a target and return its old value.
  * The target may be a single atomic variable or an array of them.
@@ -163,7 +155,7 @@ static inline bool atomic_test_and_clear_bit(atomic_t *target, int bit)
 }
 
 /**
- * @brief Atomically set a bit.
+ * @brief Atomically set a bit and test it.
  *
  * Atomically set bit number @a bit of @a target and return its old value.
  * The target may be a single atomic variable or an array of them.

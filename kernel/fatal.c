@@ -4,12 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/*
- * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
- * #line marks the *next* line, so it is off by one.
- */
-#line 12
-
 #include <zephyr/kernel.h>
 
 #include <kernel_internal.h>
@@ -21,7 +15,6 @@
 #include <zephyr/fatal.h>
 #include <zephyr/debug/coredump.h>
 
-#line 25
 LOG_MODULE_DECLARE(os, CONFIG_KERNEL_LOG_LEVEL);
 
 /* LCOV_EXCL_START */

@@ -408,7 +408,7 @@ static int prepare_cb_common(struct lll_prepare_param *p)
 	remainder = p->remainder;
 	start_us = radio_tmr_start(1U, ticks_at_start, remainder);
 
-	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
+	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR) || IS_ENABLED(HAL_RADIO_GPIO_HAVE_PA_PIN)) {
 		/* setup capture of PDU end timestamp */
 		radio_tmr_end_capture();
 	}
@@ -417,7 +417,8 @@ static int prepare_cb_common(struct lll_prepare_param *p)
 	radio_gpio_pa_setup();
 
 	radio_gpio_pa_lna_enable(start_us +
-				 radio_tx_ready_delay_get(phy, PHY_FLAGS_S8) -
+				 radio_tx_ready_delay_get(lll->phy,
+							  lll->phy_flags) -
 				 HAL_RADIO_GPIO_PA_OFFSET);
 #else /* !HAL_RADIO_GPIO_HAVE_PA_PIN */
 	ARG_UNUSED(start_us);
@@ -470,6 +471,10 @@ static void isr_tx_common(void *param,
 	uint16_t data_chan_id;
 	uint8_t crc_init[3];
 	uint8_t bis;
+
+#if defined(HAL_RADIO_GPIO_HAVE_PA_PIN)
+	uint16_t pa_iss_us = 0U;
+#endif /* HAL_RADIO_GPIO_HAVE_PA_PIN */
 
 	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
 		lll_prof_latency_capture();
@@ -620,10 +625,35 @@ static void isr_tx_common(void *param,
 
 	/* Get ISO data PDU, not control subevent */
 	if (!pdu) {
-		uint8_t payload_index;
+		uint16_t payload_index;
 
-		payload_index = (lll->bn_curr - 1U) +
-				(lll->ptc_curr * lll->pto);
+		if (lll->ptc_curr) {
+			/* FIXME: Do not remember why ptc is 4 bits, it should be 5 bits as ptc is a
+			 *        running buffer offset related to nse.
+			 *        Fix ptc and ptc_curr definitions, until then there is an assertion
+			 *        check when ptc is calculated in ptc_calc function.
+			 */
+			uint8_t ptx_idx = lll->ptc_curr - 1U; /* max. nse 5 bits */
+			uint8_t ptx_payload_idx;
+			uint16_t ptx_group_mult;
+			uint8_t ptx_group_idx;
+
+			/* Calculate group index and multiplier for deriving
+			 * pre-transmission payload index.
+			 */
+			ptx_group_idx = ptx_idx / lll->bn; /* 5 bits */
+			ptx_payload_idx = ptx_idx - ptx_group_idx * lll->bn; /* 8 bits */
+			ptx_group_mult = (ptx_group_idx + 1U) * lll->pto; /* 9 bits */
+			payload_index = ptx_payload_idx + ptx_group_mult * lll->bn; /* 13 bits */
+
+			/* FIXME: memq_peek_n function does not support indices > UINT8_MAX,
+			 *        add assertion check to honor this limitation.
+			 */
+			LL_ASSERT(payload_index <= UINT8_MAX);
+		} else {
+			payload_index  = lll->bn_curr - 1U; /* 3 bits */
+		}
+
 		payload_count = lll->payload_count + payload_index - lll->bn;
 
 #if !TEST_WITH_DUMMY_PDU
@@ -649,6 +679,10 @@ static void isr_tx_common(void *param,
 				 (tx->payload_count < payload_count));
 		}
 		if (!link || (tx->payload_count != payload_count)) {
+			/* FIXME: Do not transmit on air an empty PDU if this is a Pre-Transmission
+			 *        subevent, instead use radio_tmr_start_us() to schedule next valid
+			 *        subevent.
+			 */
 			pdu = radio_pkt_empty_get();
 			pdu->ll_id = lll->framing ? PDU_BIS_LLID_FRAMED :
 						    PDU_BIS_LLID_START_CONTINUE;
@@ -747,19 +781,47 @@ static void isr_tx_common(void *param,
 						 lll->phy, lll->phy_flags);
 
 		radio_isr_set(isr_tx, lll);
+
+#if defined(HAL_RADIO_GPIO_HAVE_PA_PIN)
+		/* local variable used later to store iss_us next subevent PA
+		 * setup.
+		 */
+		pa_iss_us = iss_us;
+#endif /* HAL_RADIO_GPIO_HAVE_PA_PIN */
 	}
 
-	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
-		/* setup capture of PDU end timestamp */
-		radio_tmr_end_capture();
-	}
-
-	/* assert if radio packet ptr is not set and radio started rx */
+	/* assert if radio packet ptr is not set and radio started tx */
 	LL_ASSERT(!radio_is_ready());
 
 	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
 		lll_prof_cputime_capture();
 	}
+
+	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR) || IS_ENABLED(HAL_RADIO_GPIO_HAVE_PA_PIN)) {
+		/* setup capture of PDU end timestamp */
+		radio_tmr_end_capture();
+	}
+
+#if defined(HAL_RADIO_GPIO_HAVE_PA_PIN)
+	if (IS_ENABLED(CONFIG_BT_CTLR_PROFILE_ISR)) {
+		/* PA/LNA enable is overwriting packet end used in ISR
+		 * profiling, hence back it up for later use.
+		 */
+		lll_prof_radio_end_backup();
+	}
+
+	radio_gpio_pa_setup();
+	radio_gpio_pa_lna_enable(radio_tmr_tifs_base_get() +
+				 lll->pa_iss_us -
+				 (EVENT_CLOCK_JITTER_US << 1U) -
+				 radio_tx_chain_delay_get(lll->phy,
+							  lll->phy_flags) -
+				 HAL_RADIO_GPIO_PA_OFFSET);
+
+	/* Remember to use it for the next subevent PA setup */
+	lll->pa_iss_us = pa_iss_us;
+
+#endif /* HAL_RADIO_GPIO_HAVE_PA_PIN */
 
 	/* Calculate ahead the next subevent channel index */
 	const uint16_t event_counter = (lll->payload_count / lll->bn) - 1U;

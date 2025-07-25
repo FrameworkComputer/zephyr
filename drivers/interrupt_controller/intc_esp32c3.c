@@ -49,17 +49,20 @@ LOG_MODULE_REGISTER(intc_esp32c3, CONFIG_LOG_DEFAULT_LEVEL);
 #define ESP32C6_INTC_SRCS_PER_IRQ       2
 #define ESP32C6_INTC_AVAILABLE_IRQS     31
 
-/* For ESP32C6 only CPU peripheral interrupts number
- * 1, 2, 5, 6, 8 ~ 31 are available.
- * IRQ 31 is reserved for disabled interrupts
+/* Interrupt overview for ESP32C6:
+ * - 0, 3, 4, and 7 are used by the CPU for core-local interrupts (CLINT)
+ * - 1 is used for Wi-Fi in Espressif HAL
+ * - 2, 5, 6, 8 .. 31 are available for Zephyr
+ * - 31 is reserved for disabled interrupts
  */
 static uint8_t esp_intr_irq_alloc[ESP32C6_INTC_AVAILABLE_IRQS][ESP32C6_INTC_SRCS_PER_IRQ] = {
 	[0] = {IRQ_NA, IRQ_NA},
+	[1] = {IRQ_NA, IRQ_NA},
+	[2] = {IRQ_FREE, IRQ_FREE},
 	[3] = {IRQ_NA, IRQ_NA},
 	[4] = {IRQ_NA, IRQ_NA},
+	[5 ... 6] = {IRQ_FREE, IRQ_FREE},
 	[7] = {IRQ_NA, IRQ_NA},
-	[1 ... 2]  = {IRQ_FREE, IRQ_FREE},
-	[5 ... 6]  = {IRQ_FREE, IRQ_FREE},
 	[8 ... 30] = {IRQ_FREE, IRQ_FREE}
 };
 #endif
@@ -68,7 +71,7 @@ static uint8_t esp_intr_irq_alloc[ESP32C6_INTC_AVAILABLE_IRQS][ESP32C6_INTC_SRCS
 
 static uint32_t esp_intr_enabled_mask[STATUS_MASK_NUM] = {0, 0, 0};
 
-#if defined(CONFIG_SOC_SERIES_ESP32C3)
+#if defined(CONFIG_SOC_SERIES_ESP32C2) || defined(CONFIG_SOC_SERIES_ESP32C3)
 
 static uint32_t esp_intr_find_irq_for_source(uint32_t source)
 {
@@ -93,19 +96,34 @@ static uint32_t esp_intr_find_irq_for_source(uint32_t source)
 
 static uint32_t esp_intr_find_irq_for_source(uint32_t source)
 {
-	uint32_t irq = 0;
+	uint32_t irq = IRQ_NA;
+	uint32_t irq_free = IRQ_NA;
+	uint8_t *irq_ptr = NULL;
 
 	/* First allocate one source per IRQ, then two
 	 * if there are more sources than free IRQs
 	 */
 	for (int j = 0; j < ESP32C6_INTC_SRCS_PER_IRQ; j++) {
 		for (int i = 0; i < ESP32C6_INTC_AVAILABLE_IRQS; i++) {
-			if (esp_intr_irq_alloc[i][j] == IRQ_FREE) {
-				esp_intr_irq_alloc[i][j] = (uint8_t)source;
+			/* Find first free slot but keep searching to see
+			 * if source is already associated to an IRQ
+			 */
+			if (esp_intr_irq_alloc[i][j] == source) {
+				/* Source is already associated to an IRQ */
 				irq = i;
 				goto found;
+			} else if ((irq_free == IRQ_NA) && (esp_intr_irq_alloc[i][j] == IRQ_FREE)) {
+				irq_free = i;
+				irq_ptr = &esp_intr_irq_alloc[i][j];
 			}
 		}
+	}
+
+	if (irq_ptr != NULL) {
+		*irq_ptr = (uint8_t)source;
+		irq = irq_free;
+	} else {
+		return IRQ_NA;
 	}
 
 found:
@@ -182,9 +200,9 @@ int esp_intr_alloc(int source,
 		esp_intr_enabled_mask[0], esp_intr_enabled_mask[1], esp_intr_enabled_mask[2]);
 
 	irq_unlock(key);
-	irq_enable(source);
+	int ret = esp_intr_enable(source);
 
-	return 0;
+	return ret;
 }
 
 int esp_intr_disable(int source)
@@ -235,6 +253,13 @@ int esp_intr_enable(int source)
 
 	uint32_t key = irq_lock();
 	uint32_t irq = esp_intr_find_irq_for_source(source);
+
+#if defined(CONFIG_SOC_SERIES_ESP32C6)
+	if (irq == IRQ_NA) {
+		irq_unlock(key);
+		return -ENOMEM;
+	}
+#endif
 
 	esp_rom_intr_matrix_set(0, source, irq);
 

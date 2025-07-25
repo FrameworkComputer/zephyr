@@ -1,7 +1,4 @@
-.. _frdm_rw612:
-
-NXP FRDM_RW612
-##############
+.. zephyr:board:: frdm_rw612
 
 Overview
 ********
@@ -39,8 +36,6 @@ Supported Features
 +-----------+------------+-----------------------------------+
 | USART     | on-chip    | serial                            |
 +-----------+------------+-----------------------------------+
-| BLE       | on-chip    | Bluetooth                         |
-+-----------+------------+-----------------------------------+
 | DMA       | on-chip    | dma                               |
 +-----------+------------+-----------------------------------+
 | SPI       | on-chip    | spi                               |
@@ -55,9 +50,24 @@ Supported Features
 +-----------+------------+-----------------------------------+
 | CTIMER    | on-chip    | counter                           |
 +-----------+------------+-----------------------------------+
+| SCTIMER   | on-chip    | pwm                               |
++-----------+------------+-----------------------------------+
 | MRT       | on-chip    | counter                           |
 +-----------+------------+-----------------------------------+
 | OS_TIMER  | on-chip    | os timer                          |
++-----------+------------+-----------------------------------+
+| PM        | on-chip    | power management; uses SoC Power  |
+|           |            | Modes 1 and 2                     |
++-----------+------------+-----------------------------------+
+| BLE       | on-chip    | Bluetooth                         |
++-----------+------------+-----------------------------------+
+| ADC       | on-chip    | adc                               |
++-----------+------------+-----------------------------------+
+| DAC       | on-chip    | dac                               |
++-----------+------------+-----------------------------------+
+| ENET      | on-chip    | ethernet                          |
++-----------+------------+-----------------------------------+
+| Wi-Fi     | on-chip    | Wi-Fi                             |
 +-----------+------------+-----------------------------------+
 
 The default configuration can be found in the defconfig file:
@@ -65,16 +75,6 @@ The default configuration can be found in the defconfig file:
    :zephyr_file:`boards/nxp/frdm_rw612/frdm_rw612_defconfig`
 
 Other hardware features are not currently supported
-
-Fetch Binary Blobs
-******************
-
-To support Bluetooth, frdm_rw612 requires fetching binary blobs, which can be
-achieved by running the following command:
-
-.. code-block:: console
-
-   west blobs fetch hal_nxp
 
 Programming and Debugging
 *************************
@@ -102,7 +102,7 @@ Connect a USB cable from your PC to J10, and use the serial terminal of your cho
 Flashing
 ========
 
-Here is an example for the :ref:`hello_world` application. This example uses the
+Here is an example for the :zephyr:code-sample:`hello_world` application. This example uses the
 :ref:`jlink-debug-host-tools` as default.
 
 .. zephyr-app-commands::
@@ -121,7 +121,7 @@ see the following message in the terminal:
 Debugging
 =========
 
-Here is an example for the :ref:`hello_world` application. This example uses the
+Here is an example for the :zephyr:code-sample:`hello_world` application. This example uses the
 :ref:`jlink-debug-host-tools` as default.
 
 .. zephyr-app-commands::
@@ -137,29 +137,56 @@ should see the following message in the terminal:
    ***** Booting Zephyr OS zephyr-v3.6.0 *****
    Hello World! frdm_rw612
 
+SRAM Bus Access Partitioning
+****************************
+
+RW612 supports shared access of the SRAM from both the code bus and data bus.
+The bus used to access the SRAM is determined using two separate memory mapped address spaces.
+The application can configure the partitioning of the SRAM access regions by a devicetree overlay.
+For example, below is part of an overlay to change the whole SRAM to be used for data.
+
+.. code-block:: devicetree
+
+   &sram_data {
+        reg = <0x0 DT_SIZE_K(1216)>;
+   };
+
+
+Wireless Connectivity Support
+*****************************
+
+Fetch Binary Blobs
+==================
+
+To support Bluetooth or Wi-Fi, frdm_rw612 requires fetching binary blobs, which can be
+achieved by running the following command:
+
+.. code-block:: console
+
+   west blobs fetch hal_nxp
+
 Bluetooth
 =========
 
 BLE functionality requires to fetch binary blobs, so make sure to follow
 the ``Fetch Binary Blobs`` section first.
 
-Those binary blobs can be used in two different ways, depending if :kconfig:option:`CONFIG_NXP_MONOLITHIC_BT`
-is enabled or not:
+frdm_rw612 platform supports the monolithic feature. The required binary blob
+``<zephyr workspace>/modules/hal/nxp/zephyr/blobs/rw61x_sb_ble_a2.bin`` will be linked
+with the application image directly, forming one single monolithic image.
 
-- :kconfig:option:`CONFIG_NXP_MONOLITHIC_BT` is enabled (default):
+Wi-Fi
+=====
 
-The required binary blob will be linked with the application image directly, forming
-one single monolithic image.
-The user has nothing else to do other than flashing the application to the board.
+Wi-Fi functionality requires to fetch binary blobs, so make sure to follow
+the ``Fetch Binary Blobs`` section first.
 
-- :kconfig:option:`CONFIG_NXP_MONOLITHIC_BT` is disabled:
-
-In this case, the BLE blob won't be linked with the application, so the user needs to manually
-flash the BLE binary blob to the board at the address ``0x18540000``.
-The binary blob will be located here: ``<zephyr workspace>/modules/hal/nxp/zephyr/blobs/rw61x/rw61x_sb_ble_a2.bin``
+frdm_rw612 platform supports the monolithic feature. The required binary blob
+``<zephyr workspace>/modules/hal/nxp/zephyr/blobs/rw61x_sb_wifi_a2.bin`` will be linked
+with the application image directly, forming one single monolithic image.
 
 Resources
-=========
+*********
 
 .. _RW612 Website:
    https://www.nxp.com/products/wireless-connectivity/wi-fi-plus-bluetooth-plus-802-15-4/wireless-mcu-with-integrated-tri-radiobr1x1-wi-fi-6-plus-bluetooth-low-energy-5-3-802-15-4:RW612

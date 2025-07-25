@@ -1,5 +1,5 @@
 /*
- * Copyright 2022-2024 NXP
+ * Copyright 2022-2025 NXP
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -20,6 +20,8 @@
 #include "soc.h"
 #include "flexspi_clock_setup.h"
 #include "fsl_ocotp.h"
+
+extern void nxp_nbu_init(void);
 #ifdef CONFIG_NXP_RW6XX_BOOT_HEADER
 extern char z_main_stack[];
 extern char _flash_used[];
@@ -78,7 +80,7 @@ const clock_avpll_config_t avpll_config = {
  * clock needs to be re-initialized on exit from Standby mode. Hence
  * this function is relocated to RAM.
  */
-__ramfunc void clock_init(void)
+__weak __ramfunc void clock_init(void)
 {
 	POWER_DisableGDetVSensors();
 
@@ -221,7 +223,7 @@ __ramfunc void clock_init(void)
 #endif
 #endif /* CONFIG_SPI */
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(dmic0), okay) && CONFIG_AUDIO_DMIC_MCUX
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(dmic0)) && CONFIG_AUDIO_DMIC_MCUX
 	/* Clock DMIC from Audio PLL. PLL output is sourced from AVPLL
 	 * channel 1, which is clocked at 12.288 MHz. We can divide this
 	 * by 4 to achieve the desired DMIC bit clk of 3.072 MHz
@@ -230,7 +232,7 @@ __ramfunc void clock_init(void)
 	CLOCK_SetClkDiv(kCLOCK_DivDmicClk, 4);
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(lcdic), okay) && CONFIG_MIPI_DBI_NXP_LCDIC
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(lcdic)) && CONFIG_MIPI_DBI_NXP_LCDIC
 	CLOCK_AttachClk(kMAIN_CLK_to_LCD_CLK);
 	RESET_PeripheralReset(kLCDIC_RST_SHIFT_RSTn);
 #endif
@@ -250,7 +252,7 @@ __ramfunc void clock_init(void)
 #endif
 #endif /* CONFIG_COUNTER_MCUX_CTIMER */
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(usb_otg), okay) && CONFIG_USB_DC_NXP_EHCI
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(usb_otg)) && CONFIG_USB_DC_NXP_EHCI
 	/* Enable system xtal from Analog */
 	SYSCTL2->ANA_GRP_CTRL |= SYSCTL2_ANA_GRP_CTRL_PU_AG_MASK;
 	/* reset USB */
@@ -261,24 +263,23 @@ __ramfunc void clock_init(void)
 	CLOCK_EnableUsbhsPhyClock();
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(enet), okay) && CONFIG_NET_L2_ETHERNET
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(enet)) && CONFIG_NET_L2_ETHERNET
 	RESET_PeripheralReset(kENET_IPG_RST_SHIFT_RSTn);
 	RESET_PeripheralReset(kENET_IPG_S_RST_SHIFT_RSTn);
 #endif
 
 }
 
+extern void nxp_rw6xx_power_init(void);
 /**
  *
  * @brief Perform basic hardware initialization
  *
  * Initialize the interrupt controller device drivers.
  * Also initialize the timer device driver, if required.
- *
- * @return 0
  */
 
-static int nxp_rw600_init(void)
+void soc_early_init_hook(void)
 {
 #if (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(wwdt), nxp_lpc_wwdt, okay))
 	POWER_EnableResetSource(kPOWER_ResetSourceWdt);
@@ -290,7 +291,7 @@ static int nxp_rw600_init(void)
 #define PMU_RESET_CAUSES \
 	COND_CODE_0(IS_EMPTY(PMU_RESET_CAUSES_), (PMU_RESET_CAUSES_), (0))
 #define WDT_RESET \
-	COND_CODE_1(DT_NODE_HAS_STATUS(wwdt, okay), (kPOWER_ResetSourceWdt), (0))
+	COND_CODE_1(DT_NODE_HAS_STATUS_OKAY(wwdt), (kPOWER_ResetSourceWdt), (0))
 #define RESET_CAUSES \
 	(PMU_RESET_CAUSES | WDT_RESET)
 #else
@@ -302,17 +303,20 @@ static int nxp_rw600_init(void)
 	/* Initialize clock */
 	clock_init();
 
-#if defined(CONFIG_ADC_MCUX_GAU) ||  defined(CONFIG_DAC_MCUX_GAU)
+#if defined(CONFIG_ADC_MCUX_GAU) || defined(CONFIG_DAC_MCUX_GAU)
 	POWER_PowerOnGau();
 #endif
+#if CONFIG_PM
+	nxp_rw6xx_power_init();
+#endif
 
-	return 0;
+#if defined(CONFIG_BT) || defined(CONFIG_IEEE802154)
+	nxp_nbu_init();
+#endif
 }
 
-void z_arm_platform_init(void)
+void soc_reset_hook(void)
 {
 	/* This is provided by the SDK */
 	SystemInit();
 }
-
-SYS_INIT(nxp_rw600_init, PRE_KERNEL_1, 0);

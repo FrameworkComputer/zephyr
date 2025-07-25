@@ -1539,7 +1539,7 @@ static void flash_stm32_xspi_pages_layout(const struct device *dev,
 }
 #endif
 
-static const struct flash_driver_api flash_stm32_xspi_driver_api = {
+static DEVICE_API(flash, flash_stm32_xspi_driver_api) = {
 	.read = flash_stm32_xspi_read,
 	.write = flash_stm32_xspi_write,
 	.erase = flash_stm32_xspi_erase,
@@ -2019,6 +2019,21 @@ static int flash_stm32_xspi_init(const struct device *dev)
 	uint32_t prescaler = STM32_XSPI_CLOCK_PRESCALER_MIN;
 	int ret;
 
+	if (!device_is_ready(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE))) {
+		LOG_ERR("clock control device not ready");
+		return -ENODEV;
+	}
+
+#ifdef CONFIG_STM32_MEMMAP
+	/* If MemoryMapped then configure skip init */
+	if (stm32_xspi_is_memorymap(dev)) {
+		LOG_DBG("NOR init'd in MemMapped mode");
+		/* Force HAL instance in correct state */
+		dev_data->hxspi.State = HAL_XSPI_STATE_BUSY_MEM_MAPPED;
+		return 0;
+	}
+#endif /* CONFIG_STM32_MEMMAP */
+
 	/* The SPI/DTR is not a valid config of data_mode/data_rate according to the DTS */
 	if ((dev_cfg->data_mode != XSPI_OCTO_MODE)
 		&& (dev_cfg->data_rate == XSPI_DTR_TRANSFER)) {
@@ -2033,21 +2048,6 @@ static int flash_stm32_xspi_init(const struct device *dev)
 		LOG_ERR("XSPI pinctrl setup failed (%d)", ret);
 		return ret;
 	}
-
-	if (!device_is_ready(DEVICE_DT_GET(STM32_CLOCK_CONTROL_NODE))) {
-		LOG_ERR("clock control device not ready");
-		return -ENODEV;
-	}
-
-#ifdef CONFIG_STM32_MEMMAP
-	/* If MemoryMapped then configure skip init */
-	if (stm32_xspi_is_memorymap(dev)) {
-		LOG_DBG("NOR init'd in MemMapped mode\n");
-		/* Force HAL instance in correct state */
-		dev_data->hxspi.State = HAL_XSPI_STATE_BUSY_MEM_MAPPED;
-		return 0;
-	}
-#endif /* CONFIG_STM32_MEMMAP */
 
 	if (dev_cfg->pclk_len > 3) {
 		/* Max 3 domain clock are expected */

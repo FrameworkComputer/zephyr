@@ -10,7 +10,10 @@
  * The whole nRF pin configuration information is encoded in a 32-bit bitfield
  * organized as follows:
  *
- * - 31..17: Pin function.
+ * - 31..24: Pin function.
+ * - 19-23:  Reserved.
+ * - 18:     Associated peripheral belongs to GD FAST ACTIVE1 (nRF54H only)
+ * - 17:     Clockpin enable.
  * - 16:     Pin inversion mode.
  * - 15:     Pin low power mode.
  * - 14..11: Pin output drive configuration.
@@ -24,13 +27,17 @@
  */
 
 /** Position of the function field. */
-#define NRF_FUN_POS 18U
+#define NRF_FUN_POS 24U
 /** Mask for the function field. */
-#define NRF_FUN_MSK 0x3FFFU
-/** Position of the clock enable field. */
-#define NRF_CLOCK_ENABLE_POS 17U
-/** Mask for the clock enable field. */
-#define NRF_CLOCK_ENABLE_MSK 0x1U
+#define NRF_FUN_MSK 0xFFU
+/** Position of the GPD FAST ACTIVE1 */
+#define NRF_GPD_FAST_ACTIVE1_POS 18U
+/** Mask for the GPD FAST ACTIVE1 */
+#define NRF_GPD_FAST_ACTIVE1_MSK 0x1U
+/** Position of the clockpin enable field. */
+#define NRF_CLOCKPIN_ENABLE_POS 17U
+/** Mask for the clockpin enable field. */
+#define NRF_CLOCKPIN_ENABLE_MSK 0x1U
 /** Position of the invert field. */
 #define NRF_INVERT_POS 16U
 /** Mask for the invert field. */
@@ -155,6 +162,14 @@
 #define NRF_FUN_CAN_TX 46U
 /** CAN RX */
 #define NRF_FUN_CAN_RX 47U
+/** TWIS SCL */
+#define NRF_FUN_TWIS_SCL 48U
+/** TWIS SDA */
+#define NRF_FUN_TWIS_SDA 49U
+/** GRTC fast clock output */
+#define NRF_FUN_GRTC_CLKOUT_FAST 55U
+/** GRTC slow clock output */
+#define NRF_FUN_GRTC_CLKOUT_32K  56U
 
 /** @} */
 

@@ -8,28 +8,30 @@
 #include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/__assert.h>
 
-#include <zephyr/net/buf.h>
+#include <zephyr/net_buf.h>
 #include <zephyr/bluetooth/buf.h>
 
 #include <zephyr/bluetooth/bluetooth.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/bluetooth/hci_raw.h>
+#include <zephyr/bluetooth/hci_types.h>
 
 #include "common/bt_str.h"
 
 #include "host/conn_internal.h"
 #include "host/l2cap_internal.h"
 
-#include "utils.h"
 #include "common.h"
-#include "bstests.h"
+
+#include "babblekit/testcase.h"
+#include "babblekit/flags.h"
 
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(bt_tinyhost, 3);
 
-DEFINE_FLAG(is_connected);
-DEFINE_FLAG(flag_l2cap_connected);
-DEFINE_FLAG(flag_data_length_updated);
+DEFINE_FLAG_STATIC(is_connected);
+DEFINE_FLAG_STATIC(flag_l2cap_connected);
+DEFINE_FLAG_STATIC(flag_data_length_updated);
 
 static K_FIFO_DEFINE(rx_queue);
 
@@ -202,10 +204,10 @@ static void handle_sig(struct net_buf *buf)
 		handle_l2cap_credits(buf);
 		return;
 	case BT_L2CAP_DISCONN_REQ:
-		FAIL("channel disconnected\n");
+		TEST_FAIL("channel disconnected");
 		return;
 	default:
-		FAIL("unhandled opcode %x\n", hdr->code);
+		TEST_FAIL("unhandled opcode %x", hdr->code);
 		return;
 	}
 }
@@ -230,7 +232,7 @@ static void handle_l2cap(struct net_buf *buf)
 
 	/* CoC PDU */
 	if (cid == 0x0040) {
-		FAIL("unexpected data rx");
+		TEST_FAIL("unexpected data rx");
 	}
 }
 
@@ -343,7 +345,7 @@ static void rx_thread(void *p1, void *p2, void *p3)
 		struct net_buf *buf;
 
 		/* Wait until a buffer is available */
-		buf = net_buf_get(&rx_queue, K_FOREVER);
+		buf = k_fifo_get(&rx_queue, K_FOREVER);
 		recv(buf);
 	}
 }
@@ -438,7 +440,7 @@ void start_adv(uint16_t interval)
 	set_param.channel_map = 0x07;
 	set_param.filter_policy = BT_LE_ADV_FP_NO_FILTER;
 	set_param.type = BT_HCI_ADV_IND;
-	set_param.own_addr_type = 0x01; /* random */
+	set_param.own_addr_type = BT_HCI_OWN_ADDR_RANDOM;
 
 	buf = bt_hci_cmd_create(BT_HCI_OP_LE_SET_ADV_PARAM, sizeof(set_param));
 	__ASSERT_NO_MSG(buf);
@@ -641,29 +643,12 @@ void test_procedure_0(void)
 	WAIT_FOR_FLAG_UNSET(is_connected);
 	LOG_DBG("disconnected");
 
-	PASS("Tester done\n");
-}
-
-void test_tick(bs_time_t HW_device_time)
-{
-	bs_trace_debug_time(0, "Simulation ends now.\n");
-	if (bst_result != Passed) {
-		bst_result = Failed;
-		bs_trace_error("Test did not pass before simulation ended.\n");
-	}
-}
-
-void test_init(void)
-{
-	bst_ticker_set_next_tick_absolute(TEST_TIMEOUT_SIMULATED);
-	bst_result = In_progress;
+	TEST_PASS("Tester done");
 }
 
 static const struct bst_test_instance test_to_add[] = {
 	{
 		.test_id = "test_0",
-		.test_pre_init_f = test_init,
-		.test_tick_f = test_tick,
 		.test_main_f = test_procedure_0,
 	},
 	BSTEST_END_MARKER,

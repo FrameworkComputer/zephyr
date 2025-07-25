@@ -181,7 +181,7 @@ static void usb_device_clock_init(void)
 /**
  * @brief Initialize the system clock
  */
-static ALWAYS_INLINE void clock_init(void)
+__weak void clock_init(void)
 {
 #ifdef CONFIG_SOC_MIMXRT685S_CM33
 	/* Configure LPOSC clock*/
@@ -270,6 +270,13 @@ static ALWAYS_INLINE void clock_init(void)
 	CLOCK_AttachClk(kAUDIO_PLL_to_FLEXCOMM3);
 #endif
 
+#if CONFIG_AUDIO_CODEC_WM8904
+	/* attach AUDIO PLL clock to MCLK */
+	CLOCK_AttachClk(kAUDIO_PLL_to_MCLK_CLK);
+	CLOCK_SetClkDiv(kCLOCK_DivMclkClk, 1);
+	SYSCTL1->MCLKPINDIR = SYSCTL1_MCLKPINDIR_MCLKPINDIR_MASK;
+#endif
+
 #if (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(wwdt0), nxp_lpc_wwdt, okay))
 	CLOCK_AttachClk(kLPOSC_to_WDT0_CLK);
 #else
@@ -279,7 +286,7 @@ static ALWAYS_INLINE void clock_init(void)
 	CLOCK_AttachClk(kNONE_to_WDT0_CLK);
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(usdhc0), okay) && CONFIG_IMX_USDHC
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(usdhc0)) && CONFIG_IMX_USDHC
 	/* Make sure USDHC ram buffer has been power up*/
 	POWER_DisablePD(kPDRUNCFG_APD_USDHC0_SRAM);
 	POWER_DisablePD(kPDRUNCFG_PPD_USDHC0_SRAM);
@@ -300,6 +307,13 @@ static ALWAYS_INLINE void clock_init(void)
 #if (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(i3c0), nxp_mcux_i3c, okay))
 	CLOCK_AttachClk(kFFRO_to_I3C_CLK);
 	CLOCK_AttachClk(kLPOSC_to_I3C_TC_CLK);
+
+	CLOCK_SetClkDiv(kCLOCK_DivI3cClk,
+			DT_PROP(DT_NODELABEL(i3c0), clk_divider));
+	CLOCK_SetClkDiv(kCLOCK_DivI3cSlowClk,
+			DT_PROP(DT_NODELABEL(i3c0), clk_divider_slow));
+	CLOCK_SetClkDiv(kCLOCK_DivI3cTcClk,
+			DT_PROP(DT_NODELABEL(i3c0), clk_divider_tc));
 #endif
 
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(lpadc0), nxp_lpc_lpadc, okay)
@@ -308,6 +322,18 @@ static ALWAYS_INLINE void clock_init(void)
 	RESET_PeripheralReset(kADC0_RST_SHIFT_RSTn);
 	CLOCK_AttachClk(kSFRO_to_ADC_CLK);
 	CLOCK_SetClkDiv(kCLOCK_DivAdcClk, DT_PROP(DT_NODELABEL(lpadc0), clk_divider));
+#endif
+
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(dmic0), nxp_dmic, okay) && CONFIG_INIT_AUDIO_PLL
+	/* Using the Audio PLL as input clock leads to better clock dividers
+	 * for typical PCM sample rates ({8,16,24,32,48,96} kHz.
+	 */
+	/* DMIC source from audio pll, divider 8, 24.576M/8=3.072MHZ
+	 * Select Audio PLL as clock source. This should produce a bit clock
+	 * of 3.072MHZ
+	 */
+	CLOCK_AttachClk(kAUDIO_PLL_to_DMIC_CLK);
+	CLOCK_SetClkDiv(kCLOCK_DivDmicClk, 8);
 #endif
 
 #ifdef CONFIG_FLASH_MCUX_FLEXSPI_XIP
@@ -324,7 +350,7 @@ static ALWAYS_INLINE void clock_init(void)
 #endif /* CONFIG_SOC_MIMXRT685S_CM33 */
 }
 
-#if (DT_NODE_HAS_STATUS(DT_NODELABEL(usdhc0), okay) && CONFIG_IMX_USDHC)
+#if (DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(usdhc0)) && CONFIG_IMX_USDHC)
 
 void imxrt_usdhc_pinmux(uint16_t nusdhc, bool init, uint32_t speed, uint32_t strength)
 {
@@ -341,11 +367,9 @@ void imxrt_usdhc_dat3_pull(bool pullup)
  *
  * Initialize the interrupt controller device drivers.
  * Also initialize the timer device driver, if required.
- *
- * @return 0
  */
 
-static int nxp_rt600_init(void)
+void soc_early_init_hook(void)
 {
 	/* Initialize clock */
 	clock_init();
@@ -353,13 +377,11 @@ static int nxp_rt600_init(void)
 #ifndef CONFIG_IMXRT6XX_CODE_CACHE
 	CACHE64_DisableCache(CACHE64);
 #endif
-
-	return 0;
 }
 
-#ifdef CONFIG_PLATFORM_SPECIFIC_INIT
+#ifdef CONFIG_SOC_RESET_HOOK
 
-void z_arm_platform_init(void)
+void soc_reset_hook(void)
 {
 #ifndef CONFIG_NXP_IMXRT_BOOT_HEADER
 	/*
@@ -381,5 +403,3 @@ void z_arm_platform_init(void)
 }
 
 #endif
-
-SYS_INIT(nxp_rt600_init, PRE_KERNEL_1, 0);

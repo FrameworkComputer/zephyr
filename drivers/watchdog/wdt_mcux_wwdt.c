@@ -83,10 +83,12 @@ static int mcux_wwdt_install_timeout(const struct device *dev,
 	}
 
 #if defined(CONFIG_SOC_MIMXRT685S_CM33) || defined(CONFIG_SOC_MIMXRT595S_CM33) \
-	|| defined(CONFIG_SOC_SERIES_MCXNX4X)
+	|| defined(CONFIG_SOC_SERIES_MCXN)
 	clock_freq = CLOCK_GetWdtClkFreq(0);
 #elif defined(CONFIG_SOC_SERIES_RW6XX)
 	clock_freq = CLOCK_GetWdtClkFreq();
+#elif defined(CONFIG_SOC_SERIES_MCXA)
+	clock_freq = CLOCK_GetWwdtClkFreq();
 #else
 	const struct mcux_wwdt_config *config = dev->config;
 
@@ -173,7 +175,7 @@ static int mcux_wwdt_init(const struct device *dev)
 	return 0;
 }
 
-static const struct wdt_driver_api mcux_wwdt_api = {
+static DEVICE_API(wdt, mcux_wwdt_api) = {
 	.setup = mcux_wwdt_setup,
 	.disable = mcux_wwdt_disable,
 	.install_timeout = mcux_wwdt_install_timeout,

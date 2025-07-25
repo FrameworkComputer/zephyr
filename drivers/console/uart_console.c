@@ -13,12 +13,6 @@
  * Hooks into the printk and fputc (for printf) modules. Poll driven.
  */
 
-/*
- * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
- * #line marks the *next* line, so it is off by one.
- */
-#line 21
-
 #include <zephyr/kernel.h>
 
 #include <stdio.h>

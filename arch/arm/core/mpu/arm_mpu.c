@@ -4,12 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/*
- * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
- * #line marks the *next* line, so it is off by one.
- */
-#line 12
-
 #include <zephyr/device.h>
 #include <zephyr/init.h>
 #include <zephyr/kernel.h>
@@ -42,6 +36,14 @@ LOG_MODULE_DECLARE(mpu);
 BUILD_ASSERT((DT_FOREACH_STATUS_OKAY_NODE_VARGS(
 	      NODE_HAS_PROP_AND_OR, zephyr_memory_region_mpu) false) == false,
 	      "`zephyr,memory-region-mpu` was deprecated in favor of `zephyr,memory-attr`");
+
+#define NULL_PAGE_DETECT_NODE_FINDER(node_id, prop)                                                \
+	(DT_NODE_HAS_PROP(node_id, prop) && (DT_REG_ADDR(node_id) == 0) &&                         \
+	 (DT_REG_SIZE(node_id) >= CONFIG_CORTEX_M_NULL_POINTER_EXCEPTION_PAGE_SIZE)) ||
+
+#define DT_NULL_PAGE_DETECT_NODE_EXIST                                                             \
+	(DT_FOREACH_STATUS_OKAY_VARGS(zephyr_memory_region, NULL_PAGE_DETECT_NODE_FINDER,          \
+				      zephyr_memory_attr) false)
 
 /*
  * Global status variable holding the number of HW MPU region indices, which
@@ -91,7 +93,7 @@ static int region_allocate_and_init(const uint8_t index,
 						    (reg).dt_addr,	\
 						    (reg).dt_size,	\
 						    _ATTR)
-
+#ifdef CONFIG_MEM_ATTR
 /* This internal function programs the MPU regions defined in the DT when using
  * the `zephyr,memory-attr = <( DT_MEM_ARM(...) )>` property.
  */
@@ -156,7 +158,7 @@ static int mpu_configure_regions_from_dt(uint8_t *reg_index)
 
 	return 0;
 }
-
+#endif /* CONFIG_MEM_ATTR */
 /* This internal function programs an MPU region
  * of a given configuration at a given MPU index.
  */
@@ -457,13 +459,13 @@ int z_arm_mpu_init(void)
 
 	/* Update the number of programmed MPU regions. */
 	static_regions_num = mpu_config.num_regions;
-
+#ifdef CONFIG_MEM_ATTR
 	/* DT-defined MPU regions. */
 	if (mpu_configure_regions_from_dt(&static_regions_num) == -EINVAL) {
 		__ASSERT(0, "Failed to allocate MPU regions from DT\n");
 		return -EINVAL;
 	}
-
+#endif /* CONFIG_MEM_ATTR */
 	/* Clear all regions before enabling MPU */
 	for (int i = static_regions_num; i < get_num_regions(); i++) {
 		mpu_clear_region(i);
@@ -476,7 +478,9 @@ int z_arm_mpu_init(void)
 	 */
 #if defined(CONFIG_NULL_POINTER_EXCEPTION_DETECTION_MPU)
 #if (defined(CONFIG_ARMV8_M_BASELINE) || defined(CONFIG_ARMV8_M_MAINLINE)) && \
-	(CONFIG_FLASH_BASE_ADDRESS > CONFIG_CORTEX_M_NULL_POINTER_EXCEPTION_PAGE_SIZE)
+	(CONFIG_FLASH_BASE_ADDRESS > CONFIG_CORTEX_M_NULL_POINTER_EXCEPTION_PAGE_SIZE) && \
+	(!DT_NULL_PAGE_DETECT_NODE_EXIST)
+
 #pragma message "Null-Pointer exception detection cannot be configured on un-mapped flash areas"
 #else
 	const struct z_arm_mpu_partition unmap_region =	{

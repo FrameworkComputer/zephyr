@@ -24,6 +24,8 @@ extern "C" {
  * @brief USBD HID Device API
  * @defgroup usbd_hid_device USBD HID device API
  * @ingroup usb
+ * @since 3.7
+ * @version 0.1.1
  * @{
  */
 
@@ -157,7 +159,8 @@ struct hid_device_ops {
 	 * If the device does not use the callback, hid_device_submit_report()
 	 * will be processed synchronously.
 	 */
-	void (*input_report_done)(const struct device *dev);
+	void (*input_report_done)(const struct device *dev,
+				  const uint8_t *const report);
 
 	/**
 	 * New output report callback. Callback will only be called for reports

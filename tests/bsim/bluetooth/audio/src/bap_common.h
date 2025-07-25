@@ -11,8 +11,10 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #include <zephyr/bluetooth/audio/audio.h>
+#include <zephyr/bluetooth/audio/bap.h>
 #include <zephyr/bluetooth/audio/bap_lc3_preset.h>
 #include <zephyr/bluetooth/audio/cap.h>
 #include <zephyr/bluetooth/bluetooth.h>
@@ -40,11 +42,13 @@
 #define BROADCAST_CODE                                                                             \
 	((uint8_t[]){0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, \
 		     0xdd, 0xee, 0xff})
-
+#define INCORRECT_BROADCAST_CODE                                                                   \
+	((uint8_t[]){0xDE, 0xAD, 0xBE, 0xEF, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, \
+		     0xdd, 0xee, 0xff})
 struct unicast_stream {
 	struct bt_cap_stream stream;
 	struct bt_audio_codec_cfg codec_cfg;
-	struct bt_audio_codec_qos qos;
+	struct bt_bap_qos_cfg qos;
 };
 
 struct named_lc3_preset {
@@ -52,10 +56,13 @@ struct named_lc3_preset {
 	struct bt_bap_lc3_preset preset;
 };
 
+extern struct bt_audio_codec_cfg vs_codec_cfg;
+extern struct bt_audio_codec_cap vs_codec_cap;
+
 void print_hex(const uint8_t *ptr, size_t len);
 void print_codec_cap(const struct bt_audio_codec_cap *codec_cap);
 void print_codec_cfg(const struct bt_audio_codec_cfg *codec_cfg);
-void print_qos(const struct bt_audio_codec_qos *qos);
+void print_qos(const struct bt_bap_qos_cfg *qos);
 void copy_unicast_stream_preset(struct unicast_stream *stream,
 				const struct named_lc3_preset *named_preset);
 

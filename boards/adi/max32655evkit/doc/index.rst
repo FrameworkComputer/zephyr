@@ -1,7 +1,4 @@
-.. _max32655_evkit:
-
-MAX32655EVKIT
-#############
+.. zephyr:board:: max32655evkit
 
 Overview
 ********
@@ -93,6 +90,20 @@ Below are the interfaces supported by Zephyr on MAX32655EVKIT.
 +-----------+------------+-------------------------------------+
 | DMA       | on-chip    | dma controller                      |
 +-----------+------------+-------------------------------------+
+| Watchdog  | on-chip    | watchdog                            |
++-----------+------------+-------------------------------------+
+| SPI       | on-chip    | spi                                 |
++-----------+------------+-------------------------------------+
+| ADC       | on-chip    | adc                                 |
++-----------+------------+-------------------------------------+
+| Timer     | on-chip    | counter                             |
++-----------+------------+-------------------------------------+
+| PWM       | on-chip    | pwm                                 |
++-----------+------------+-------------------------------------+
+| W1        | on-chip    | one wire master                     |
++-----------+------------+-------------------------------------+
+| Flash     | on-chip    | flash                               |
++-----------+------------+-------------------------------------+
 
 Connections and IOs
 ===================
@@ -158,7 +169,8 @@ SWD port. SWD debug can be accessed through the Cortex 10-pin connector, JH3.
 Logic levels are fixed to VDDIO (1.8V).
 
 Once the debug probe is connected to your host computer, then you can simply run the
-``west flash`` command to write a firmware image into flash.
+``west flash`` command to write a firmware image into flash. To perform a full erase,
+pass the ``--erase`` option when executing ``west flash``.
 
 .. note::
 

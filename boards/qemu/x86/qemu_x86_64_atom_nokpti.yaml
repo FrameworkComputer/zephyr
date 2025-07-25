@@ -4,10 +4,10 @@ type: qemu
 arch: x86
 toolchain:
   - zephyr
-  - xtools
 supported:
   - smp
-simulation: qemu
+simulation:
+  - name: qemu
 testing:
   default: true
   only_tags:

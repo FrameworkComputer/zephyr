@@ -207,6 +207,60 @@ extern "C" {
  */
 #define RTIO_IODEV_I2C_10_BITS BIT(3)
 
+/**
+ * @brief Equivalent to the I3C_MSG_STOP flag
+ */
+#define RTIO_IODEV_I3C_STOP BIT(1)
+
+/**
+ * @brief Equivalent to the I3C_MSG_RESTART flag
+ */
+#define RTIO_IODEV_I3C_RESTART BIT(2)
+
+/**
+ * @brief Equivalent to the I3C_MSG_HDR
+ */
+#define RTIO_IODEV_I3C_HDR BIT(3)
+
+/**
+ * @brief Equivalent to the I3C_MSG_NBCH
+ */
+#define RTIO_IODEV_I3C_NBCH BIT(4)
+
+/**
+ * @brief I3C HDR Mode Mask
+ */
+#define RTIO_IODEV_I3C_HDR_MODE_MASK GENMASK(15, 8)
+
+/**
+ * @brief I3C HDR Mode Mask
+ */
+#define RTIO_IODEV_I3C_HDR_MODE_SET(flags) \
+	FIELD_PREP(RTIO_IODEV_I3C_HDR_MODE_MASK, flags)
+
+/**
+ * @brief I3C HDR Mode Mask
+ */
+#define RTIO_IODEV_I3C_HDR_MODE_GET(flags) \
+	FIELD_GET(RTIO_IODEV_I3C_HDR_MODE_MASK, flags)
+
+/**
+ * @brief I3C HDR 7b Command Code
+ */
+#define RTIO_IODEV_I3C_HDR_CMD_CODE_MASK GENMASK(22, 16)
+
+/**
+ * @brief I3C HDR 7b Command Code
+ */
+#define RTIO_IODEV_I3C_HDR_CMD_CODE_SET(flags) \
+	FIELD_PREP(RTIO_IODEV_I3C_HDR_CMD_CODE_MASK, flags)
+
+/**
+ * @brief I3C HDR 7b Command Code
+ */
+#define RTIO_IODEV_I3C_HDR_CMD_CODE_GET(flags) \
+	FIELD_GET(RTIO_IODEV_I3C_HDR_CMD_CODE_MASK, flags)
+
 /** @cond ignore */
 struct rtio;
 struct rtio_cqe;
@@ -236,9 +290,7 @@ struct rtio_sqe {
 
 	uint16_t flags; /**< Op Flags */
 
-	uint16_t iodev_flags; /**< Op iodev flags */
-
-	uint16_t _resv0;
+	uint32_t iodev_flags; /**< Op iodev flags */
 
 	const struct rtio_iodev *iodev; /**< Device to operation on */
 
@@ -253,33 +305,50 @@ struct rtio_sqe {
 
 	union {
 
-		/** OP_TX, OP_RX */
+		/** OP_TX */
 		struct {
 			uint32_t buf_len; /**< Length of buffer */
-			uint8_t *buf; /**< Buffer to use*/
-		};
+			const uint8_t *buf; /**< Buffer to write from */
+		} tx;
+
+		/** OP_RX */
+		struct {
+			uint32_t buf_len; /**< Length of buffer */
+			uint8_t *buf; /**< Buffer to read into */
+		} rx;
 
 		/** OP_TINY_TX */
 		struct {
-			uint8_t tiny_buf_len; /**< Length of tiny buffer */
-			uint8_t tiny_buf[7]; /**< Tiny buffer */
-		};
+			uint8_t buf_len; /**< Length of tiny buffer */
+			uint8_t buf[7]; /**< Tiny buffer */
+		} tiny_tx;
 
 		/** OP_CALLBACK */
 		struct {
 			rtio_callback_t callback;
 			void *arg0; /**< Last argument given to callback */
-		};
+		} callback;
 
 		/** OP_TXRX */
 		struct {
-			uint32_t txrx_buf_len;
-			uint8_t *tx_buf;
-			uint8_t *rx_buf;
-		};
+			uint32_t buf_len; /**< Length of tx and rx buffers */
+			const uint8_t *tx_buf; /**< Buffer to write from */
+			uint8_t *rx_buf; /**< Buffer to read into */
+		} txrx;
 
 		/** OP_I2C_CONFIGURE */
 		uint32_t i2c_config;
+
+		/** OP_I3C_CONFIGURE */
+		struct {
+			/* enum i3c_config_type type; */
+			int type;
+			void *config;
+		} i3c_config;
+
+		/** OP_I3C_CCC */
+		/* struct i3c_ccc_payload *ccc_payload; */
+		void *ccc_payload;
 	};
 };
 
@@ -477,6 +546,15 @@ struct rtio_iodev {
 /** An operation to configure I2C buses */
 #define RTIO_OP_I2C_CONFIGURE (RTIO_OP_I2C_RECOVER+1)
 
+/** An operation to recover I3C buses */
+#define RTIO_OP_I3C_RECOVER (RTIO_OP_I2C_CONFIGURE+1)
+
+/** An operation to configure I3C buses */
+#define RTIO_OP_I3C_CONFIGURE (RTIO_OP_I3C_RECOVER+1)
+
+/** An operation to sends I3C CCC */
+#define RTIO_OP_I3C_CCC (RTIO_OP_I3C_CONFIGURE+1)
+
 /**
  * @brief Prepare a nop (no op) submission
  */
@@ -504,8 +582,8 @@ static inline void rtio_sqe_prep_read(struct rtio_sqe *sqe,
 	sqe->op = RTIO_OP_RX;
 	sqe->prio = prio;
 	sqe->iodev = iodev;
-	sqe->buf_len = len;
-	sqe->buf = buf;
+	sqe->rx.buf_len = len;
+	sqe->rx.buf = buf;
 	sqe->userdata = userdata;
 }
 
@@ -536,7 +614,7 @@ static inline void rtio_sqe_prep_read_multishot(struct rtio_sqe *sqe,
 static inline void rtio_sqe_prep_write(struct rtio_sqe *sqe,
 				       const struct rtio_iodev *iodev,
 				       int8_t prio,
-				       uint8_t *buf,
+				       const uint8_t *buf,
 				       uint32_t len,
 				       void *userdata)
 {
@@ -544,8 +622,8 @@ static inline void rtio_sqe_prep_write(struct rtio_sqe *sqe,
 	sqe->op = RTIO_OP_TX;
 	sqe->prio = prio;
 	sqe->iodev = iodev;
-	sqe->buf_len = len;
-	sqe->buf = buf;
+	sqe->tx.buf_len = len;
+	sqe->tx.buf = buf;
 	sqe->userdata = userdata;
 }
 
@@ -566,14 +644,14 @@ static inline void rtio_sqe_prep_tiny_write(struct rtio_sqe *sqe,
 					    uint8_t tiny_write_len,
 					    void *userdata)
 {
-	__ASSERT_NO_MSG(tiny_write_len <= sizeof(sqe->tiny_buf));
+	__ASSERT_NO_MSG(tiny_write_len <= sizeof(sqe->tiny_tx.buf));
 
 	memset(sqe, 0, sizeof(struct rtio_sqe));
 	sqe->op = RTIO_OP_TINY_TX;
 	sqe->prio = prio;
 	sqe->iodev = iodev;
-	sqe->tiny_buf_len = tiny_write_len;
-	memcpy(sqe->tiny_buf, tiny_write_data, tiny_write_len);
+	sqe->tiny_tx.buf_len = tiny_write_len;
+	memcpy(sqe->tiny_tx.buf, tiny_write_data, tiny_write_len);
 	sqe->userdata = userdata;
 }
 
@@ -594,9 +672,28 @@ static inline void rtio_sqe_prep_callback(struct rtio_sqe *sqe,
 	sqe->op = RTIO_OP_CALLBACK;
 	sqe->prio = 0;
 	sqe->iodev = NULL;
-	sqe->callback = callback;
-	sqe->arg0 = arg0;
+	sqe->callback.callback = callback;
+	sqe->callback.arg0 = arg0;
 	sqe->userdata = userdata;
+}
+
+/**
+ * @brief Prepare a callback op submission that does not create a CQE
+ *
+ * Similar to @ref rtio_sqe_prep_callback, but the @ref RTIO_SQE_NO_RESPONSE
+ * flag is set on the SQE to prevent the generation of a CQE upon completion.
+ *
+ * This can be useful when the callback is the last operation in a sequence
+ * whose job is to clean up all the previous CQE's. Without @ref RTIO_SQE_NO_RESPONSE
+ * the completion itself will result in a CQE that cannot be consumed in the callback.
+ */
+static inline void rtio_sqe_prep_callback_no_cqe(struct rtio_sqe *sqe,
+						 rtio_callback_t callback,
+						 void *arg0,
+						 void *userdata)
+{
+	rtio_sqe_prep_callback(sqe, callback, arg0, userdata);
+	sqe->flags |= RTIO_SQE_NO_RESPONSE;
 }
 
 /**
@@ -605,7 +702,7 @@ static inline void rtio_sqe_prep_callback(struct rtio_sqe *sqe,
 static inline void rtio_sqe_prep_transceive(struct rtio_sqe *sqe,
 					    const struct rtio_iodev *iodev,
 					    int8_t prio,
-					    uint8_t *tx_buf,
+					    const uint8_t *tx_buf,
 					    uint8_t *rx_buf,
 					    uint32_t buf_len,
 					    void *userdata)
@@ -614,9 +711,9 @@ static inline void rtio_sqe_prep_transceive(struct rtio_sqe *sqe,
 	sqe->op = RTIO_OP_TXRX;
 	sqe->prio = prio;
 	sqe->iodev = iodev;
-	sqe->txrx_buf_len = buf_len;
-	sqe->tx_buf = tx_buf;
-	sqe->rx_buf = rx_buf;
+	sqe->txrx.buf_len = buf_len;
+	sqe->txrx.tx_buf = tx_buf;
+	sqe->txrx.rx_buf = rx_buf;
 	sqe->userdata = userdata;
 }
 
@@ -694,6 +791,10 @@ static inline int rtio_block_pool_alloc(struct rtio *r, size_t min_sz,
 		if (rc == 0) {
 			*buf_len = num_blks * block_size;
 			return 0;
+		}
+
+		if (bytes <= block_size) {
+			break;
 		}
 
 		bytes -= block_size;
@@ -1036,10 +1137,14 @@ static inline uint32_t rtio_cqe_compute_flags(struct rtio_iodev_sqe *iodev_sqe)
 	if (iodev_sqe->sqe.op == RTIO_OP_RX && iodev_sqe->sqe.flags & RTIO_SQE_MEMPOOL_BUFFER) {
 		struct rtio *r = iodev_sqe->r;
 		struct sys_mem_blocks *mem_pool = r->block_pool;
-		int blk_index = (iodev_sqe->sqe.buf - mem_pool->buffer) >>
-				mem_pool->info.blk_sz_shift;
-		int blk_count = iodev_sqe->sqe.buf_len >> mem_pool->info.blk_sz_shift;
+		unsigned int blk_index = 0;
+		unsigned int blk_count = 0;
 
+		if (iodev_sqe->sqe.rx.buf) {
+			blk_index = (iodev_sqe->sqe.rx.buf - mem_pool->buffer) >>
+				    mem_pool->info.blk_sz_shift;
+			blk_count = iodev_sqe->sqe.rx.buf_len >> mem_pool->info.blk_sz_shift;
+		}
 		flags = RTIO_CQE_FLAG_PREP_MEMPOOL(blk_index, blk_count);
 	}
 #else
@@ -1072,15 +1177,21 @@ static inline int z_impl_rtio_cqe_get_mempool_buffer(const struct rtio *r, struc
 {
 #ifdef CONFIG_RTIO_SYS_MEM_BLOCKS
 	if (RTIO_CQE_FLAG_GET(cqe->flags) == RTIO_CQE_FLAG_MEMPOOL_BUFFER) {
-		int blk_idx = RTIO_CQE_FLAG_MEMPOOL_GET_BLK_IDX(cqe->flags);
-		int blk_count = RTIO_CQE_FLAG_MEMPOOL_GET_BLK_CNT(cqe->flags);
+		unsigned int blk_idx = RTIO_CQE_FLAG_MEMPOOL_GET_BLK_IDX(cqe->flags);
+		unsigned int blk_count = RTIO_CQE_FLAG_MEMPOOL_GET_BLK_CNT(cqe->flags);
 		uint32_t blk_size = rtio_mempool_block_size(r);
 
-		*buff = r->block_pool->buffer + blk_idx * blk_size;
 		*buff_len = blk_count * blk_size;
-		__ASSERT_NO_MSG(*buff >= r->block_pool->buffer);
-		__ASSERT_NO_MSG(*buff <
+
+		if (blk_count > 0) {
+			*buff = r->block_pool->buffer + blk_idx * blk_size;
+
+			__ASSERT_NO_MSG(*buff >= r->block_pool->buffer);
+			__ASSERT_NO_MSG(*buff <
 				r->block_pool->buffer + blk_size * r->block_pool->info.num_blocks);
+		} else {
+			*buff = NULL;
+		}
 		return 0;
 	}
 	return -EINVAL;
@@ -1148,7 +1259,16 @@ static inline void rtio_cqe_submit(struct rtio *r, int result, void *userdata, u
 		rtio_cqe_produce(r, cqe);
 	}
 
-	atomic_inc(&r->cq_count);
+	/* atomic_t isn't guaranteed to wrap correctly as it could be signed, so
+	 * we must resort to a cas loop.
+	 */
+	atomic_t val, new_val;
+
+	do {
+		val = atomic_get(&r->cq_count);
+		new_val = (atomic_t)((uintptr_t)val + 1);
+	} while (!atomic_cas(&r->cq_count, val, new_val));
+
 #ifdef CONFIG_RTIO_SUBMIT_SEM
 	if (r->submit_count > 0) {
 		r->submit_count--;
@@ -1185,19 +1305,19 @@ static inline int rtio_sqe_rx_buf(const struct rtio_iodev_sqe *iodev_sqe, uint32
 	if (sqe->op == RTIO_OP_RX && sqe->flags & RTIO_SQE_MEMPOOL_BUFFER) {
 		struct rtio *r = iodev_sqe->r;
 
-		if (sqe->buf != NULL) {
-			if (sqe->buf_len < min_buf_len) {
+		if (sqe->rx.buf != NULL) {
+			if (sqe->rx.buf_len < min_buf_len) {
 				return -ENOMEM;
 			}
-			*buf = sqe->buf;
-			*buf_len = sqe->buf_len;
+			*buf = sqe->rx.buf;
+			*buf_len = sqe->rx.buf_len;
 			return 0;
 		}
 
 		int rc = rtio_block_pool_alloc(r, min_buf_len, max_buf_len, buf, buf_len);
 		if (rc == 0) {
-			sqe->buf = *buf;
-			sqe->buf_len = *buf_len;
+			sqe->rx.buf = *buf;
+			sqe->rx.buf_len = *buf_len;
 			return 0;
 		}
 
@@ -1207,12 +1327,12 @@ static inline int rtio_sqe_rx_buf(const struct rtio_iodev_sqe *iodev_sqe, uint32
 	ARG_UNUSED(max_buf_len);
 #endif
 
-	if (sqe->buf_len < min_buf_len) {
+	if (sqe->rx.buf_len < min_buf_len) {
 		return -ENOMEM;
 	}
 
-	*buf = sqe->buf;
-	*buf_len = sqe->buf_len;
+	*buf = sqe->rx.buf;
+	*buf_len = sqe->rx.buf_len;
 	return 0;
 }
 
@@ -1381,12 +1501,7 @@ static inline int z_impl_rtio_cqe_copy_out(struct rtio *r,
 		cqe = K_TIMEOUT_EQ(timeout, K_FOREVER) ? rtio_cqe_consume_block(r)
 						       : rtio_cqe_consume(r);
 		if (cqe == NULL) {
-#ifdef CONFIG_BOARD_NATIVE_POSIX
-			/* Native posix fakes the clock and only moves it forward when sleeping. */
-			k_sleep(K_TICKS(1));
-#else
-			Z_SPIN_DELAY(1);
-#endif
+			Z_SPIN_DELAY(25);
 			continue;
 		}
 		cqes[copied++] = *cqe;
@@ -1404,6 +1519,8 @@ static inline int z_impl_rtio_cqe_copy_out(struct rtio *r,
  * submission chain, freeing submission queue events when done, and
  * producing completion queue events as submissions are completed.
  *
+ * @warning It is undefined behavior to have re-entrant calls to submit
+ *
  * @param r RTIO context
  * @param wait_count Number of submissions to wait for completion of.
  *
@@ -1411,13 +1528,11 @@ static inline int z_impl_rtio_cqe_copy_out(struct rtio *r,
  */
 __syscall int rtio_submit(struct rtio *r, uint32_t wait_count);
 
+#ifdef CONFIG_RTIO_SUBMIT_SEM
 static inline int z_impl_rtio_submit(struct rtio *r, uint32_t wait_count)
 {
 	int res = 0;
 
-#ifdef CONFIG_RTIO_SUBMIT_SEM
-	/* TODO undefined behavior if another thread calls submit of course
-	 */
 	if (wait_count > 0) {
 		__ASSERT(!k_is_in_isr(),
 			 "expected rtio submit with wait count to be called from a thread");
@@ -1425,35 +1540,43 @@ static inline int z_impl_rtio_submit(struct rtio *r, uint32_t wait_count)
 		k_sem_reset(r->submit_sem);
 		r->submit_count = wait_count;
 	}
-#else
-	uintptr_t cq_count = (uintptr_t)atomic_get(&r->cq_count) + wait_count;
-#endif
 
-	/* Submit the queue to the executor which consumes submissions
-	 * and produces completions through ISR chains or other means.
-	 */
 	rtio_executor_submit(r);
-
-
-	/* TODO could be nicer if we could suspend the thread and not
-	 * wake up on each completion here.
-	 */
-#ifdef CONFIG_RTIO_SUBMIT_SEM
 
 	if (wait_count > 0) {
 		res = k_sem_take(r->submit_sem, K_FOREVER);
 		__ASSERT(res == 0,
 			 "semaphore was reset or timed out while waiting on completions!");
 	}
-#else
-	while ((uintptr_t)atomic_get(&r->cq_count) < cq_count) {
-		Z_SPIN_DELAY(10);
-		k_yield();
-	}
-#endif
 
 	return res;
 }
+#else
+static inline int z_impl_rtio_submit(struct rtio *r, uint32_t wait_count)
+{
+
+	int res = 0;
+	uintptr_t cq_count = (uintptr_t)atomic_get(&r->cq_count);
+	uintptr_t cq_complete_count = cq_count + wait_count;
+	bool wraps = cq_complete_count < cq_count;
+
+	rtio_executor_submit(r);
+
+	if (wraps) {
+		while ((uintptr_t)atomic_get(&r->cq_count) >= cq_count) {
+			Z_SPIN_DELAY(10);
+			k_yield();
+		}
+	}
+
+	while ((uintptr_t)atomic_get(&r->cq_count) < cq_complete_count) {
+		Z_SPIN_DELAY(10);
+		k_yield();
+	}
+
+	return res;
+}
+#endif /* CONFIG_RTIO_SUBMIT_SEM */
 
 /**
  * @}

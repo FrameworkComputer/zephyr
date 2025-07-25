@@ -87,16 +87,6 @@ struct ll_iso_link_quality {
 	uint32_t duplicate_packets;
 };
 
-struct ll_iso_link_quality {
-	uint32_t tx_unacked_packets;
-	uint32_t tx_flushed_packets;
-	uint32_t tx_last_subevent_packets;
-	uint32_t retransmitted_packets;
-	uint32_t crc_error_packets;
-	uint32_t rx_unreceived_packets;
-	uint32_t duplicate_packets;
-};
-
 /* Common members for ll_conn_iso_stream and ll_broadcast_iso_stream */
 struct ll_iso_stream_hdr {
 	struct ll_iso_test_mode_data test_mode;

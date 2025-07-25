@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright (c) 2017 Christian Taedcke
 
-rsource "*/*/Kconfig.defconfig"
+rsource "*/Kconfig.defconfig"
 
 if SOC_FAMILY_SILABS_S0 || SOC_FAMILY_SILABS_S1 || SOC_FAMILY_SILABS_S2
 
@@ -18,5 +18,8 @@ config CORTEX_M_SYSTICK
 # its stack size has to be increased
 config IDLE_STACK_SIZE
 	default 512 if SOC_GECKO_PM_BACKEND_PMGR
+
+configdefault NUM_METAIRQ_PRIORITIES
+	default 1 if BT_SILABS_EFR32
 
 endif

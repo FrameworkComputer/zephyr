@@ -89,6 +89,7 @@
 		spi-max-frequency = <1000000>;
 		mmc {
 			compatible = "zephyr,sdmmc-disk";
+			disk-name = "SD";
 			status = "okay";
 		};
 	};
@@ -102,6 +103,13 @@
 	txpo = <1>;
 
 	pinctrl-0 = <&sercom5_uart_default>;
+	pinctrl-names = "default";
+};
+
+&adc {
+	status = "okay";
+
+	pinctrl-0 = <&adc_default>;
 	pinctrl-names = "default";
 };
 

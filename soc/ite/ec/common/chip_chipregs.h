@@ -1279,6 +1279,12 @@ enum chip_pll_mode {
 #define IT8XXX2_ECPM_SCDCR2     ECREG(IT8XXX2_ECPM_BASE + 0x0e)
 #define IT8XXX2_ECPM_SCDCR3     ECREG(IT8XXX2_ECPM_BASE + 0x0f)
 #define IT8XXX2_ECPM_SCDCR4     ECREG(IT8XXX2_ECPM_BASE + 0x10)
+#define IT8XXX2_ECPM_PFACC0R    ECREG(IT8XXX2_ECPM_BASE + 0x20)
+#define IT8XXX2_ECPM_PFACC1R    ECREG(IT8XXX2_ECPM_BASE + 0x21)
+#define IT8XXX2_ECPM_PFACC2R    ECREG(IT8XXX2_ECPM_BASE + 0x40)
+#define IT8XXX2_ECPM_LCOTF2     ECREG(IT8XXX2_ECPM_BASE + 0x54)
+#define IT8XXX2_ECPM_LCOCR      ECREG(IT8XXX2_ECPM_BASE + 0x55)
+#define IT8XXX2_ECPM_LCOCR1     ECREG(IT8XXX2_ECPM_BASE + 0x57)
 
 /*
  * The count number of the counter for 25 ms register.
@@ -1656,6 +1662,7 @@ struct gctrl_it8xxx2_regs {
 /* 0x20: Memory Controller Configuration 3 */
 #define IT8XXX2_GCTRL_SPISLVPFE		BIT(6)
 /* 0x30: Memory Controller Configuration */
+#define IT8XXX2_GCTRL_USB_DEBUG_EN      BIT(7)
 #define IT8XXX2_GCTRL_ICACHE_RESET	BIT(4)
 /* 0x37: Eflash Protect Lock */
 #define IT8XXX2_GCTRL_EPLR_ENABLE	BIT(0)

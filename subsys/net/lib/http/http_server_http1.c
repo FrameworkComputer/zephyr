@@ -37,6 +37,85 @@ static const char conflict_response[] = "HTTP/1.1 409 Conflict\r\n\r\n";
 static const char final_chunk[] = "0\r\n\r\n";
 static const char *crlf = &final_chunk[3];
 
+static int send_http1_error_common(struct http_client_ctx *client,
+				   const char *response, size_t len)
+{
+	int ret;
+
+	ret = http_server_sendall(client, response, len);
+	if (ret < 0) {
+		LOG_DBG("Cannot write to socket (%d)", ret);
+		return ret;
+	}
+
+	client->http1_headers_sent = true;
+
+	return 0;
+}
+
+static int send_http1_404(struct http_client_ctx *client)
+{
+	return send_http1_error_common(client, not_found_response,
+				       sizeof(not_found_response) - 1);
+}
+
+static int send_http1_405(struct http_client_ctx *client)
+{
+	return send_http1_error_common(client, not_allowed_response,
+				       sizeof(not_allowed_response) - 1);
+}
+
+static int send_http1_409(struct http_client_ctx *client)
+{
+	return send_http1_error_common(client, conflict_response,
+				       sizeof(conflict_response) - 1);
+}
+
+static void send_http1_500(struct http_client_ctx *client, int error_code)
+{
+#define HTTP_500_RESPONSE_TEMPLATE			\
+	"HTTP/1.1 500 Internal Server Error\r\n"	\
+	"Content-Type: text/plain\r\n"			\
+	"Content-Length: %d\r\n\r\n"			\
+	"Internal Server Error%s%s\r\n"
+#define MAX_ERROR_DESC_LEN 32
+
+	/* Placeholder for the error description. */
+	char error_str[] = "xxx";
+	char http_response[sizeof(HTTP_500_RESPONSE_TEMPLATE) +
+			   sizeof("xx") + /* Content-Length */
+			   MAX_ERROR_DESC_LEN + 1]; /* For the error description */
+	const char *error_desc;
+	const char *desc_separator;
+	int desc_len;
+
+	if (IS_ENABLED(CONFIG_HTTP_SERVER_REPORT_FAILURE_REASON)) {
+		/* Try to fetch error description, fallback to error number if
+		 * not available
+		 */
+		error_desc = strerror(error_code);
+		if (strlen(error_desc) == 0) {
+			/* Cast error value to uint8_t to avoid truncation warnings. */
+			(void)snprintk(error_str, sizeof(error_str), "%u",
+				       (uint8_t)error_code);
+			error_desc = error_str;
+		}
+		desc_separator = ": ";
+		desc_len = MIN(MAX_ERROR_DESC_LEN, strlen(error_desc));
+		desc_len += 2; /* For ": " */
+	} else {
+		error_desc = "";
+		desc_separator = "";
+		desc_len = 0;
+	}
+
+	(void)snprintk(http_response, sizeof(http_response),
+		       HTTP_500_RESPONSE_TEMPLATE,
+		       (int)sizeof("Internal Server Error\r\n") - 1 + desc_len,
+		       desc_separator, error_desc);
+	(void)http_server_sendall(client, http_response, strlen(http_response));
+}
+
 static int handle_http1_static_resource(
 	struct http_resource_detail_static *static_detail,
 	struct http_client_ctx *client)
@@ -56,46 +135,44 @@ static int handle_http1_static_resource(
 	int len;
 	int ret;
 
-	if (static_detail->common.bitmask_of_supported_http_methods & BIT(HTTP_GET)) {
-		data = static_detail->static_data;
-		len = static_detail->static_data_len;
+	if (client->method != HTTP_GET) {
+		return send_http1_405(client);
+	}
 
-		if (static_detail->common.content_encoding != NULL &&
-		    static_detail->common.content_encoding[0] != '\0') {
-			snprintk(http_response, sizeof(http_response),
-				 RESPONSE_TEMPLATE "Content-Encoding: %s\r\n\r\n",
-				 "Content-Type: ",
-				 static_detail->common.content_type == NULL ?
-				 "text/html" : static_detail->common.content_type,
-				 len, static_detail->common.content_encoding);
-		} else {
-			snprintk(http_response, sizeof(http_response),
-				 RESPONSE_TEMPLATE "\r\n",
-				 "Content-Type: ",
-				 static_detail->common.content_type == NULL ?
-				 "text/html" : static_detail->common.content_type,
-				 len);
-		}
+	data = static_detail->static_data;
+	len = static_detail->static_data_len;
 
-		ret = http_server_sendall(client, http_response,
-					  strlen(http_response));
-		if (ret < 0) {
-			return ret;
-		}
+	if (static_detail->common.content_encoding != NULL &&
+	    static_detail->common.content_encoding[0] != '\0') {
+		snprintk(http_response, sizeof(http_response),
+			 RESPONSE_TEMPLATE "Content-Encoding: %s\r\n\r\n",
+			 "Content-Type: ",
+			 static_detail->common.content_type == NULL ?
+			 "text/html" : static_detail->common.content_type,
+			 len, static_detail->common.content_encoding);
+	} else {
+		snprintk(http_response, sizeof(http_response),
+			 RESPONSE_TEMPLATE "\r\n",
+			 "Content-Type: ",
+			 static_detail->common.content_type == NULL ?
+			 "text/html" : static_detail->common.content_type,
+			 len);
+	}
 
-		ret = http_server_sendall(client, data, len);
-		if (ret < 0) {
-			return ret;
-		}
+	ret = http_server_sendall(client, http_response, strlen(http_response));
+	if (ret < 0) {
+		return ret;
+	}
+
+	client->http1_headers_sent = true;
+
+	ret = http_server_sendall(client, data, len);
+	if (ret < 0) {
+		return ret;
 	}
 
 	return 0;
 }
-
-#define RESPONSE_TEMPLATE_CHUNKED			\
-	"HTTP/1.1 200 OK\r\n"				\
-	"%s%s\r\n"					\
-	"Transfer-Encoding: chunked\r\n\r\n"
 
 #define RESPONSE_TEMPLATE_DYNAMIC			\
 	"HTTP/1.1 200 OK\r\n"				\
@@ -117,65 +194,180 @@ static int handle_http1_static_resource(
 					  sizeof(http_response) - 1));	\
 	ret; })
 
-static int dynamic_get_req(struct http_resource_detail_dynamic *dynamic_detail,
-			   struct http_client_ctx *client)
-{
-	/* offset tells from where the GET params start */
-	int ret, remaining, offset = dynamic_detail->common.path_len;
-	char *ptr;
-	char tmp[TEMP_BUF_LEN];
+#define RESPONSE_TEMPLATE_DYNAMIC_PART1                                                            \
+	"HTTP/1.1 %d\r\n"                                                                          \
+	"Transfer-Encoding: chunked\r\n"
 
-	ret = SEND_RESPONSE(RESPONSE_TEMPLATE_CHUNKED,
-			    dynamic_detail->common.content_type);
+static int http1_send_headers(struct http_client_ctx *client, enum http_status status,
+			      const struct http_header *headers, size_t header_count,
+			      struct http_resource_detail_dynamic *dynamic_detail)
+{
+	int ret;
+	bool content_type_sent = false;
+	char http_response[MAX(sizeof(RESPONSE_TEMPLATE_DYNAMIC_PART1) + sizeof("xxx"),
+			       CONFIG_HTTP_SERVER_MAX_HEADER_LEN + 2)];
+
+	if (status < HTTP_100_CONTINUE || status > HTTP_511_NETWORK_AUTHENTICATION_REQUIRED) {
+		LOG_DBG("Invalid HTTP status code: %d", status);
+		return -EINVAL;
+	}
+
+	if (headers == NULL && header_count > 0) {
+		LOG_DBG("NULL headers, but count is > 0");
+		return -EINVAL;
+	}
+
+	/* Send response code and transfer encoding */
+	snprintk(http_response, sizeof(http_response), RESPONSE_TEMPLATE_DYNAMIC_PART1, status);
+
+	ret = http_server_sendall(client, http_response,
+				  strnlen(http_response, sizeof(http_response) - 1));
 	if (ret < 0) {
+		LOG_DBG("Failed to send HTTP headers part 1");
 		return ret;
 	}
 
-	remaining = strlen(&client->url_buffer[dynamic_detail->common.path_len]);
+	/* Send user-defined headers */
+	for (size_t i = 0; i < header_count; i++) {
+		const struct http_header *hdr = &headers[i];
 
-	/* Pass URL to the client */
-	while (1) {
-		int copy_len, send_len;
-		enum http_data_status status;
-
-		ptr = &client->url_buffer[offset];
-		copy_len = MIN(remaining, dynamic_detail->data_buffer_len);
-
-		memcpy(dynamic_detail->data_buffer, ptr, copy_len);
-
-		if (copy_len == remaining) {
-			status = HTTP_SERVER_DATA_FINAL;
-		} else {
-			status = HTTP_SERVER_DATA_MORE;
+		if (strcasecmp(hdr->name, "Transfer-Encoding") == 0) {
+			LOG_DBG("Application is not permitted to change Transfer-Encoding header");
+			return -EACCES;
 		}
 
-		send_len = dynamic_detail->cb(client, status,
-					      dynamic_detail->data_buffer,
-					      copy_len, dynamic_detail->user_data);
-		if (send_len > 0) {
-			ret = snprintk(tmp, sizeof(tmp), "%x\r\n", send_len);
-			ret = http_server_sendall(client, tmp, ret);
-			if (ret < 0) {
-				return ret;
-			}
-
-			ret = http_server_sendall(client,
-						  dynamic_detail->data_buffer,
-						  send_len);
-			if (ret < 0) {
-				return ret;
-			}
-
-			(void)http_server_sendall(client, crlf, 2);
-
-			offset += copy_len;
-			remaining -= copy_len;
-
-			continue;
+		if (strcasecmp(hdr->name, "Content-Type") == 0) {
+			content_type_sent = true;
 		}
 
-		break;
+		snprintk(http_response, sizeof(http_response), "%s: ", hdr->name);
+
+		ret = http_server_sendall(client, http_response,
+					  strnlen(http_response, sizeof(http_response) - 1));
+		if (ret < 0) {
+			LOG_DBG("Failed to send HTTP header name");
+			return ret;
+		}
+
+		ret = http_server_sendall(client, hdr->value, strlen(hdr->value));
+		if (ret < 0) {
+			LOG_DBG("Failed to send HTTP header value");
+			return ret;
+		}
+
+		ret = http_server_sendall(client, crlf, 2);
+		if (ret < 0) {
+			LOG_DBG("Failed to send CRLF");
+			return ret;
+		}
 	}
+
+	/* Send content-type header if it was not already sent */
+	if (!content_type_sent) {
+		const char *content_type = NULL;
+
+		if (dynamic_detail != NULL) {
+			content_type = dynamic_detail->common.content_type;
+		}
+
+		snprintk(http_response, sizeof(http_response), "Content-Type: %s\r\n",
+			 content_type == NULL ? "text/html" : content_type);
+
+		ret = http_server_sendall(client, http_response,
+					  strnlen(http_response, sizeof(http_response) - 1));
+		if (ret < 0) {
+			LOG_DBG("Failed to send Content-Type");
+			return ret;
+		}
+	}
+
+	/* Send final CRLF */
+	ret = http_server_sendall(client, crlf, 2);
+	if (ret < 0) {
+		LOG_DBG("Failed to send CRLF");
+		return ret;
+	}
+
+	return ret;
+}
+
+static int http1_dynamic_response(struct http_client_ctx *client, struct http_response_ctx *rsp,
+				  struct http_resource_detail_dynamic *dynamic_detail)
+{
+	int ret;
+	char tmp[TEMP_BUF_LEN];
+
+	if (client->http1_headers_sent && (rsp->header_count > 0 || rsp->status != 0)) {
+		LOG_WRN("Already sent headers, dropping new headers and/or response code");
+	}
+
+	/* Send headers and response code if not already sent */
+	if (!client->http1_headers_sent) {
+		/* Use '200 OK' status if not specified by application */
+		if (rsp->status == 0) {
+			rsp->status = 200;
+		}
+
+		ret = http1_send_headers(client, rsp->status, rsp->headers, rsp->header_count,
+					 dynamic_detail);
+		if (ret < 0) {
+			return ret;
+		}
+
+		client->http1_headers_sent = true;
+	}
+
+	/* Send body data if provided */
+	if (rsp->body != NULL && rsp->body_len > 0) {
+		ret = snprintk(tmp, sizeof(tmp), "%zx\r\n", rsp->body_len);
+		ret = http_server_sendall(client, tmp, ret);
+		if (ret < 0) {
+			return ret;
+		}
+
+		ret = http_server_sendall(client, rsp->body, rsp->body_len);
+		if (ret < 0) {
+			return ret;
+		}
+
+		(void)http_server_sendall(client, crlf, 2);
+	}
+
+	return 0;
+}
+
+static int dynamic_get_del_req(struct http_resource_detail_dynamic *dynamic_detail,
+			       struct http_client_ctx *client)
+{
+	int ret, len;
+	char *ptr;
+	enum http_data_status status;
+	struct http_request_ctx request_ctx;
+	struct http_response_ctx response_ctx;
+
+	/* Start of GET params */
+	ptr = &client->url_buffer[dynamic_detail->common.path_len];
+	len = strlen(ptr);
+	status = HTTP_SERVER_DATA_FINAL;
+
+	do {
+		memset(&response_ctx, 0, sizeof(response_ctx));
+		populate_request_ctx(&request_ctx, ptr, len, &client->header_capture_ctx);
+
+		ret = dynamic_detail->cb(client, status, &request_ctx, &response_ctx,
+					 dynamic_detail->user_data);
+		if (ret < 0) {
+			return ret;
+		}
+
+		ret = http1_dynamic_response(client, &response_ctx, dynamic_detail);
+		if (ret < 0) {
+			return ret;
+		}
+
+		/* URL params are passed in the first cb only */
+		len = 0;
+	} while (!http_response_is_final(&response_ctx, status));
 
 	dynamic_detail->holder = NULL;
 
@@ -188,71 +380,77 @@ static int dynamic_get_req(struct http_resource_detail_dynamic *dynamic_detail,
 	return 0;
 }
 
-static int dynamic_post_req(struct http_resource_detail_dynamic *dynamic_detail,
-			    struct http_client_ctx *client)
+static int dynamic_post_put_req(struct http_resource_detail_dynamic *dynamic_detail,
+				struct http_client_ctx *client)
 {
-	/* offset tells from where the POST params start */
-	char *start = client->cursor;
-	int ret, remaining = client->data_len, offset = 0;
-	int copy_len;
-	char *ptr;
-	char tmp[TEMP_BUF_LEN];
+	int ret;
+	char *ptr = client->cursor;
+	enum http_data_status status;
+	struct http_request_ctx request_ctx;
+	struct http_response_ctx response_ctx;
 
-	if (start == NULL) {
+	if (ptr == NULL) {
 		return -ENOENT;
 	}
 
-	if (!client->http1_headers_sent) {
-		ret = SEND_RESPONSE(RESPONSE_TEMPLATE_CHUNKED,
-				    dynamic_detail->common.content_type);
+	if (client->parser_state == HTTP1_MESSAGE_COMPLETE_STATE) {
+		status = HTTP_SERVER_DATA_FINAL;
+	} else {
+		status = HTTP_SERVER_DATA_MORE;
+	}
+
+	memset(&response_ctx, 0, sizeof(response_ctx));
+	populate_request_ctx(&request_ctx, ptr, client->data_len, &client->header_capture_ctx);
+
+	ret = dynamic_detail->cb(client, status, &request_ctx, &response_ctx,
+				 dynamic_detail->user_data);
+	if (ret < 0) {
+		return ret;
+	}
+
+	/* Only send request headers in first callback to application. This is not strictly
+	 * necessary for http1, but is done for consistency with the http2 behaviour.
+	 */
+	client->header_capture_ctx.status = HTTP_HEADER_STATUS_NONE;
+
+	/* For POST the application might not send a response until all data has been received.
+	 * Don't send a default response until the application has had a chance to respond.
+	 */
+	if (http_response_is_provided(&response_ctx)) {
+		ret = http1_dynamic_response(client, &response_ctx, dynamic_detail);
 		if (ret < 0) {
 			return ret;
 		}
-		client->http1_headers_sent = true;
 	}
 
-	copy_len = MIN(remaining, dynamic_detail->data_buffer_len);
-	while (copy_len > 0) {
-		enum http_data_status status;
-		int send_len;
+	/* Once all data is transferred to application, repeat cb until response is complete */
+	while (!http_response_is_final(&response_ctx, status) && status == HTTP_SERVER_DATA_FINAL) {
+		memset(&response_ctx, 0, sizeof(response_ctx));
+		populate_request_ctx(&request_ctx, ptr, 0, &client->header_capture_ctx);
 
-		ptr = &start[offset];
-
-		memcpy(dynamic_detail->data_buffer, ptr, copy_len);
-
-		if (copy_len == remaining &&
-		    client->parser_state == HTTP1_MESSAGE_COMPLETE_STATE) {
-			status = HTTP_SERVER_DATA_FINAL;
-		} else {
-			status = HTTP_SERVER_DATA_MORE;
+		ret = dynamic_detail->cb(client, status, &request_ctx, &response_ctx,
+					 dynamic_detail->user_data);
+		if (ret < 0) {
+			return ret;
 		}
 
-		send_len = dynamic_detail->cb(client, status,
-					      dynamic_detail->data_buffer,
-					      copy_len, dynamic_detail->user_data);
-		if (send_len > 0) {
-			ret = snprintk(tmp, sizeof(tmp), "%x\r\n", send_len);
-			ret = http_server_sendall(client, tmp, ret);
-			if (ret < 0) {
-				return ret;
-			}
-
-			ret = http_server_sendall(client,
-						  dynamic_detail->data_buffer,
-						  send_len);
-			if (ret < 0) {
-				return ret;
-			}
-
-			(void)http_server_sendall(client, crlf, 2);
+		ret = http1_dynamic_response(client, &response_ctx, dynamic_detail);
+		if (ret < 0) {
+			return ret;
 		}
-
-		offset += copy_len;
-		remaining -= copy_len;
-		copy_len = MIN(remaining, dynamic_detail->data_buffer_len);
 	}
 
+	/* At end of message, ensure response is sent and terminated */
 	if (client->parser_state == HTTP1_MESSAGE_COMPLETE_STATE) {
+		if (!client->http1_headers_sent) {
+			memset(&response_ctx, 0, sizeof(response_ctx));
+			response_ctx.final_chunk = true;
+			ret = http1_dynamic_response(client, &response_ctx, dynamic_detail);
+			if (ret < 0) {
+				return ret;
+			}
+		}
+
 		ret = http_server_sendall(client, final_chunk,
 					sizeof(final_chunk) - 1);
 		if (ret < 0) {
@@ -270,8 +468,9 @@ static int dynamic_post_req(struct http_resource_detail_dynamic *dynamic_detail,
 int handle_http1_static_fs_resource(struct http_resource_detail_static_fs *static_fs_detail,
 				    struct http_client_ctx *client)
 {
-#define RESPONSE_TEMPLATE_STATIC_FS                                                                \
-	"HTTP/1.1 200 OK\r\n"                                                                      \
+#define RESPONSE_TEMPLATE_STATIC_FS				\
+	"HTTP/1.1 200 OK\r\n"					\
+	"Content-Length: %zd\r\n"				\
 	"Content-Type: %s%s\r\n\r\n"
 #define CONTENT_ENCODING_GZIP "\r\nContent-Encoding: gzip"
 
@@ -287,15 +486,11 @@ int handle_http1_static_fs_resource(struct http_resource_detail_static_fs *stati
 	 * for the content type and encoding
 	 */
 	char http_response[sizeof(RESPONSE_TEMPLATE_STATIC_FS) + HTTP_SERVER_MAX_CONTENT_TYPE_LEN +
+			   sizeof("Content-Length: 01234567890123456789\r\n") +
 			   sizeof(CONTENT_ENCODING_GZIP)];
 
-	if (!(static_fs_detail->common.bitmask_of_supported_http_methods & BIT(HTTP_GET))) {
-		ret = http_server_sendall(client, not_allowed_response,
-					  sizeof(not_allowed_response) - 1);
-		if (ret < 0) {
-			LOG_DBG("Cannot write to socket (%d)", ret);
-		}
-		return ret;
+	if (client->method != HTTP_GET) {
+		return send_http1_405(client);
 	}
 
 	/* get filename and content-type from url */
@@ -314,12 +509,7 @@ int handle_http1_static_fs_resource(struct http_resource_detail_static_fs *stati
 	ret = http_server_find_file(fname, sizeof(fname), &file_size, &gzipped);
 	if (ret < 0) {
 		LOG_ERR("fs_stat %s: %d", fname, ret);
-		ret = http_server_sendall(client, not_found_response,
-					  sizeof(not_found_response) - 1);
-		if (ret < 0) {
-			LOG_DBG("Cannot write to socket (%d)", ret);
-		}
-		return ret;
+		return send_http1_404(client);
 	}
 	fs_file_t_init(&file);
 	ret = fs_open(&file, fname, FS_O_READ);
@@ -334,16 +524,23 @@ int handle_http1_static_fs_resource(struct http_resource_detail_static_fs *stati
 
 	/* send HTTP header */
 	len = snprintk(http_response, sizeof(http_response), RESPONSE_TEMPLATE_STATIC_FS,
-		       content_type, gzipped ? CONTENT_ENCODING_GZIP : "");
+		       file_size, content_type, gzipped ? CONTENT_ENCODING_GZIP : "");
 	ret = http_server_sendall(client, http_response, len);
 	if (ret < 0) {
 		goto close;
 	}
 
+	client->http1_headers_sent = true;
+
 	/* read and send file */
 	remaining = file_size;
 	while (remaining > 0) {
 		len = fs_read(&file, http_response, sizeof(http_response));
+		if (len < 0) {
+			LOG_ERR("Filesystem read error (%d)", len);
+			goto close;
+		}
+
 		ret = http_server_sendall(client, http_response, len);
 		if (ret < 0) {
 			goto close;
@@ -374,14 +571,12 @@ static int handle_http1_dynamic_resource(
 	user_method = dynamic_detail->common.bitmask_of_supported_http_methods;
 
 	if (!(BIT(client->method) & user_method)) {
-		return -ENOPROTOOPT;
+		return send_http1_405(client);
 	}
 
 	if (dynamic_detail->holder != NULL && dynamic_detail->holder != client) {
-		ret = http_server_sendall(client, conflict_response,
-					  sizeof(conflict_response) - 1);
+		ret = send_http1_409(client);
 		if (ret < 0) {
-			LOG_DBG("Cannot write to socket (%d)", ret);
 			return ret;
 		}
 
@@ -399,24 +594,28 @@ static int handle_http1_dynamic_resource(
 				return ret;
 			}
 
+			client->http1_headers_sent = true;
 			dynamic_detail->holder = NULL;
 
 			return 0;
 		}
 
 	case HTTP_GET:
-		/* For GET request, we do not pass any data to the app but let the app
-		 * send data to the peer.
+	case HTTP_DELETE:
+		/* For GET/DELETE request, we do not pass any data to the app
+		 * but let the app send data to the peer.
 		 */
-		if (user_method & BIT(HTTP_GET)) {
-			return dynamic_get_req(dynamic_detail, client);
+		if (user_method & BIT(client->method)) {
+			return dynamic_get_del_req(dynamic_detail, client);
 		}
 
 		goto not_supported;
 
 	case HTTP_POST:
-		if (user_method & BIT(HTTP_POST)) {
-			return dynamic_post_req(dynamic_detail, client);
+	case HTTP_PUT:
+	case HTTP_PATCH:
+		if (user_method & BIT(client->method)) {
+			return dynamic_post_put_req(dynamic_detail, client);
 		}
 
 		goto not_supported;
@@ -431,6 +630,41 @@ not_supported:
 	}
 
 	return 0;
+}
+
+static void check_user_request_headers(struct http_header_capture_ctx *ctx, const char *buf)
+{
+	size_t header_len;
+	char *dest = &ctx->buffer[ctx->cursor];
+	size_t remaining = sizeof(ctx->buffer) - ctx->cursor;
+
+	ctx->store_next_value = false;
+
+	STRUCT_SECTION_FOREACH(http_header_name, header) {
+		header_len = strlen(header->name);
+
+		if (strcasecmp(buf, header->name) == 0) {
+			if (ctx->count == ARRAY_SIZE(ctx->headers)) {
+				LOG_DBG("Header '%s' dropped: not enough slots", header->name);
+				ctx->status = HTTP_HEADER_STATUS_DROPPED;
+				break;
+			}
+
+			if (remaining < header_len + 1) {
+				LOG_DBG("Header '%s' dropped: buffer too small for name",
+					header->name);
+				ctx->status = HTTP_HEADER_STATUS_DROPPED;
+				break;
+			}
+
+			strcpy(dest, header->name);
+
+			ctx->headers[ctx->count].name = dest;
+			ctx->cursor += (header_len + 1);
+			ctx->store_next_value = true;
+			break;
+		}
+	}
 }
 
 static int on_header_field(struct http_parser *parser, const char *at,
@@ -454,12 +688,14 @@ static int on_header_field(struct http_parser *parser, const char *at,
 			/* This means that the header field is fully parsed,
 			 * and we can use it directly.
 			 */
-			if (strncasecmp(ctx->header_buffer, "Upgrade",
-					sizeof("Upgrade") - 1) == 0) {
+			if (IS_ENABLED(CONFIG_HTTP_SERVER_CAPTURE_HEADERS)) {
+				check_user_request_headers(&ctx->header_capture_ctx,
+							   ctx->header_buffer);
+			}
+
+			if (strcasecmp(ctx->header_buffer, "Upgrade") == 0) {
 				ctx->has_upgrade_header = true;
-			} else if (strncasecmp(ctx->header_buffer,
-					       "Sec-WebSocket-Key",
-					       sizeof("Sec-WebSocket-Key") - 1) == 0) {
+			} else if (strcasecmp(ctx->header_buffer, "Sec-WebSocket-Key") == 0) {
 				ctx->websocket_sec_key_next = true;
 			}
 
@@ -470,6 +706,35 @@ static int on_header_field(struct http_parser *parser, const char *at,
 	ctx->parser_state = HTTP1_RECEIVING_HEADER_STATE;
 
 	return 0;
+}
+
+static void populate_user_request_header(struct http_header_capture_ctx *ctx, const char *buf)
+{
+	char *dest;
+	size_t value_len;
+	size_t remaining;
+
+	if (ctx->store_next_value == false) {
+		return;
+	}
+
+	ctx->store_next_value = false;
+	value_len = strlen(buf);
+	remaining = sizeof(ctx->buffer) - ctx->cursor;
+
+	if (value_len + 1 >= remaining) {
+		LOG_DBG("Header '%s' dropped: buffer too small for value",
+			ctx->headers[ctx->count].name);
+		ctx->status = HTTP_HEADER_STATUS_DROPPED;
+		return;
+	}
+
+	dest = &ctx->buffer[ctx->cursor];
+	strcpy(dest, buf);
+	ctx->cursor += (value_len + 1);
+
+	ctx->headers[ctx->count].value = dest;
+	ctx->count++;
 }
 
 static int on_header_value(struct http_parser *parser,
@@ -484,19 +749,27 @@ static int on_header_value(struct http_parser *parser,
 		LOG_DBG("Header %s too long (by %zu bytes)", "value",
 			offset + length - sizeof(ctx->header_buffer) - 1U);
 		ctx->header_buffer[0] = '\0';
+
+		if (IS_ENABLED(CONFIG_HTTP_SERVER_CAPTURE_HEADERS) &&
+		    ctx->header_capture_ctx.store_next_value) {
+			ctx->header_capture_ctx.store_next_value = false;
+			ctx->header_capture_ctx.status = HTTP_HEADER_STATUS_DROPPED;
+		}
 	} else {
 		memcpy(ctx->header_buffer + offset, at, length);
 		offset += length;
 		ctx->header_buffer[offset] = '\0';
 
 		if (parser->state == s_header_almost_done) {
+			if (IS_ENABLED(CONFIG_HTTP_SERVER_CAPTURE_HEADERS)) {
+				populate_user_request_header(&ctx->header_capture_ctx,
+							     ctx->header_buffer);
+			}
+
 			if (ctx->has_upgrade_header) {
-				if (strncasecmp(ctx->header_buffer, "h2c",
-						sizeof("h2c") - 1) == 0) {
+				if (strcasecmp(ctx->header_buffer, "h2c") == 0) {
 					ctx->http2_upgrade = true;
-				} else if (strncasecmp(ctx->header_buffer,
-						       "websocket",
-						       sizeof("websocket") - 1) == 0) {
+				} else if (strcasecmp(ctx->header_buffer, "websocket") == 0) {
 					ctx->websocket_upgrade = true;
 				}
 
@@ -588,6 +861,11 @@ int enter_http1_request(struct http_client_ctx *client)
 	client->parser_settings.on_body = on_body;
 	client->parser_settings.on_message_complete = on_message_complete;
 	client->parser_state = HTTP1_INIT_HEADER_STATE;
+	client->http1_headers_sent = false;
+
+	if (IS_ENABLED(CONFIG_HTTP_SERVER_CAPTURE_HEADERS)) {
+		client->header_capture_ctx.store_next_value = false;
+	}
 
 	memset(client->header_buffer, 0, sizeof(client->header_buffer));
 	memset(client->url_buffer, 0, sizeof(client->url_buffer));
@@ -611,12 +889,14 @@ int handle_http1_request(struct http_client_ctx *client)
 
 	if (parsed > client->data_len) {
 		LOG_ERR("HTTP/1 parser error, too much data consumed");
-		return -EBADMSG;
+		ret = -EBADMSG;
+		goto error;
 	}
 
 	if (client->parser.http_errno != HPE_OK) {
 		LOG_ERR("HTTP/1 parsing error, %d", client->parser.http_errno);
-		return -EBADMSG;
+		ret = -EBADMSG;
+		goto error;
 	}
 
 	if (client->parser_state < HTTP1_RECEIVED_HEADER_STATE) {
@@ -635,7 +915,8 @@ int handle_http1_request(struct http_client_ctx *client)
 		size_t frag_headers_len;
 
 		if (parsed < client->http1_frag_data_len) {
-			return -EBADMSG;
+			ret = -EBADMSG;
+			goto error;
 		}
 
 		frag_headers_len = parsed - client->http1_frag_data_len;
@@ -656,21 +937,33 @@ int handle_http1_request(struct http_client_ctx *client)
 
 		if (client->websocket_upgrade) {
 			if (IS_ENABLED(CONFIG_HTTP_SERVER_WEBSOCKET)) {
-				detail = get_resource_detail(client->url_buffer,
+				detail = get_resource_detail(client->service, client->url_buffer,
 							     &path_len, true);
 				if (detail == NULL) {
 					goto not_found;
 				}
 
+				detail->path_len = path_len;
 				client->current_detail = detail;
-				return handle_http1_to_websocket_upgrade(client);
+
+				ret = handle_http1_to_websocket_upgrade(client);
+				if (ret < 0) {
+					goto error;
+				}
+
+				return 0;
 			}
 
 			goto upgrade_not_found;
 		}
 
 		if (client->http2_upgrade) {
-			return handle_http1_to_http2_upgrade(client);
+			ret = handle_http1_to_http2_upgrade(client);
+			if (ret < 0) {
+				goto error;
+			}
+
+			return 0;
 		}
 
 upgrade_not_found:
@@ -678,25 +971,27 @@ upgrade_not_found:
 					  sizeof(upgrade_required) - 1);
 		if (ret < 0) {
 			LOG_DBG("Cannot write to socket (%d)", ret);
-			return ret;
+			goto error;
 		}
+
+		client->http1_headers_sent = true;
 
 		ret = http_server_sendall(client, needed_upgrade,
 					  strlen(needed_upgrade));
 		if (ret < 0) {
 			LOG_DBG("Cannot write to socket (%d)", ret);
-			return ret;
+			goto error;
 		}
 
 		ret = http_server_sendall(client, upgrade_msg,
 					  sizeof(upgrade_msg) - 1);
 		if (ret < 0) {
 			LOG_DBG("Cannot write to socket (%d)", ret);
-			return ret;
+			goto error;
 		}
 	}
 
-	detail = get_resource_detail(client->url_buffer, &path_len, false);
+	detail = get_resource_detail(client->service, client->url_buffer, &path_len, false);
 	if (detail != NULL) {
 		detail->path_len = path_len;
 
@@ -705,14 +1000,14 @@ upgrade_not_found:
 				(struct http_resource_detail_static *)detail,
 				client);
 			if (ret < 0) {
-				return ret;
+				goto error;
 			}
 #if defined(CONFIG_FILE_SYSTEM)
 		} else if (detail->type == HTTP_RESOURCE_TYPE_STATIC_FS) {
 			ret = handle_http1_static_fs_resource(
 				(struct http_resource_detail_static_fs *)detail, client);
 			if (ret < 0) {
-				return ret;
+				goto error;
 			}
 #endif
 		} else if (detail->type == HTTP_RESOURCE_TYPE_DYNAMIC) {
@@ -720,17 +1015,17 @@ upgrade_not_found:
 				(struct http_resource_detail_dynamic *)detail,
 				client);
 			if (ret < 0) {
-				return ret;
+				goto error;
 			}
 		}
 	} else {
 not_found: ; /* Add extra semicolon to make clang to compile when using label */
-		ret = http_server_sendall(client, not_found_response,
-					  sizeof(not_found_response) - 1);
+		ret = send_http1_404(client);
 		if (ret < 0) {
-			LOG_DBG("Cannot write to socket (%d)", ret);
-			return ret;
+			goto error;
 		}
+
+		client->http1_headers_sent = true;
 	}
 
 	client->cursor += parsed;
@@ -747,4 +1042,16 @@ not_found: ; /* Add extra semicolon to make clang to compile when using label */
 	}
 
 	return 0;
+
+error:
+	/* Best effort try to send HTTP 500 Internal Server Error response in
+	 * case of errors. This can only be done however if we haven't sent
+	 * response header elsewhere (i. e. can't send another reply if the
+	 * error ocurred amid resource processing).
+	 */
+	if (ret != -EAGAIN && !client->http1_headers_sent) {
+		send_http1_500(client, -ret);
+	}
+
+	return ret;
 }

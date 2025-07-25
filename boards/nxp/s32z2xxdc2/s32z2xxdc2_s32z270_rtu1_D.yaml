@@ -16,4 +16,8 @@ supported:
   - can
   - spi
   - counter
+  - adc
+  - i2c
+  - dma
+  - pwm
 vendor: nxp

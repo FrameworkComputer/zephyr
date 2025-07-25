@@ -7,9 +7,7 @@
 /dts-v1/;
 
 #include <nordic/nrf54h20_cpuapp.dtsi>
-#include "nrf54h20dk_nrf54h20-memory_map.dtsi"
-#include "nrf54h20dk_nrf54h20-ipc_conf.dtsi"
-#include "nrf54h20dk_nrf54h20-pinctrl.dtsi"
+#include "nrf54h20dk_nrf54h20-common.dtsi"
 
 /delete-node/ &cpurad_cpusys_ipc;
 /delete-node/ &cpusec_cpurad_ipc;
@@ -114,11 +112,7 @@
 	status = "okay";
 };
 
-&cpuapp_cpurad_ram0x_region {
-	status = "okay";
-};
-
-&shared_ram3x_region {
+&etr_buf_ram0x_region {
 	status = "okay";
 };
 
@@ -149,9 +143,14 @@
 };
 
 &cpusec_cpuapp_ipc {
+	status = "okay";
 	mbox-names = "tx", "rx";
 	tx-region = <&cpuapp_cpusec_ipc_shm>;
 	rx-region = <&cpusec_cpuapp_ipc_shm>;
+};
+
+&cpusec_bellboard {
+	status = "okay";
 };
 
 ipc0: &cpuapp_cpurad_ipc {
@@ -188,10 +187,6 @@ ipc0: &cpuapp_cpurad_ipc {
 };
 
 &cpuapp_dma_region {
-	status = "okay";
-};
-
-&dma_fast_region {
 	status = "okay";
 };
 
@@ -254,7 +249,6 @@ ipc0: &cpuapp_cpurad_ipc {
 	pinctrl-0 = <&uart136_default>;
 	pinctrl-1 = <&uart136_sleep>;
 	pinctrl-names = "default", "sleep";
-	hw-flow-control;
 };
 
 &gpio6 {

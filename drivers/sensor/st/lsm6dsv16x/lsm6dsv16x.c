@@ -14,14 +14,28 @@
 #include <zephyr/kernel.h>
 #include <zephyr/device.h>
 #include <zephyr/init.h>
+#include <zephyr/pm/device.h>
 #include <string.h>
-#include <zephyr/sys/byteorder.h>
 #include <zephyr/sys/__assert.h>
 #include <zephyr/logging/log.h>
 
+#include <zephyr/dt-bindings/sensor/lsm6dsv16x.h>
 #include "lsm6dsv16x.h"
+#include "lsm6dsv16x_decoder.h"
+#include "lsm6dsv16x_rtio.h"
 
 LOG_MODULE_REGISTER(LSM6DSV16X, CONFIG_SENSOR_LOG_LEVEL);
+
+bool lsm6dsv16x_is_active(const struct device *dev)
+{
+#if defined(CONFIG_PM_DEVICE)
+	enum pm_device_state state;
+	(void)pm_device_state_get(dev, &state);
+	return (state == PM_DEVICE_STATE_ACTIVE);
+#else
+	return true;
+#endif /* CONFIG_PM_DEVICE*/
+}
 
 /*
  * values taken from lsm6dsv16x_data_rate_t in hal/st module. The mode/accuracy
@@ -86,6 +100,16 @@ static int lsm6dsv16x_accel_range_to_fs_val(int32_t range)
 static const uint16_t lsm6dsv16x_gyro_fs_map[] = {125, 250, 500, 1000, 2000, 0,   0,
 						  0,   0,   0,   0,    0,    4000};
 static const uint16_t lsm6dsv16x_gyro_fs_sens[] = {1, 2, 4, 8, 16, 0, 0, 0, 0, 0, 0, 0, 32};
+
+int lsm6dsv16x_calc_accel_gain(uint8_t fs)
+{
+	return lsm6dsv16x_accel_fs_map[fs] * GAIN_UNIT_XL / 2;
+}
+
+int lsm6dsv16x_calc_gyro_gain(uint8_t fs)
+{
+	return lsm6dsv16x_gyro_fs_sens[fs] * GAIN_UNIT_G;
+}
 
 static int lsm6dsv16x_gyro_range_to_fs_val(int32_t range)
 {
@@ -152,11 +176,13 @@ static int lsm6dsv16x_gyro_set_fs_raw(const struct device *dev, uint8_t fs)
 {
 	const struct lsm6dsv16x_config *cfg = dev->config;
 	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+	struct lsm6dsv16x_data *data = dev->data;
 
 	if (lsm6dsv16x_gy_full_scale_set(ctx, fs) < 0) {
 		return -EIO;
 	}
 
+	data->gyro_fs = fs;
 	return 0;
 }
 
@@ -204,8 +230,57 @@ static int lsm6dsv16x_accel_range_set(const struct device *dev, int32_t range)
 		return -EIO;
 	}
 
-	data->acc_gain = lsm6dsv16x_accel_fs_map[fs] * GAIN_UNIT_XL / 2;
+	data->acc_gain = lsm6dsv16x_calc_accel_gain(fs);
 	return 0;
+}
+
+#define LSM6DSV16X_WU_INACT_THS_W_MAX 5
+#define LSM6DSV16X_WAKE_UP_THS_MAX    0x3FU
+static const float wu_inact_ths_w_lsb[] = {7.8125f, 15.625f, 31.25f, 62.5f, 125.0f, 250.0f};
+
+static int lsm6dsv16x_accel_wake_threshold_set(const struct device *dev,
+					       const struct sensor_value *val)
+{
+	const struct lsm6dsv16x_config *cfg = dev->config;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+	lsm6dsv16x_act_thresholds_t thresholds;
+
+	if (lsm6dsv16x_act_thresholds_get(ctx, &thresholds) < 0) {
+		LOG_DBG("failed to get thresholds");
+		return -EIO;
+	}
+
+	float val_mg = sensor_ms2_to_ug(val) / 1000.0f;
+
+	thresholds.inactivity_cfg.wu_inact_ths_w = LSM6DSV16X_WU_INACT_THS_W_MAX;
+	thresholds.threshold = LSM6DSV16X_WAKE_UP_THS_MAX;
+
+	for (uint8_t i = 0; i <= LSM6DSV16X_WU_INACT_THS_W_MAX; i++) {
+		if (val_mg < (wu_inact_ths_w_lsb[i] * (float)LSM6DSV16X_WAKE_UP_THS_MAX)) {
+			thresholds.inactivity_cfg.wu_inact_ths_w = i;
+			thresholds.threshold = (uint8_t)(val_mg / wu_inact_ths_w_lsb[i]);
+			break;
+		}
+	}
+
+	return lsm6dsv16x_act_thresholds_set(ctx, &thresholds);
+}
+
+static int lsm6dsv16x_accel_wake_duration_set(const struct device *dev,
+					      const struct sensor_value *val)
+{
+	const struct lsm6dsv16x_config *cfg = dev->config;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+	lsm6dsv16x_act_thresholds_t thresholds;
+
+	if (lsm6dsv16x_act_thresholds_get(ctx, &thresholds) < 0) {
+		LOG_DBG("failed to get thresholds");
+		return -EIO;
+	}
+
+	thresholds.duration = MIN(val->val1, 3);
+
+	return lsm6dsv16x_act_thresholds_set(ctx, &thresholds);
 }
 
 static int lsm6dsv16x_accel_config(const struct device *dev,
@@ -222,6 +297,10 @@ static int lsm6dsv16x_accel_config(const struct device *dev,
 		return lsm6dsv16x_accel_range_set(dev, sensor_ms2_to_g(val));
 	case SENSOR_ATTR_SAMPLING_FREQUENCY:
 		return lsm6dsv16x_accel_odr_set(dev, val->val1);
+	case SENSOR_ATTR_SLOPE_TH:
+		return lsm6dsv16x_accel_wake_threshold_set(dev, val);
+	case SENSOR_ATTR_SLOPE_DUR:
+		return lsm6dsv16x_accel_wake_duration_set(dev, val);
 	case SENSOR_ATTR_CONFIGURATION:
 		switch (val->val1) {
 		case 0: /* High Performance */
@@ -294,7 +373,7 @@ static int lsm6dsv16x_gyro_range_set(const struct device *dev, int32_t range)
 		return -EIO;
 	}
 
-	data->gyro_gain = (lsm6dsv16x_gyro_fs_sens[fs] * GAIN_UNIT_G);
+	data->gyro_gain = lsm6dsv16x_calc_gyro_gain(fs);
 	return 0;
 }
 
@@ -348,6 +427,10 @@ static int lsm6dsv16x_attr_set(const struct device *dev,
 	struct lsm6dsv16x_data *data = dev->data;
 #endif /* CONFIG_LSM6DSV16X_SENSORHUB */
 
+	if (!lsm6dsv16x_is_active(dev)) {
+		return -EBUSY;
+	}
+
 	switch (chan) {
 	case SENSOR_CHAN_ACCEL_XYZ:
 		return lsm6dsv16x_accel_config(dev, chan, attr, val);
@@ -366,6 +449,194 @@ static int lsm6dsv16x_attr_set(const struct device *dev,
 #endif /* CONFIG_LSM6DSV16X_SENSORHUB */
 	default:
 		LOG_WRN("attr_set() not supported on this channel.");
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+
+static int lsm6dsv16x_accel_wake_threshold_get(const struct device *dev, struct sensor_value *val)
+{
+	const struct lsm6dsv16x_config *cfg = dev->config;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+	lsm6dsv16x_act_thresholds_t thresholds;
+	float val_mg;
+
+	if (lsm6dsv16x_act_thresholds_get(ctx, &thresholds) < 0) {
+		LOG_DBG("failed to get thresholds");
+		return -EIO;
+	}
+
+	val_mg = wu_inact_ths_w_lsb[thresholds.inactivity_cfg.wu_inact_ths_w];
+	val_mg *= (float)thresholds.threshold;
+
+	sensor_ug_to_ms2(1000.0f * val_mg, val);
+
+	return 0;
+}
+
+static int lsm6dsv16x_accel_wake_duration_get(const struct device *dev, struct sensor_value *val)
+{
+	const struct lsm6dsv16x_config *cfg = dev->config;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+	lsm6dsv16x_act_thresholds_t thresholds;
+
+	if (lsm6dsv16x_act_thresholds_get(ctx, &thresholds) < 0) {
+		LOG_DBG("failed to get thresholds");
+		return -EIO;
+	}
+
+	val->val1 = thresholds.duration;
+	val->val2 = 0;
+
+	return 0;
+}
+
+static int lsm6dsv16x_accel_get_config(const struct device *dev,
+				       enum sensor_channel chan,
+				       enum sensor_attribute attr,
+				       struct sensor_value *val)
+{
+	const struct lsm6dsv16x_config *cfg = dev->config;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+	struct lsm6dsv16x_data *data = dev->data;
+
+	switch (attr) {
+	case SENSOR_ATTR_FULL_SCALE:
+		sensor_g_to_ms2(lsm6dsv16x_accel_fs_map[data->accel_fs], val);
+		break;
+	case SENSOR_ATTR_SAMPLING_FREQUENCY: {
+		lsm6dsv16x_data_rate_t odr;
+		int8_t mode;
+
+		if (lsm6dsv16x_xl_data_rate_get(ctx, &odr) < 0) {
+			return -EINVAL;
+		}
+
+		mode = (odr >> 4) & 0xf;
+
+		val->val1 = lsm6dsv16x_odr_map[mode][data->accel_freq];
+		val->val2 = 0;
+		break;
+	}
+	case SENSOR_ATTR_SLOPE_TH:
+		return lsm6dsv16x_accel_wake_threshold_get(dev, val);
+	case SENSOR_ATTR_SLOPE_DUR:
+		return lsm6dsv16x_accel_wake_duration_get(dev, val);
+	case SENSOR_ATTR_CONFIGURATION: {
+		lsm6dsv16x_xl_mode_t mode;
+
+		lsm6dsv16x_xl_mode_get(ctx, &mode);
+
+		switch (mode) {
+		case LSM6DSV16X_XL_HIGH_PERFORMANCE_MD:
+			val->val1 = 0;
+			break;
+		case LSM6DSV16X_XL_HIGH_ACCURACY_ODR_MD:
+			val->val1 = 1;
+			break;
+		case LSM6DSV16X_XL_ODR_TRIGGERED_MD:
+			val->val1 = 3;
+			break;
+		case LSM6DSV16X_XL_LOW_POWER_2_AVG_MD:
+			val->val1 = 4;
+			break;
+		case LSM6DSV16X_XL_LOW_POWER_4_AVG_MD:
+			val->val1 = 5;
+			break;
+		case LSM6DSV16X_XL_LOW_POWER_8_AVG_MD:
+			val->val1 = 6;
+			break;
+		case LSM6DSV16X_XL_NORMAL_MD:
+			val->val1 = 7;
+			break;
+		default:
+			return -EIO;
+		}
+
+		break;
+	}
+	default:
+		LOG_DBG("Attr attribute not supported.");
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+
+static int lsm6dsv16x_gyro_get_config(const struct device *dev,
+				      enum sensor_channel chan,
+				      enum sensor_attribute attr,
+				      struct sensor_value *val)
+{
+	const struct lsm6dsv16x_config *cfg = dev->config;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+	struct lsm6dsv16x_data *data = dev->data;
+
+	switch (attr) {
+	case SENSOR_ATTR_FULL_SCALE:
+		sensor_degrees_to_rad(lsm6dsv16x_gyro_fs_map[data->gyro_fs], val);
+		break;
+	case SENSOR_ATTR_SAMPLING_FREQUENCY: {
+		lsm6dsv16x_data_rate_t odr;
+		int8_t mode;
+
+		if (lsm6dsv16x_gy_data_rate_get(ctx, &odr) < 0) {
+			return -EINVAL;
+		}
+
+		mode = (odr >> 4) & 0xf;
+
+		val->val1 = lsm6dsv16x_odr_map[mode][data->gyro_freq];
+		val->val2 = 0;
+		break;
+	}
+	case SENSOR_ATTR_CONFIGURATION: {
+		lsm6dsv16x_gy_mode_t mode;
+
+		lsm6dsv16x_gy_mode_get(ctx, &mode);
+
+		switch (mode) {
+		case LSM6DSV16X_GY_HIGH_PERFORMANCE_MD:
+			val->val1 = 0;
+			break;
+		case LSM6DSV16X_GY_HIGH_ACCURACY_ODR_MD:
+			val->val1 = 1;
+			break;
+		case LSM6DSV16X_GY_SLEEP_MD:
+			val->val1 = 4;
+			break;
+		case LSM6DSV16X_GY_LOW_POWER_MD:
+			val->val1 = 5;
+			break;
+		default:
+			return -EIO;
+		}
+
+		break;
+	}
+	default:
+		LOG_DBG("Gyro attribute not supported.");
+		return -ENOTSUP;
+	}
+
+	return 0;
+}
+
+static int lsm6dsv16x_attr_get(const struct device *dev, enum sensor_channel chan,
+			       enum sensor_attribute attr, struct sensor_value *val)
+{
+	if (!lsm6dsv16x_is_active(dev)) {
+		return -EBUSY;
+	}
+
+	switch (chan) {
+	case SENSOR_CHAN_ACCEL_XYZ:
+		return lsm6dsv16x_accel_get_config(dev, chan, attr, val);
+	case SENSOR_CHAN_GYRO_XYZ:
+		return lsm6dsv16x_gyro_get_config(dev, chan, attr, val);
+	default:
+		LOG_WRN("attr_get() not supported on this channel.");
 		return -ENOTSUP;
 	}
 
@@ -434,6 +705,10 @@ static int lsm6dsv16x_sample_fetch(const struct device *dev,
 #if defined(CONFIG_LSM6DSV16X_SENSORHUB)
 	struct lsm6dsv16x_data *data = dev->data;
 #endif /* CONFIG_LSM6DSV16X_SENSORHUB */
+
+	if (!lsm6dsv16x_is_active(dev)) {
+		return -EBUSY;
+	}
 
 	switch (chan) {
 	case SENSOR_CHAN_ACCEL_XYZ:
@@ -564,15 +839,14 @@ static int lsm6dsv16x_gyro_channel_get(enum sensor_channel chan,
 static void lsm6dsv16x_gyro_channel_get_temp(struct sensor_value *val,
 					  struct lsm6dsv16x_data *data)
 {
-	int32_t micro_c;
-
 	/* convert units to micro Celsius. Raw temperature samples are
 	 * expressed in 256 LSB/deg_C units. And LSB output is 0 at 25 C.
 	 */
-	micro_c = (data->temp_sample * 1000000) / 256;
+	int64_t temp_sample = data->temp_sample;
+	int64_t micro_c = (temp_sample * 1000000LL) / 256;
 
-	val->val1 = micro_c / 1000000 + 25;
-	val->val2 = micro_c % 1000000;
+	val->val1 = (int32_t)(micro_c / 1000000) + 25;
+	val->val2 = (int32_t)(micro_c % 1000000);
 }
 #endif
 
@@ -602,12 +876,12 @@ static inline int lsm6dsv16x_magn_get_channel(enum sensor_channel chan,
 	}
 
 
-	sample[0] = sys_le16_to_cpu((int16_t)(data->ext_data[idx][0] |
-				    (data->ext_data[idx][1] << 8)));
-	sample[1] = sys_le16_to_cpu((int16_t)(data->ext_data[idx][2] |
-				    (data->ext_data[idx][3] << 8)));
-	sample[2] = sys_le16_to_cpu((int16_t)(data->ext_data[idx][4] |
-				    (data->ext_data[idx][5] << 8)));
+	sample[0] = (int16_t)(data->ext_data[idx][0] |
+			     (data->ext_data[idx][1] << 8));
+	sample[1] = (int16_t)(data->ext_data[idx][2] |
+			     (data->ext_data[idx][3] << 8));
+	sample[2] = (int16_t)(data->ext_data[idx][4] |
+			     (data->ext_data[idx][5] << 8));
 
 	switch (chan) {
 	case SENSOR_CHAN_MAGN_X:
@@ -645,8 +919,8 @@ static inline void lsm6dsv16x_hum_convert(struct sensor_value *val,
 		return;
 	}
 
-	raw_val = sys_le16_to_cpu((int16_t)(data->ext_data[idx][0] |
-					  (data->ext_data[idx][1] << 8)));
+	raw_val = (int16_t)(data->ext_data[idx][0] |
+			   (data->ext_data[idx][1] << 8));
 
 	/* find relative humidty by linear interpolation */
 	rh = (ht->y1 - ht->y0) * raw_val + ht->x1 * ht->y0 - ht->x0 * ht->y1;
@@ -669,9 +943,9 @@ static inline void lsm6dsv16x_press_convert(struct sensor_value *val,
 		return;
 	}
 
-	raw_val = sys_le32_to_cpu((int32_t)(data->ext_data[idx][0] |
-					  (data->ext_data[idx][1] << 8) |
-					  (data->ext_data[idx][2] << 16)));
+	raw_val = (int32_t)(data->ext_data[idx][0] |
+			   (data->ext_data[idx][1] << 8) |
+			   (data->ext_data[idx][2] << 16));
 
 	/* Pressure sensitivity is 4096 LSB/hPa */
 	/* Convert raw_val to val in kPa */
@@ -692,8 +966,8 @@ static inline void lsm6dsv16x_temp_convert(struct sensor_value *val,
 		return;
 	}
 
-	raw_val = sys_le16_to_cpu((int16_t)(data->ext_data[idx][3] |
-					  (data->ext_data[idx][4] << 8)));
+	raw_val = (int16_t)(data->ext_data[idx][3] |
+			   (data->ext_data[idx][4] << 8));
 
 	/* Temperature sensitivity is 100 LSB/deg C */
 	val->val1 = raw_val / 100;
@@ -706,6 +980,10 @@ static int lsm6dsv16x_channel_get(const struct device *dev,
 			       struct sensor_value *val)
 {
 	struct lsm6dsv16x_data *data = dev->data;
+
+	if (!lsm6dsv16x_is_active(dev)) {
+		return -EBUSY;
+	}
 
 	switch (chan) {
 	case SENSOR_CHAN_ACCEL_X:
@@ -772,13 +1050,18 @@ static int lsm6dsv16x_channel_get(const struct device *dev,
 	return 0;
 }
 
-static const struct sensor_driver_api lsm6dsv16x_driver_api = {
+static DEVICE_API(sensor, lsm6dsv16x_driver_api) = {
 	.attr_set = lsm6dsv16x_attr_set,
+	.attr_get = lsm6dsv16x_attr_get,
 #if CONFIG_LSM6DSV16X_TRIGGER
 	.trigger_set = lsm6dsv16x_trigger_set,
 #endif
 	.sample_fetch = lsm6dsv16x_sample_fetch,
 	.channel_get = lsm6dsv16x_channel_get,
+#ifdef CONFIG_SENSOR_ASYNC_API
+	.get_decoder = lsm6dsv16x_get_decoder,
+	.submit = lsm6dsv16x_submit,
+#endif
 };
 
 static int lsm6dsv16x_init_chip(const struct device *dev)
@@ -788,6 +1071,20 @@ static int lsm6dsv16x_init_chip(const struct device *dev)
 	struct lsm6dsv16x_data *lsm6dsv16x = dev->data;
 	uint8_t chip_id;
 	uint8_t odr, fs;
+
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(i3c)
+	if (cfg->i3c.bus != NULL) {
+		/*
+		 * Need to grab the pointer to the I3C device descriptor
+		 * before we can talk to the sensor.
+		 */
+		lsm6dsv16x->i3c_dev = i3c_device_find(cfg->i3c.bus, &cfg->i3c.dev_id);
+		if (lsm6dsv16x->i3c_dev == NULL) {
+			LOG_ERR("Cannot find I3C device descriptor");
+			return -ENODEV;
+		}
+	}
+#endif
 
 	/* All registers except 0x01 are different between banks, including the WHO_AM_I
 	 * register and the register used for a SW reset.  If the lsm6dsv16x wasn't on the user
@@ -811,13 +1108,26 @@ static int lsm6dsv16x_init_chip(const struct device *dev)
 		return -EIO;
 	}
 
-	/* reset device (sw_por) */
-	if (lsm6dsv16x_reset_set(ctx, LSM6DSV16X_GLOBAL_RST) < 0) {
-		return -EIO;
-	}
+	/* Resetting the whole device while using I3C will also reset the DA, therefore perform
+	 * only a software reset if the bus is I3C. It should be assumed that the device was
+	 * already fully reset by the I3C CCC RSTACT (whole chip) done as apart of the I3C Bus
+	 * initialization.
+	 */
+	if (ON_I3C_BUS(cfg)) {
+		/* Restore default configuration */
+		lsm6dsv16x_reset_set(ctx, LSM6DSV16X_RESTORE_CAL_PARAM);
 
-	/* wait 30ms as reported in AN5763 */
-	k_sleep(K_MSEC(30));
+		/* wait 150us as reported in AN5763 */
+		k_sleep(K_USEC(150));
+	} else {
+		/* reset device (sw_por) */
+		if (lsm6dsv16x_reset_set(ctx, LSM6DSV16X_GLOBAL_RST) < 0) {
+			return -EIO;
+		}
+
+		/* wait 30ms as reported in AN5763 */
+		k_sleep(K_MSEC(30));
+	}
 
 	fs = cfg->accel_range;
 	LOG_DBG("accel range is %d", fs);
@@ -825,7 +1135,7 @@ static int lsm6dsv16x_init_chip(const struct device *dev)
 		LOG_ERR("failed to set accelerometer range %d", fs);
 		return -EIO;
 	}
-	lsm6dsv16x->acc_gain = lsm6dsv16x_accel_fs_map[fs] * GAIN_UNIT_XL / 2;
+	lsm6dsv16x->acc_gain = lsm6dsv16x_calc_accel_gain(fs);
 
 	odr = cfg->accel_odr;
 	LOG_DBG("accel odr is %d", odr);
@@ -840,7 +1150,7 @@ static int lsm6dsv16x_init_chip(const struct device *dev)
 		LOG_ERR("failed to set gyroscope range %d", fs);
 		return -EIO;
 	}
-	lsm6dsv16x->gyro_gain = (lsm6dsv16x_gyro_fs_sens[fs] * GAIN_UNIT_G);
+	lsm6dsv16x->gyro_gain = lsm6dsv16x_calc_gyro_gain(fs);
 
 	odr = cfg->gyro_odr;
 	LOG_DBG("gyro odr is %d", odr);
@@ -849,6 +1159,23 @@ static int lsm6dsv16x_init_chip(const struct device *dev)
 		LOG_ERR("failed to set gyroscope odr %d", odr);
 		return -EIO;
 	}
+
+#if DT_ANY_INST_ON_BUS_STATUS_OKAY(i3c)
+	if (IS_ENABLED(CONFIG_LSM6DSV16X_STREAM) && (ON_I3C_BUS(cfg))) {
+		/*
+		 * Set MRL to the Max Size of the FIFO so the entire FIFO can be read
+		 * out at once
+		 */
+		struct i3c_ccc_mrl setmrl = {
+			.len = 0x0700,
+			.ibi_len = lsm6dsv16x->i3c_dev->data_length.max_ibi,
+		};
+		if (i3c_ccc_do_setmrl(lsm6dsv16x->i3c_dev, &setmrl) < 0) {
+			LOG_ERR("failed to set mrl");
+			return -EIO;
+		}
+	}
+#endif
 
 	if (lsm6dsv16x_block_data_update_set(ctx, 1) < 0) {
 		LOG_DBG("failed to set BDU mode");
@@ -893,6 +1220,46 @@ static int lsm6dsv16x_init(const struct device *dev)
 	return 0;
 }
 
+#if defined(CONFIG_PM_DEVICE)
+static int lsm6dsv16x_pm_action(const struct device *dev, enum pm_device_action action)
+{
+	struct lsm6dsv16x_data *data = dev->data;
+	const struct lsm6dsv16x_config *cfg = dev->config;
+	stmdev_ctx_t *ctx = (stmdev_ctx_t *)&cfg->ctx;
+	int ret = 0;
+
+	LOG_DBG("PM action: %d", (int)action);
+
+	switch (action) {
+	case PM_DEVICE_ACTION_RESUME:
+		if (lsm6dsv16x_xl_data_rate_set(ctx, data->accel_freq) < 0) {
+			LOG_ERR("failed to set accelerometer odr %d", (int)data->accel_freq);
+			ret = -EIO;
+		}
+		if (lsm6dsv16x_gy_data_rate_set(ctx, data->gyro_freq) < 0) {
+			LOG_ERR("failed to set gyroscope odr %d", (int)data->gyro_freq);
+			ret = -EIO;
+		}
+		break;
+	case PM_DEVICE_ACTION_SUSPEND:
+		if (lsm6dsv16x_xl_data_rate_set(ctx, LSM6DSV16X_DT_ODR_OFF) < 0) {
+			LOG_ERR("failed to disable accelerometer");
+			ret = -EIO;
+		}
+		if (lsm6dsv16x_gy_data_rate_set(ctx, LSM6DSV16X_DT_ODR_OFF) < 0) {
+			LOG_ERR("failed to disable gyroscope");
+			ret = -EIO;
+		}
+		break;
+	default:
+		ret = -ENOTSUP;
+		break;
+	}
+
+	return ret;
+}
+#endif /* CONFIG_PM_DEVICE */
+
 #if DT_NUM_INST_STATUS_OKAY(DT_DRV_COMPAT) == 0
 #warning "LSM6DSV16X driver enabled without any devices"
 #endif
@@ -902,19 +1269,12 @@ static int lsm6dsv16x_init(const struct device *dev)
  * LSM6DSV16X_DEFINE_I2C().
  */
 
-#define LSM6DSV16X_DEVICE_INIT(inst)					\
-	SENSOR_DEVICE_DT_INST_DEFINE(inst,				\
-			    lsm6dsv16x_init,				\
-			    NULL,					\
-			    &lsm6dsv16x_data_##inst,			\
-			    &lsm6dsv16x_config_##inst,			\
-			    POST_KERNEL,				\
-			    CONFIG_SENSOR_INIT_PRIORITY,		\
-			    &lsm6dsv16x_driver_api);
-
-/*
- * Instantiation macros used when a device is on a SPI bus.
- */
+#define LSM6DSV16X_DEVICE_INIT(inst)                                                               \
+	PM_DEVICE_DT_INST_DEFINE(inst, lsm6dsv16x_pm_action);                                      \
+	SENSOR_DEVICE_DT_INST_DEFINE(inst, lsm6dsv16x_init, PM_DEVICE_DT_INST_GET(inst),           \
+				     &lsm6dsv16x_data_##inst, &lsm6dsv16x_config_##inst,           \
+				     POST_KERNEL, CONFIG_SENSOR_INIT_PRIORITY,                     \
+				     &lsm6dsv16x_driver_api);
 
 #ifdef CONFIG_LSM6DSV16X_TRIGGER
 #define LSM6DSV16X_CFG_IRQ(inst)					\
@@ -927,19 +1287,35 @@ static int lsm6dsv16x_init(const struct device *dev)
 #define LSM6DSV16X_CFG_IRQ(inst)
 #endif /* CONFIG_LSM6DSV16X_TRIGGER */
 
+#define LSM6DSV16X_CONFIG_COMMON(inst)						\
+	.accel_odr = DT_INST_PROP(inst, accel_odr),				\
+	.accel_range = DT_INST_PROP(inst, accel_range),				\
+	.gyro_odr = DT_INST_PROP(inst, gyro_odr),				\
+	.gyro_range = DT_INST_PROP(inst, gyro_range),				\
+	IF_ENABLED(CONFIG_LSM6DSV16X_STREAM,					\
+		   (.fifo_wtm = DT_INST_PROP(inst, fifo_watermark),		\
+		    .accel_batch  = DT_INST_PROP(inst, accel_fifo_batch_rate),	\
+		    .gyro_batch  = DT_INST_PROP(inst, gyro_fifo_batch_rate),	\
+		    .sflp_odr  = DT_INST_PROP(inst, sflp_odr),			\
+		    .sflp_fifo_en  = DT_INST_PROP(inst, sflp_fifo_enable),	\
+		    .temp_batch  = DT_INST_PROP(inst, temp_fifo_batch_rate),))	\
+	IF_ENABLED(UTIL_OR(DT_INST_NODE_HAS_PROP(inst, int1_gpios),		\
+			   DT_INST_NODE_HAS_PROP(inst, int2_gpios)),		\
+		   (LSM6DSV16X_CFG_IRQ(inst)))
+
+/*
+ * Instantiation macros used when a device is on a SPI bus.
+ */
+
 #define LSM6DSV16X_SPI_OP  (SPI_WORD_SET(8) |				\
 			 SPI_OP_MODE_MASTER |				\
 			 SPI_MODE_CPOL |				\
 			 SPI_MODE_CPHA)					\
 
-#define LSM6DSV16X_CONFIG_COMMON(inst)					\
-	.accel_odr = DT_INST_PROP(inst, accel_odr),			\
-	.accel_range = DT_INST_PROP(inst, accel_range),			\
-	.gyro_odr = DT_INST_PROP(inst, gyro_odr),			\
-	.gyro_range = DT_INST_PROP(inst, gyro_range),			\
-	IF_ENABLED(UTIL_OR(DT_INST_NODE_HAS_PROP(inst, int1_gpios),	\
-			   DT_INST_NODE_HAS_PROP(inst, int2_gpios)),	\
-		   (LSM6DSV16X_CFG_IRQ(inst)))
+#define LSM6DSV16X_SPI_RTIO_DEFINE(inst)				\
+	SPI_DT_IODEV_DEFINE(lsm6dsv16x_iodev_##inst,			\
+		DT_DRV_INST(inst), LSM6DSV16X_SPI_OP, 0U);		\
+	RTIO_DEFINE(lsm6dsv16x_rtio_ctx_##inst, 4, 4);
 
 #define LSM6DSV16X_CONFIG_SPI(inst)					\
 	{								\
@@ -952,9 +1328,24 @@ static int lsm6dsv16x_init(const struct device *dev)
 		LSM6DSV16X_CONFIG_COMMON(inst)				\
 	}
 
+#define LSM6DSV16X_DEFINE_SPI(inst)					\
+	IF_ENABLED(CONFIG_LSM6DSV16X_STREAM, (LSM6DSV16X_SPI_RTIO_DEFINE(inst))); \
+	static struct lsm6dsv16x_data lsm6dsv16x_data_##inst =	{	\
+		IF_ENABLED(CONFIG_LSM6DSV16X_STREAM,			\
+			(.rtio_ctx = &lsm6dsv16x_rtio_ctx_##inst,	\
+			 .iodev = &lsm6dsv16x_iodev_##inst,		\
+			 .bus_type = BUS_SPI,))				\
+	};								\
+	static const struct lsm6dsv16x_config lsm6dsv16x_config_##inst = \
+		LSM6DSV16X_CONFIG_SPI(inst);				\
+
 /*
  * Instantiation macros used when a device is on an I2C bus.
  */
+
+#define LSM6DSV16X_I2C_RTIO_DEFINE(inst)				\
+	I2C_DT_IODEV_DEFINE(lsm6dsv16x_iodev_##inst, DT_DRV_INST(inst));\
+	RTIO_DEFINE(lsm6dsv16x_rtio_ctx_##inst, 4, 4);
 
 #define LSM6DSV16X_CONFIG_I2C(inst)					\
 	{								\
@@ -965,17 +1356,67 @@ static int lsm6dsv16x_init(const struct device *dev)
 		LSM6DSV16X_CONFIG_COMMON(inst)				\
 	}
 
+
+#define LSM6DSV16X_DEFINE_I2C(inst)					\
+	IF_ENABLED(CONFIG_LSM6DSV16X_STREAM, (LSM6DSV16X_I2C_RTIO_DEFINE(inst))); \
+	static struct lsm6dsv16x_data lsm6dsv16x_data_##inst =	{	\
+		IF_ENABLED(CONFIG_LSM6DSV16X_STREAM,			\
+			(.rtio_ctx = &lsm6dsv16x_rtio_ctx_##inst,	\
+			 .iodev = &lsm6dsv16x_iodev_##inst,		\
+			 .bus_type = BUS_I2C,))				\
+	};								\
+	static const struct lsm6dsv16x_config lsm6dsv16x_config_##inst = \
+		LSM6DSV16X_CONFIG_I2C(inst);				\
+
+/*
+ * Instantiation macros used when a device is on an I3C bus.
+ */
+
+#define LSM6DSV16X_I3C_RTIO_DEFINE(inst)                                       \
+	I3C_DT_IODEV_DEFINE(lsm6dsv16x_i3c_iodev_##inst, DT_DRV_INST(inst));   \
+	RTIO_DEFINE(lsm6dsv16x_rtio_ctx_##inst, 4, 4);
+
+#define LSM6DSV16X_CONFIG_I3C(inst)					            \
+	{								            \
+		STMEMSC_CTX_I3C(&lsm6dsv16x_config_##inst.stmemsc_cfg),	            \
+		.stmemsc_cfg = {					            \
+			.i3c = &lsm6dsv16x_data_##inst.i3c_dev,		            \
+		},							            \
+		.i3c.bus = DEVICE_DT_GET(DT_INST_BUS(inst)),		            \
+		.i3c.dev_id = I3C_DEVICE_ID_DT_INST(inst),		            \
+		IF_ENABLED(CONFIG_LSM6DSV16X_TRIGGER,                               \
+			  (.int_en_i3c = DT_INST_PROP(inst, int_en_i3c),            \
+			   .bus_act_sel = DT_INST_ENUM_IDX(inst, bus_act_sel_us),)) \
+		LSM6DSV16X_CONFIG_COMMON(inst)				            \
+	}
+
+#define LSM6DSV16X_DEFINE_I3C(inst)					\
+	IF_ENABLED(CONFIG_LSM6DSV16X_STREAM, (LSM6DSV16X_I3C_RTIO_DEFINE(inst))); \
+	static struct lsm6dsv16x_data lsm6dsv16x_data_##inst = {	\
+		IF_ENABLED(CONFIG_LSM6DSV16X_STREAM,			\
+			(.rtio_ctx = &lsm6dsv16x_rtio_ctx_##inst,	\
+			 .iodev = &lsm6dsv16x_i3c_iodev_##inst,		\
+			 .bus_type = BUS_I3C,))				\
+	};								\
+	static const struct lsm6dsv16x_config lsm6dsv16x_config_##inst = \
+		LSM6DSV16X_CONFIG_I3C(inst);				\
+
+#define LSM6DSV16X_DEFINE_I3C_OR_I2C(inst)				\
+	COND_CODE_0(DT_INST_PROP_BY_IDX(inst, reg, 1),			\
+		    (LSM6DSV16X_DEFINE_I2C(inst)),			\
+		    (LSM6DSV16X_DEFINE_I3C(inst)))
+
 /*
  * Main instantiation macro. Use of COND_CODE_1() selects the right
  * bus-specific macro at preprocessor time.
  */
 
-#define LSM6DSV16X_DEFINE(inst)						\
-	static struct lsm6dsv16x_data lsm6dsv16x_data_##inst;			\
-	static const struct lsm6dsv16x_config lsm6dsv16x_config_##inst =	\
-		COND_CODE_1(DT_INST_ON_BUS(inst, spi),			\
-			(LSM6DSV16X_CONFIG_SPI(inst)),			\
-			(LSM6DSV16X_CONFIG_I2C(inst)));			\
+#define LSM6DSV16X_DEFINE(inst)							\
+	COND_CODE_1(DT_INST_ON_BUS(inst, spi),					\
+		(LSM6DSV16X_DEFINE_SPI(inst)),					\
+		(COND_CODE_1(DT_INST_ON_BUS(inst, i3c),				\
+			(LSM6DSV16X_DEFINE_I3C_OR_I2C(inst)),			\
+			(LSM6DSV16X_DEFINE_I2C(inst)))));			\
 	LSM6DSV16X_DEVICE_INIT(inst)
 
 DT_INST_FOREACH_STATUS_OKAY(LSM6DSV16X_DEFINE)

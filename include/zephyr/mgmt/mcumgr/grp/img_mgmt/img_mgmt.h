@@ -1,6 +1,6 @@
 /*
  * Copyright (c) 2018-2021 mcumgr authors
- * Copyright (c) 2022-2023 Nordic Semiconductor ASA
+ * Copyright (c) 2022-2024 Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -9,10 +9,13 @@
 #define H_IMG_MGMT_
 
 #include <inttypes.h>
-#include <zephyr/mgmt/mcumgr/mgmt/mgmt.h>
-#include <zephyr/mgmt/mcumgr/smp/smp.h>
 #include <bootutil/image.h>
 #include <zcbor_common.h>
+
+#ifdef CONFIG_MCUMGR_GRP_IMG_VERBOSE_ERR
+#include <zephyr/mgmt/mcumgr/mgmt/mgmt.h>
+#include <zephyr/mgmt/mcumgr/smp/smp.h>
+#endif
 
 /**
  * @brief MCUmgr img_mgmt API
@@ -56,6 +59,7 @@ extern "C" {
 #define IMG_MGMT_ID_CORELIST	3
 #define IMG_MGMT_ID_CORELOAD	4
 #define IMG_MGMT_ID_ERASE	5
+#define IMG_MGMT_ID_SLOT_INFO	6
 
 /**
  * Command result codes for image management group.

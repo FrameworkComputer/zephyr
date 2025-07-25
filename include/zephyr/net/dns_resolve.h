@@ -15,6 +15,7 @@
 
 #include <zephyr/kernel.h>
 #include <zephyr/net/net_ip.h>
+#include <zephyr/net/net_if.h>
 #include <zephyr/net/socket_poll.h>
 #include <zephyr/net/net_core.h>
 
@@ -141,9 +142,9 @@ enum dns_query_type {
 /** How many sockets the dispatcher is able to poll. */
 #define DNS_DISPATCHER_MAX_POLL (DNS_RESOLVER_MAX_POLL + MDNS_MAX_POLL + LLMNR_MAX_POLL)
 
-#if defined(CONFIG_NET_SOCKETS_POLL_MAX)
-BUILD_ASSERT(CONFIG_NET_SOCKETS_POLL_MAX >= DNS_DISPATCHER_MAX_POLL,
-	     "CONFIG_NET_SOCKETS_POLL_MAX must be larger than " STRINGIFY(DNS_DISPATCHER_MAX_POLL));
+#if defined(CONFIG_ZVFS_POLL_MAX)
+BUILD_ASSERT(CONFIG_ZVFS_POLL_MAX >= DNS_DISPATCHER_MAX_POLL,
+	     "CONFIG_ZVFS_POLL_MAX must be larger than " STRINGIFY(DNS_DISPATCHER_MAX_POLL));
 #endif
 
 /** @brief What is the type of the socket given to DNS socket dispatcher,
@@ -156,13 +157,14 @@ enum dns_socket_type {
 
 struct dns_resolve_context;
 struct mdns_responder_context;
+struct dns_socket_dispatcher;
 
 /**
  * @typedef dns_socket_dispatcher_cb
  * @brief Callback used when the DNS socket dispatcher has found a handler for
  * this type of socket.
  *
- * @param ctx DNS resolve or mDNS responder context.
+ * @param ctx struct dns_socket_dispatcher context.
  * @param sock Socket which is seeing traffic.
  * @param addr Socket address of the peer that sent the DNS packet.
  * @param addrlen Length of the socket address.
@@ -171,7 +173,7 @@ struct mdns_responder_context;
  *
  * @return 0 if ok, <0 if error
  */
-typedef int (*dns_socket_dispatcher_cb)(void *ctx, int sock,
+typedef int (*dns_socket_dispatcher_cb)(struct dns_socket_dispatcher *ctx, int sock,
 					struct sockaddr *addr, size_t addrlen,
 					struct net_buf *buf, size_t data_len);
 
@@ -202,6 +204,8 @@ struct dns_socket_dispatcher {
 	int fds_len;
 	/** Local socket to dispatch */
 	int sock;
+	/** Interface we are bound to */
+	int ifindex;
 	/** There can be two contexts to dispatch. This points to the other
 	 * context if sharing the socket between resolver / responder.
 	 */
@@ -210,13 +214,6 @@ struct dns_socket_dispatcher {
 	struct k_mutex lock;
 	/** Buffer allocation timeout */
 	k_timeout_t buf_timeout;
-};
-
-struct mdns_responder_context {
-	struct sockaddr server_addr;
-	struct dns_socket_dispatcher dispatcher;
-	struct zsock_pollfd fds[1];
-	int sock;
 };
 
 /**
@@ -342,6 +339,11 @@ struct dns_resolve_context {
 		/** Connection to the DNS server */
 		int sock;
 
+		/** Network interface index if the DNS resolving should be done
+		 * via this interface. Value 0 indicates any interface can be used.
+		 */
+		int if_index;
+
 		/** Is this server mDNS one */
 		uint8_t is_mdns : 1;
 
@@ -423,6 +425,29 @@ struct dns_resolve_context {
 	/** Is this context in use */
 	enum dns_resolve_context_state state;
 };
+
+/** @cond INTERNAL_HIDDEN */
+
+struct mdns_probe_user_data {
+	struct mdns_responder_context *ctx;
+	char query[DNS_MAX_NAME_SIZE + 1];
+	uint16_t dns_id;
+};
+
+struct mdns_responder_context {
+	struct sockaddr server_addr;
+	struct dns_socket_dispatcher dispatcher;
+	struct zsock_pollfd fds[1];
+	int sock;
+	struct net_if *iface;
+#if defined(CONFIG_MDNS_RESPONDER_PROBE)
+	struct k_work_delayable probe_timer;
+	struct dns_resolve_context probe_ctx;
+	struct mdns_probe_user_data probe_data;
+#endif
+};
+
+/** @endcond */
 
 /**
  * @brief Init DNS resolving context.

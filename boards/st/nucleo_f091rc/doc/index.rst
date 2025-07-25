@@ -1,7 +1,4 @@
-.. _nucleo_f091rc_board:
-
-ST Nucleo F091RC
-################
+.. zephyr:board:: nucleo_f091rc
 
 Overview
 ********
@@ -20,10 +17,6 @@ The STM32 Nucleo board integrates the ST-LINK/V2-1 debugger and programmer.
 The STM32 Nucleo board comes with the STM32 comprehensive software HAL library together
 with various packaged software examples.
 
-.. image:: img/nucleo_f091rc.jpg
-   :align: center
-   :alt: Nucleo F091RC
-
 More information about the board can be found at the `Nucleo F091RC website`_.
 
 Hardware
@@ -36,7 +29,6 @@ Nucleo F091RC provides the following hardware components:
   - Arduino* Uno V3 connectivity
   - ST morpho extension pin headers for full access to all STM32 I/Os
 
-- ARM* mbed*
 - On-board ST-LINK/V2-1 debugger/programmer with SWD connector:
 
   - Selection-mode switch to use the kit as a standalone ST-LINK/V2-1
@@ -57,11 +49,6 @@ Nucleo F091RC provides the following hardware components:
   - Mass storage
   - Debug port
 
-- Support of wide choice of Integrated Development Environments (IDEs) including:
-
-  - IAR
-  - ARM Keil
-  - GCC-based IDEs
 
 More information about STM32F091RC can be found in the
 `STM32F091 reference manual`_
@@ -150,6 +137,8 @@ For more details please refer to `STM32 Nucleo-64 board User Manual`_.
 Programming and Debugging
 *************************
 
+Nucleo F091RC board includes an ST-LINK/V2-1 embedded debug tool interface.
+
 Applications for the ``nucleo_f091rc`` board configuration can be built and
 flashed in the usual way (see :ref:`build_an_application` and
 :ref:`application_run` for more details).
@@ -157,8 +146,16 @@ flashed in the usual way (see :ref:`build_an_application` and
 Flashing
 ========
 
-Nucleo F091RC board includes an ST-LINK/V2-1 embedded debug tool interface.
-This interface is supported by the openocd version included in the Zephyr SDK.
+The board is configured to be flashed using west `STM32CubeProgrammer`_ runner,
+so its :ref:`installation <stm32cubeprog-flash-host-tools>` is required.
+
+Alternatively, OpenOCD or JLink can also be used to flash the board using
+the ``--runner`` (or ``-r``) option:
+
+.. code-block:: console
+
+   $ west flash --runner openocd
+   $ west flash --runner jlink
 
 Flashing an application to Nucleo F091RC
 ----------------------------------------
@@ -176,7 +173,7 @@ Debugging
 =========
 
 You can debug an application in the usual way.  Here is an example for the
-:ref:`hello_world` application.
+:zephyr:code-sample:`hello_world` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/hello_world
@@ -197,3 +194,6 @@ References
 
 .. _STM32 Nucleo-64 board User Manual:
    https://www.st.com/resource/en/user_manual/dm00105823.pdf
+
+.. _STM32CubeProgrammer:
+   https://www.st.com/en/development-tools/stm32cubeprog.html

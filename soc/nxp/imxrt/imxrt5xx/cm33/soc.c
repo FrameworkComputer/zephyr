@@ -187,7 +187,7 @@ static void usb_device_clock_init(void)
 
 #endif
 
-void z_arm_platform_init(void)
+void soc_reset_hook(void)
 {
 #ifndef CONFIG_NXP_IMXRT_BOOT_HEADER
 	/*
@@ -284,6 +284,11 @@ void __weak rt5xx_clock_init(void)
 	usb_device_clock_init();
 #endif
 
+#if (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(flexcomm0), nxp_lpc_i2s, okay) && CONFIG_I2S)
+	/* attach AUDIO PLL clock to FLEXCOMM1 (I2S_PDM) */
+	CLOCK_AttachClk(kAUDIO_PLL_to_FLEXCOMM0);
+#endif
+
 #if (DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(flexcomm1), nxp_lpc_i2s, okay) && CONFIG_I2S)
 	/* attach AUDIO PLL clock to FLEXCOMM1 (I2S1) */
 	CLOCK_AttachClk(kAUDIO_PLL_to_FLEXCOMM1);
@@ -298,14 +303,25 @@ void __weak rt5xx_clock_init(void)
 	CLOCK_AttachClk(kFRO_DIV4_to_FLEXCOMM4);
 #endif
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(i3c0), nxp_mcux_i3c, okay)
-	/* Attach main clock to I3C, divider will be set in i3c_mcux.c */
+	/* Attach main clock to I3C */
 	CLOCK_AttachClk(kMAIN_CLK_to_I3C_CLK);
 	CLOCK_AttachClk(kLPOSC_to_I3C_TC_CLK);
+
+	CLOCK_SetClkDiv(kCLOCK_DivI3cClk,
+			DT_PROP(DT_NODELABEL(i3c0), clk_divider));
+	CLOCK_SetClkDiv(kCLOCK_DivI3cSlowClk,
+			DT_PROP(DT_NODELABEL(i3c0), clk_divider_slow));
+	CLOCK_SetClkDiv(kCLOCK_DivI3cTcClk,
+			DT_PROP(DT_NODELABEL(i3c0), clk_divider_tc));
 #endif
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(hs_spi1), nxp_lpc_spi, okay)
 	CLOCK_AttachClk(kFRO_DIV4_to_FLEXCOMM16);
 #endif
 #if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(flexcomm12), nxp_lpc_usart, okay)
+	/* Switch FLEXCOMM12 to FRG */
+	CLOCK_AttachClk(kFRG_to_FLEXCOMM12);
+#endif
+#if DT_NODE_HAS_COMPAT_STATUS(DT_NODELABEL(flexcomm12), nxp_lpc_spi, okay)
 	/* Switch FLEXCOMM12 to FRG */
 	CLOCK_AttachClk(kFRG_to_FLEXCOMM12);
 #endif
@@ -346,7 +362,7 @@ void __weak rt5xx_clock_init(void)
 	/* Switch CLKOUT to FRO_DIV2 */
 	CLOCK_AttachClk(kFRO_DIV2_to_CLKOUT);
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(usdhc0), okay) && CONFIG_IMX_USDHC
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(usdhc0)) && CONFIG_IMX_USDHC
 	/* Make sure USDHC ram buffer has been power up*/
 	POWER_DisablePD(kPDRUNCFG_APD_USDHC0_SRAM);
 	POWER_DisablePD(kPDRUNCFG_PPD_USDHC0_SRAM);
@@ -361,7 +377,7 @@ void __weak rt5xx_clock_init(void)
 	RESET_PeripheralReset(kSDIO0_RST_SHIFT_RSTn);
 #endif
 
-#if DT_NODE_HAS_STATUS(DT_NODELABEL(smartdma), okay) && CONFIG_DMA_MCUX_SMARTDMA
+#if DT_NODE_HAS_STATUS_OKAY(DT_NODELABEL(smartdma)) && CONFIG_DMA_MCUX_SMARTDMA
 	/* Power up SMARTDMA ram */
 	POWER_DisablePD(kPDRUNCFG_APD_SMARTDMA_SRAM);
 	POWER_DisablePD(kPDRUNCFG_PPD_SMARTDMA_SRAM);
@@ -433,6 +449,13 @@ void __weak rt5xx_clock_init(void)
 
 	/* Set main clock to FRO as deep sleep clock by default. */
 	POWER_SetDeepSleepClock(kDeepSleepClk_Fro);
+
+#if CONFIG_AUDIO_CODEC_WM8904
+	/* attach AUDIO PLL clock to MCLK */
+	CLOCK_AttachClk(kAUDIO_PLL_to_MCLK_CLK);
+	CLOCK_SetClkDiv(kCLOCK_DivMclkClk, 1);
+	SYSCTL1->MCLKPINDIR = SYSCTL1_MCLKPINDIR_MCLKPINDIR_MASK;
+#endif
 }
 
 #if CONFIG_MIPI_DSI
@@ -499,16 +522,16 @@ void __weak imxrt_deinit_display_interface(void)
 
 #endif
 
+extern void rt5xx_power_init(void);
+
 /**
  *
  * @brief Perform basic hardware initialization
  *
  * Initialize the interrupt controller device drivers.
  * Also initialize the timer device driver, if required.
- *
- * @return 0
  */
-static int nxp_rt500_init(void)
+void soc_early_init_hook(void)
 {
 	/* Initialize clocks with tool generated code */
 	rt5xx_clock_init();
@@ -524,8 +547,8 @@ static int nxp_rt500_init(void)
 	IOPCTL->PIO[1][15] = 0;
 	IOPCTL->PIO[3][28] = 0;
 	IOPCTL->PIO[3][29] = 0;
+#ifdef CONFIG_PM
+	rt5xx_power_init();
+#endif
 
-	return 0;
 }
-
-SYS_INIT(nxp_rt500_init, PRE_KERNEL_1, 0);

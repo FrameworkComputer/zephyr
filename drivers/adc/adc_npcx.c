@@ -4,12 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/*
- * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
- * #line marks the *next* line, so it is off by one.
- */
-#line 12
-
 #define DT_DRV_COMPAT nuvoton_npcx_adc
 
 #include <assert.h>
@@ -847,7 +841,7 @@ static int adc_npcx_init(const struct device *dev)
 		irq_enable(DT_INST_IRQN(n));					\
 	}									\
 										\
-	static const struct adc_driver_api adc_npcx_driver_api_##n = {		\
+	static DEVICE_API(adc, adc_npcx_driver_api_##n) = {			\
 		.channel_setup = adc_npcx_channel_setup,			\
 		.read = adc_npcx_read,						\
 		.ref_internal = DT_INST_PROP(n, vref_mv),			\

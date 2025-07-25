@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2019-2021, Nordic Semiconductor ASA
+ * Copyright (c) 2019-2024, Nordic Semiconductor ASA
  *
  * SPDX-License-Identifier: Apache-2.0
  */
@@ -482,11 +482,16 @@ static int qspi_rdsr(const struct device *dev, uint8_t sr_num)
 }
 
 /* Wait until RDSR confirms write is not in progress. */
-static int qspi_wait_while_writing(const struct device *dev)
+static int qspi_wait_while_writing(const struct device *dev, k_timeout_t poll_period)
 {
 	int rc;
 
 	do {
+#ifdef CONFIG_MULTITHREADING
+		if (!K_TIMEOUT_EQ(poll_period, K_NO_WAIT)) {
+			k_sleep(poll_period);
+		}
+#endif
 		rc = qspi_rdsr(dev, 1);
 	} while ((rc >= 0)
 		 && ((rc & SPI_NOR_WIP_BIT) != 0U));
@@ -557,7 +562,7 @@ static int qspi_wrsr(const struct device *dev, uint8_t sr_val, uint8_t sr_num)
 	 * corrupted.  Wait.
 	 */
 	if (rc == 0) {
-		rc = qspi_wait_while_writing(dev);
+		rc = qspi_wait_while_writing(dev, K_NO_WAIT);
 	}
 
 	return rc;
@@ -602,6 +607,16 @@ static int qspi_erase(const struct device *dev, uint32_t addr, uint32_t size)
 		if (res == NRFX_SUCCESS) {
 			addr += adj;
 			size -= adj;
+
+			/* Erasing flash pages takes a significant period of time and the
+			 * flash memory is unavailable to perform additional operations
+			 * until done.
+			 */
+			rc = qspi_wait_while_writing(dev, K_MSEC(10));
+			if (rc < 0) {
+				LOG_ERR("wait error at 0x%lx size %zu", (long)addr, size);
+				break;
+			}
 		} else {
 			LOG_ERR("erase error at 0x%lx size %zu", (long)addr, size);
 			rc = qspi_get_zephyr_ret_code(res);
@@ -1161,11 +1176,21 @@ qspi_flash_get_parameters(const struct device *dev)
 	return &qspi_flash_parameters;
 }
 
-static const struct flash_driver_api qspi_nor_api = {
+int qspi_nor_get_size(const struct device *dev, uint64_t *size)
+{
+	ARG_UNUSED(dev);
+
+	*size = (uint64_t)(INST_0_BYTES);
+
+	return 0;
+}
+
+static DEVICE_API(flash, qspi_nor_api) = {
 	.read = qspi_nor_read,
 	.write = qspi_nor_write,
 	.erase = qspi_nor_erase,
 	.get_parameters = qspi_flash_get_parameters,
+	.get_size = qspi_nor_get_size,
 #if defined(CONFIG_FLASH_PAGE_LAYOUT)
 	.page_layout = qspi_nor_pages_layout,
 #endif

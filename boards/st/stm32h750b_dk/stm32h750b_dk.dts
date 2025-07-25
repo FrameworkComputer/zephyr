@@ -7,6 +7,7 @@
 /dts-v1/;
 #include <st/h7/stm32h750Xb.dtsi>
 #include <st/h7/stm32h750xbhx-pinctrl.dtsi>
+#include "arduino_r3_connector.dtsi"
 #include <zephyr/dt-bindings/input/input-event-codes.h>
 
 / {
@@ -20,6 +21,7 @@
 		zephyr,flash = &flash0;
 		zephyr,flash-controller = &mt25ql512ab1;
 		zephyr,display = &ltdc;
+		zephyr,code-partition = &slot0_partition;
 	};
 
 	sdram2: sdram@d0000000 {
@@ -63,6 +65,7 @@
 		led0 = &green_led;
 		led1 = &red_led;
 		sw0 = &user_button;
+		die-temp0 = &die_temp;
 	};
 };
 
@@ -74,6 +77,19 @@
 
 &clk_lse {
 	status = "okay";
+};
+
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		/* Flash has 128KB sector size */
+		boot_partition: partition@0 {
+			label = "mcuboot";
+			reg = <0x00000000 DT_SIZE_K(128)>;
+		};
+	};
 };
 
 &ltdc {
@@ -163,11 +179,14 @@
 	dual-flash;
 	status = "okay";
 
+	/* Sector erase 64KB uniform granularity */
+	/* Subsector erase 4KB, 32KB granularity */
 	mt25ql512ab1: qspi-nor-flash-1@90000000 {
 		compatible = "st,stm32-qspi-nor";
 		reg = <0x90000000 DT_SIZE_M(64)>; /* 512 Mbits */
 		qspi-max-frequency = <72000000>;
 		spi-bus-width = <4>;
+		reset-cmd;
 		status = "okay";
 
 		partitions {
@@ -175,8 +194,19 @@
 			#address-cells = <1>;
 			#size-cells = <1>;
 
-			partition@0 {
-				reg = <0x0 DT_SIZE_M(64)>;
+			slot0_partition: partition@0 {
+				label = "image-0";
+				reg = <0x00000000 DT_SIZE_K(2048)>;
+			};
+
+			slot1_partition: partition@200000 {
+				label = "image-1";
+				reg = <0x00200000 DT_SIZE_K(2048)>;
+			};
+
+			storage_partition: partition@400000 {
+				label = "storage";
+				reg = <0x00400000 DT_SIZE_K(128)>;
 			};
 		};
 	};
@@ -228,5 +258,25 @@
 &rtc {
 	clocks = <&rcc STM32_CLOCK_BUS_APB4 0x00010000>,
 		 <&rcc STM32_SRC_LSE RTC_SEL(1)>;
+	status = "okay";
+};
+
+&die_temp {
+	status = "okay";
+};
+
+&adc3 {
+	st,adc-clock-source = "SYNC";
+	st,adc-prescaler = <4>;
+	status = "okay";
+};
+
+/* Arduino Header pins: Tx:D1, Rx:D0 */
+/* LPUART1 can also be used with this pins */
+&usart1 {
+	dma-names = "tx", "rx";
+	pinctrl-0 = <&usart1_tx_pb6 &usart1_rx_pb7>;
+	pinctrl-names = "default";
+	current-speed = <115200>;
 	status = "okay";
 };

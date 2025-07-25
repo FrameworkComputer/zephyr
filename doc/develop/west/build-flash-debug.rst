@@ -145,8 +145,8 @@ Setting the Build System Target
 To specify the build system target to run, use ``--target`` (or ``-t``).
 
 For example, on host platforms with QEMU, you can use the ``run`` target to
-build and run the :ref:`hello_world` sample for the emulated :ref:`qemu_x86
-<qemu_x86>` board in one command::
+build and run the :zephyr:code-sample:`hello_world` sample for the emulated
+:zephyr:board:`qemu_x86 <qemu_x86>` board in one command::
 
   west build -b qemu_x86 -t run samples/hello_world
 
@@ -349,7 +349,7 @@ The ``-o`` option is described further in the previous section.
 Build a single domain
 ---------------------
 
-In a multi-domain build with :ref:`hello_world` and `MCUboot`_, you can use
+In a multi-domain build with :zephyr:code-sample:`hello_world` and `MCUboot`_, you can use
 ``--domain hello_world`` to only build this domain::
 
   west build --sysbuild --domain hello_world
@@ -543,7 +543,7 @@ will flash all domains in the order defined by sysbuild.
 It is possible to flash the image from a single domain in a multi-domain project
 by using ``--domain``.
 
-For example, in a multi-domain build with :ref:`hello_world` and
+For example, in a multi-domain build with :zephyr:code-sample:`hello_world` and
 `MCUboot`_, you can use the ``--domain hello_world`` domain to only flash
 only the image from this domain::
 
@@ -771,7 +771,7 @@ Runner-Specific Overrides
 =========================
 
 To view all of the available options supported by the runners, as well
-as their usage information, use ``--context`` (or``-H``)::
+as their usage information, use ``--context`` (or ``-H``)::
 
   west simulate --runner=renode --context
 
@@ -779,17 +779,25 @@ To view all available options Renode supports, use::
 
   west simulate --runner=renode --renode-help
 
+Out of tree runners
+*******************
+
+:ref:`Zephyr modules <modules>` can have external runners discovered by adding python
+files in their :ref:`module.yml <modules-runners>`. Create an external runner class by
+inheriting from ``ZephyrBinaryRunner`` and implement all abstract methods.
+
+.. note::
+
+   Support for custom out-of-tree runners makes the ``runners.core`` module part of
+   the public API and backwards incompatible changes need to undergo the
+   :ref:`deprecation process <breaking_api_changes>`.
+
 Hacking
 *******
 
 This section documents the ``runners.core`` module used by the
 flash and debug commands. This is the core abstraction used to implement
 support for these features.
-
-.. warning::
-
-   These APIs are provided for reference, but they are more "shared code" used
-   to implement multiple extension commands than a stable API.
 
 Developers can add support for new ways to flash and debug Zephyr programs by
 implementing additional runners. To get this support into upstream Zephyr, the

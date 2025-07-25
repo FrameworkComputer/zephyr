@@ -18,6 +18,10 @@
 #include <zephyr/sys/util.h>
 #include <zephyr/toolchain.h>
 
+#ifdef CONFIG_LLEXT
+#include <zephyr/llext/symbol.h>
+#endif
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -91,15 +95,44 @@ typedef int16_t device_handle_t;
  */
 #define DEVICE_NAME_GET(dev_id) _CONCAT(__device_, dev_id)
 
-/* Node paths can exceed the maximum size supported by
- * device_get_binding() in user mode; this macro synthesizes a unique
- * dev_id from a devicetree node while staying within this maximum
- * size.
+/* This macro synthesizes a unique dev_id from a devicetree node by using
+ * the node's dependency ordinal.
  *
  * The ordinal used in this name can be mapped to the path by
  * examining zephyr/include/generated/zephyr/devicetree_generated.h.
  */
-#define Z_DEVICE_DT_DEV_ID(node_id) _CONCAT(dts_ord_, DT_DEP_ORD(node_id))
+#define Z_DEVICE_DT_DEP_ORD(node_id) _CONCAT(dts_ord_, DT_DEP_ORD(node_id))
+
+/* Same as above, but uses the hash of the node path instead of the ordinal.
+ *
+ * The hash used in this name can be mapped to the path by
+ * examining zephyr/include/generated/zephyr/devicetree_generated.h.
+ */
+#define Z_DEVICE_DT_HASH(node_id) _CONCAT(dts_, DT_NODE_HASH(node_id))
+
+/* By default, device identifiers are obtained using the dependency ordinal.
+ * When LLEXT_EXPORT_DEV_IDS_BY_HASH is defined, the main Zephyr binary exports
+ * DT identifiers via EXPORT_SYMBOL_NAMED as hashed versions of their paths.
+ * When matching extensions are built, that is what they need to look for.
+ *
+ * The ordinal or hash used in this name can be mapped to the path by
+ * examining zephyr/include/generated/zephyr/devicetree_generated.h.
+ */
+#if defined(LL_EXTENSION_BUILD) && defined(CONFIG_LLEXT_EXPORT_DEV_IDS_BY_HASH)
+#define Z_DEVICE_DT_DEV_ID(node_id) Z_DEVICE_DT_HASH(node_id)
+#else
+#define Z_DEVICE_DT_DEV_ID(node_id) Z_DEVICE_DT_DEP_ORD(node_id)
+#endif
+
+#if defined(CONFIG_LLEXT_EXPORT_DEV_IDS_BY_HASH)
+/* Export device identifiers by hash */
+#define Z_DEVICE_EXPORT(node_id)					       \
+	EXPORT_SYMBOL_NAMED(DEVICE_DT_NAME_GET(node_id),		       \
+			    DEVICE_NAME_GET(Z_DEVICE_DT_HASH(node_id)))
+#elif defined(CONFIG_LLEXT_EXPORT_DEVICES)
+/* Export device identifiers using the builtin name */
+#define Z_DEVICE_EXPORT(node_id) EXPORT_SYMBOL(DEVICE_DT_NAME_GET(node_id))
+#endif
 
 /**
  * @brief Create a device object and set it up for boot time initialization.
@@ -168,13 +201,14 @@ typedef int16_t device_handle_t;
  *
  * This macro defines a @ref device that is automatically configured by the
  * kernel during system initialization. The global device object's name as a C
- * identifier is derived from the node's dependency ordinal. @ref device.name is
- * set to `DEVICE_DT_NAME(node_id)`.
+ * identifier is derived from the node's dependency ordinal or hash.
+ * @ref device.name is set to `DEVICE_DT_NAME(node_id)`.
  *
  * The device is declared with extern visibility, so a pointer to a global
  * device object can be obtained with `DEVICE_DT_GET(node_id)` from any source
- * file that includes `<zephyr/device.h>`. Before using the pointer, the
- * referenced object should be checked using device_is_ready().
+ * file that includes `<zephyr/device.h>` (even from extensions, when
+ * @kconfig{CONFIG_LLEXT_EXPORT_DEVICES} is enabled). Before using the
+ * pointer, the referenced object should be checked using device_is_ready().
  *
  * @param node_id The devicetree node identifier.
  * @param init_fn Pointer to the device's initialization function, which will be
@@ -309,8 +343,24 @@ typedef int16_t device_handle_t;
  * @return a @ref device reference for the node identifier, which may be `NULL`.
  */
 #define DEVICE_DT_GET_OR_NULL(node_id)                                         \
-	COND_CODE_1(DT_NODE_HAS_STATUS(node_id, okay),                         \
+	COND_CODE_1(DT_NODE_HAS_STATUS_OKAY(node_id),                          \
 		    (DEVICE_DT_GET(node_id)), (NULL))
+
+/**
+ * @brief Get a @ref device reference from a devicetree phandles by idx.
+ *
+ * Returns a pointer to a device object referenced by a phandles property, by idx.
+ *
+ * @param node_id A devicetree node identifier
+ * @param prop lowercase-and-underscores property with type `phandle`,
+ *            `phandles`, or `phandle-array`
+ * @param idx logical index into @p phs, which must be zero if @p phs
+ *            has type `phandle`
+ *
+ * @return A pointer to the device object created for that node
+ */
+#define DEVICE_DT_GET_BY_IDX(node_id, prop, idx) \
+	DEVICE_DT_GET(DT_PHANDLE_BY_IDX(node_id, prop, idx))
 
 /**
  * @brief Obtain a pointer to a device object by name
@@ -923,11 +973,14 @@ __syscall const struct device *device_get_by_dt_nodelabel(const char *nodelabel)
 /**
  * @brief Get the devicetree node labels associated with a device
  * @param dev device whose metadata to look up
- * @return information about the devicetree node labels
+ * @return information about the devicetree node labels or NULL if not available
  */
 static inline const struct device_dt_nodelabels *
 device_get_dt_nodelabels(const struct device *dev)
 {
+	if (dev->dt_meta == NULL) {
+		return NULL;
+	}
 	return dev->dt_meta->nl;
 }
 
@@ -996,7 +1049,7 @@ device_get_dt_nodelabels(const struct device *dev)
  */
 #define Z_DEVICE_NAME_CHECK(name)                                              \
 	BUILD_ASSERT(sizeof(Z_STRINGIFY(name)) <= Z_DEVICE_MAX_NAME_LEN,       \
-			    Z_STRINGIFY(DEVICE_NAME_GET(name)) " too long")
+			    Z_STRINGIFY(name) " too long")
 
 /**
  * @brief Initializer for @ref device.
@@ -1072,24 +1125,16 @@ device_get_dt_nodelabels(const struct device *dev)
 		Z_DEVICE_SECTION_NAME(level, prio), DEVICE_NAME_GET(dev_id)) =                     \
 		Z_DEVICE_INIT(name, pm, data, config, api, state, deps, node_id, dev_id)
 
-/* deprecated device initialization levels */
-#define Z_DEVICE_LEVEL_DEPRECATED_EARLY                                        \
-	__WARN("EARLY device driver level is deprecated")
-#define Z_DEVICE_LEVEL_DEPRECATED_PRE_KERNEL_1
-#define Z_DEVICE_LEVEL_DEPRECATED_PRE_KERNEL_2
-#define Z_DEVICE_LEVEL_DEPRECATED_POST_KERNEL
-#define Z_DEVICE_LEVEL_DEPRECATED_APPLICATION                                  \
-	__WARN("APPLICATION device driver level is deprecated")
-#define Z_DEVICE_LEVEL_DEPRECATED_SMP                                          \
-	__WARN("SMP device driver level is deprecated")
-
 /**
- * @brief Issue a warning if the given init level is deprecated.
+ * @brief Issue an error if the given init level is not supported.
  *
  * @param level Init level
  */
-#define Z_DEVICE_LEVEL_CHECK_DEPRECATED_LEVEL(level)                           \
-	Z_DEVICE_LEVEL_DEPRECATED_##level
+#define Z_DEVICE_CHECK_INIT_LEVEL(level)                                       \
+	COND_CODE_1(Z_INIT_PRE_KERNEL_1_##level, (),                           \
+	(COND_CODE_1(Z_INIT_PRE_KERNEL_2_##level, (),                          \
+	(COND_CODE_1(Z_INIT_POST_KERNEL_##level, (),                           \
+	(ZERO_OR_COMPILE_ERROR(0)))))))
 
 /**
  * @brief Define the init entry for a device.
@@ -1102,7 +1147,7 @@ device_get_dt_nodelabels(const struct device *dev)
  * @param prio Initialization priority.
  */
 #define Z_DEVICE_INIT_ENTRY_DEFINE(node_id, dev_id, init_fn_, level, prio)                         \
-	Z_DEVICE_LEVEL_CHECK_DEPRECATED_LEVEL(level)                                               \
+	Z_DEVICE_CHECK_INIT_LEVEL(level)                                                           \
                                                                                                    \
 	static const Z_DECL_ALIGN(struct init_entry) __used __noasan Z_INIT_ENTRY_SECTION(         \
 		level, prio, Z_DEVICE_INIT_SUB_PRIO(node_id))                                      \
@@ -1168,12 +1213,15 @@ device_get_dt_nodelabels(const struct device *dev)
 			      (Z_DEVICE_DT_METADATA_DEFINE(node_id, dev_id);))))\
                                                                                 \
 	Z_DEVICE_BASE_DEFINE(node_id, dev_id, name, pm, data, config, level,    \
-		prio, api, state, Z_DEVICE_DEPS_NAME(dev_id));                   \
+		prio, api, state, Z_DEVICE_DEPS_NAME(dev_id));                  \
 	COND_CODE_1(DEVICE_DT_DEFER(node_id),                                   \
 		    (Z_DEFER_DEVICE_INIT_ENTRY_DEFINE(node_id, dev_id,          \
 						      init_fn)),                \
 		    (Z_DEVICE_INIT_ENTRY_DEFINE(node_id, dev_id, init_fn,       \
-						level, prio)));
+						level, prio)));                 \
+	IF_ENABLED(CONFIG_LLEXT_EXPORT_DEVICES,                                 \
+		(IF_ENABLED(DT_NODE_EXISTS(node_id),                            \
+				(Z_DEVICE_EXPORT(node_id);))))
 
 /**
  * @brief Declare a device for each status "okay" devicetree node.
@@ -1191,7 +1239,46 @@ device_get_dt_nodelabels(const struct device *dev)
 
 DT_FOREACH_STATUS_OKAY_NODE(Z_MAYBE_DEVICE_DECLARE_INTERNAL)
 
+/** @brief Expands to the full type. */
+#define Z_DEVICE_API_TYPE(_class) _CONCAT(_class, _driver_api)
+
 /** @endcond */
+
+/**
+ * @brief Wrapper macro for declaring device API structs inside iterable sections.
+ *
+ * @param _class The device API class.
+ * @param _name The API instance name.
+ */
+#define DEVICE_API(_class, _name) const STRUCT_SECTION_ITERABLE(Z_DEVICE_API_TYPE(_class), _name)
+
+/**
+ * @brief Expands to the pointer of a device's API for a given class.
+ *
+ * @param _class The device API class.
+ * @param _dev The device instance pointer.
+ *
+ * @return the pointer to the device API.
+ */
+#define DEVICE_API_GET(_class, _dev) ((const struct Z_DEVICE_API_TYPE(_class) *)_dev->api)
+
+/**
+ * @brief Macro that evaluates to a boolean that can be used to check if
+ *        a device is of a particular class.
+ *
+ * @param _class The device API class.
+ * @param _dev The device instance pointer.
+ *
+ * @retval true If the device is of the given class
+ * @retval false If the device is not of the given class
+ */
+#define DEVICE_API_IS(_class, _dev)                                                                \
+	({                                                                                         \
+		STRUCT_SECTION_START_EXTERN(Z_DEVICE_API_TYPE(_class));                            \
+		STRUCT_SECTION_END_EXTERN(Z_DEVICE_API_TYPE(_class));                              \
+		(DEVICE_API_GET(_class, _dev) < STRUCT_SECTION_END(Z_DEVICE_API_TYPE(_class)) &&   \
+		 DEVICE_API_GET(_class, _dev) >= STRUCT_SECTION_START(Z_DEVICE_API_TYPE(_class))); \
+	})
 
 #ifdef __cplusplus
 }

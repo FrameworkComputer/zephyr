@@ -6,6 +6,7 @@
 
 #include <arm/armv7-m.dtsi>
 #include <adi/max32/max32xxx.dtsi>
+#include <zephyr/dt-bindings/dma/max32675_dma.h>
 
 &flash0 {
 	reg = <0x10000000 DT_SIZE_K(384)>;
@@ -21,6 +22,7 @@
 
 /delete-node/ &clk_iso;
 /delete-node/ &uart1;
+/delete-node/ &rtc_counter;
 
 /* MAX32675 extra peripherals. */
 / {
@@ -58,6 +60,43 @@
 		sram7: memory@20024000 {
 			compatible = "mmio-sram";
 			reg = <0x20024000 DT_SIZE_K(16)>;
+		};
+
+		dma0: dma@40028000 {
+			compatible = "adi,max32-dma";
+			reg = <0x40028000 0x1000>;
+			clocks = <&gcr ADI_MAX32_CLOCK_BUS0 5>;
+			interrupts = <28 0>, <29 0>, <30 0>, <31 0>, <68 0>, <69 0>, <70 0>, <71 0>;
+			dma-channels = <8>;
+			status = "disabled";
+			#dma-cells = <2>;
+		};
+
+		spi1: spi@40047000 {
+			compatible = "adi,max32-spi";
+			reg = <0x40047000 0x1000>;
+			#address-cells = <1>;
+			#size-cells = <0>;
+			clocks = <&gcr ADI_MAX32_CLOCK_BUS0 7>;
+			interrupts = <17 0>;
+			status = "disabled";
+		};
+
+		lptimer0: timer@40114000 {
+			compatible = "adi,max32-timer";
+			reg = <0x40114000 0x1000>;
+			interrupts = <9 0>;
+			status = "disabled";
+			clocks = <&gcr ADI_MAX32_CLOCK_BUS2 0>;
+			clock-source = <ADI_MAX32_PRPH_CLK_SRC_PCLK>;
+			prescaler = <1>;
+		};
+
+		rtc_counter: rtc_counter@40106000 {
+			compatible = "adi,max32-rtc-counter";
+			reg = <0x40106000 0x400>;
+			interrupts = <3 0>;
+			status = "disabled";
 		};
 	};
 };

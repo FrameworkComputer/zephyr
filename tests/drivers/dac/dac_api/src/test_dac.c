@@ -26,7 +26,9 @@
 	defined(CONFIG_BOARD_NUCLEO_L552ZE_Q) || \
 	defined(CONFIG_BOARD_STM32L562E_DK) || \
 	defined(CONFIG_BOARD_STM32H573I_DK) || \
+	defined(CONFIG_BOARD_STM32U083C_DK) || \
 	defined(CONFIG_BOARD_B_U585I_IOT02A) || \
+	defined(CONFIG_BOARD_NUCLEO_U083RC) || \
 	defined(CONFIG_BOARD_NUCLEO_U575ZI_Q) || \
 	defined(CONFIG_BOARD_NUCLEO_U5A5ZJ_Q) || \
 	defined(CONFIG_BOARD_NUCLEO_WL55JC) || \
@@ -46,6 +48,7 @@
 	defined(CONFIG_BOARD_FRDM_K64F) || \
 	defined(CONFIG_BOARD_FRDM_K22F) || \
 	defined(CONFIG_BOARD_FRDM_MCXN947) || \
+	defined(CONFIG_BOARD_FRDM_MCXA156) || \
 	defined(CONFIG_BOARD_SEEEDUINO_XIAO) || \
 	defined(CONFIG_BOARD_ARDUINO_MKRZERO) || \
 	defined(CONFIG_BOARD_ARDUINO_ZERO) || \
@@ -82,8 +85,8 @@
 #define DAC_RESOLUTION		12
 #define DAC_CHANNEL_ID		0
 
-#elif defined(CONFIG_BOARD_SAM_E70_XPLAINED) || \
-	defined(CONFIG_BOARD_SAM_V71_XULT)
+#elif defined(CONFIG_SOC_FAMILY_ATMEL_SAM) && \
+	!defined(CONFIG_SOC_SERIES_SAM4L)
 
 #define DAC_DEVICE_NODE		DT_NODELABEL(dacc)
 #define DAC_RESOLUTION		12
@@ -95,6 +98,12 @@
 #define DAC_DEVICE_NODE		DT_NODELABEL(dac0)
 #define DAC_RESOLUTION		10
 #define DAC_CHANNEL_ID		0
+
+#elif DT_HAS_COMPAT_STATUS_OKAY(renesas_ra_dac)
+
+#define DAC_DEVICE_NODE DT_NODELABEL(dac0)
+#define DAC_RESOLUTION  12
+#define DAC_CHANNEL_ID  0
 
 #else
 #error "Unsupported board."

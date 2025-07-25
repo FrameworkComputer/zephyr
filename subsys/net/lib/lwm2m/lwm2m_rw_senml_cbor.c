@@ -541,7 +541,7 @@ static int get_opaque(struct lwm2m_input_context *in,
 	uint8_t *dest = NULL;
 
 	/* Get the CBOR header only on first read. */
-	if (opaque->remaining == 0) {
+	if (opaque->offset == 0) {
 
 		fd = engine_get_in_user_data(in);
 		if (!fd || !fd->current) {
@@ -601,7 +601,9 @@ static int get_time(struct lwm2m_input_context *in, time_t *value)
 	int ret;
 
 	ret = get_s64(in, &temp64);
-	*value = (time_t)temp64;
+	if (ret == 0) {
+		*value = (time_t)temp64;
+	}
 
 	return ret;
 }

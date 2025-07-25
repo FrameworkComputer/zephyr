@@ -6,14 +6,16 @@
  *
  *  SPDX-License-Identifier: Apache-2.0
  */
+#include <stdint.h>
 
-#include <zephyr/kernel.h>
-#include <zephyr/sys/printk.h>
-#include <zephyr/sys/util.h>
-
+#include <zephyr/autoconf.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/bluetooth/audio/tbs.h>
+#include <zephyr/kernel.h>
+#include <zephyr/sys/atomic.h>
+#include <zephyr/sys/printk.h>
+#include <zephyr/sys/util.h>
 
 enum {
 	CCP_FLAG_PROFILE_CONNECTED,
@@ -155,7 +157,5 @@ struct bt_tbs_client_cb tbs_client_cb = {
 
 int ccp_call_ctrl_init(void)
 {
-	bt_tbs_client_register_cb(&tbs_client_cb);
-
-	return 0;
+	return bt_tbs_client_register_cb(&tbs_client_cb);
 }

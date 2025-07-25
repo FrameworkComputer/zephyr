@@ -4,12 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/*
- * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
- * #line marks the *next* line, so it is off by one.
- */
-#line 12
-
 #define DT_DRV_COMPAT ite_it8xxx2_adc
 
 #define LOG_LEVEL CONFIG_ADC_LOG_LEVEL
@@ -393,7 +387,7 @@ static void adc_it8xxx2_isr(const struct device *dev)
 	k_sem_give(&data->sem);
 }
 
-static const struct adc_driver_api api_it8xxx2_driver_api = {
+static DEVICE_API(adc, api_it8xxx2_driver_api) = {
 	.channel_setup = adc_it8xxx2_channel_setup,
 	.read = adc_it8xxx2_read,
 #ifdef CONFIG_ADC_ASYNC

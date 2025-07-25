@@ -9,11 +9,10 @@
  * @brief AIROC Wi-Fi driver.
  */
 
-#define DT_DRV_COMPAT infineon_airoc_wifi
-
 #include <zephyr/logging/log.h>
 #include <zephyr/net/conn_mgr/connectivity_wifi_mgmt.h>
 #include <airoc_wifi.h>
+#include <airoc_whd_hal_common.h>
 
 LOG_MODULE_REGISTER(infineon_airoc_wifi, CONFIG_WIFI_LOG_LEVEL);
 
@@ -76,8 +75,20 @@ static uint16_t sta_event_handler_index = 0xFF;
 static void airoc_event_task(void);
 static struct airoc_wifi_data airoc_wifi_data = {0};
 
+#if defined(SPI_DATA_IRQ_SHARED)
+PINCTRL_DT_INST_DEFINE(0);
+#endif
+
 static struct airoc_wifi_config airoc_wifi_config = {
-	.sdhc_dev = DEVICE_DT_GET(DT_INST_PARENT(0)),
+#if defined(CONFIG_AIROC_WIFI_BUS_SDIO)
+	.bus_dev.bus_sdio = DEVICE_DT_GET(DT_INST_PARENT(0)),
+#elif defined(CONFIG_AIROC_WIFI_BUS_SPI)
+	.bus_dev.bus_spi = SPI_DT_SPEC_GET(DT_DRV_INST(0), AIROC_WIFI_SPI_OPERATION, 0),
+	.bus_select_gpio = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), bus_select_gpios, {0}),
+#if defined(SPI_DATA_IRQ_SHARED)
+	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0),
+#endif
+#endif
 	.wifi_reg_on_gpio = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), wifi_reg_on_gpios, {0}),
 	.wifi_host_wake_gpio = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), wifi_host_wake_gpios, {0}),
 	.wifi_dev_wake_gpio = GPIO_DT_SPEC_GET_OR(DT_DRV_INST(0), wifi_dev_wake_gpios, {0}),
@@ -363,6 +374,37 @@ static void airoc_wifi_network_process_ethernet_data(whd_interface_t interface, 
 	}
 }
 
+static enum ethernet_hw_caps airoc_get_capabilities(const struct device *dev)
+{
+	ARG_UNUSED(dev);
+
+	return ETHERNET_HW_FILTERING;
+}
+
+static int airoc_set_config(const struct device *dev,
+			    enum ethernet_config_type type,
+			    const struct ethernet_config *config)
+{
+	ARG_UNUSED(dev);
+	whd_mac_t whd_mac_addr;
+
+	switch (type) {
+	case ETHERNET_CONFIG_TYPE_FILTER:
+		for (int i = 0; i < WHD_ETHER_ADDR_LEN; i++) {
+			whd_mac_addr.octet[i] = config->filter.mac_address.addr[i];
+		}
+		if (config->filter.set) {
+			whd_wifi_register_multicast_address(airoc_if, &whd_mac_addr);
+		} else {
+			whd_wifi_unregister_multicast_address(airoc_if, &whd_mac_addr);
+		}
+		return 0;
+	default:
+		break;
+	}
+	return -ENOTSUP;
+}
+
 static void *link_events_handler(whd_interface_t ifp, const whd_event_header_t *event_header,
 				 const uint8_t *event_data, void *handler_user_data)
 {
@@ -502,7 +544,7 @@ static int airoc_mgmt_connect(const struct device *dev, struct wifi_connect_req_
 		goto error;
 	}
 
-	if (usr_result.security == 0) {
+	if (usr_result.security == WHD_SECURITY_UNKNOWN) {
 		ret = -EAGAIN;
 		LOG_ERR("Could not scan device");
 		goto error;
@@ -620,10 +662,18 @@ static int airoc_mgmt_ap_enable(const struct device *dev, struct wifi_connect_re
 			params->channel);
 	}
 
-	if (params->psk_length == 0) {
+	switch (params->security) {
+	case WIFI_SECURITY_TYPE_NONE:
 		security = WHD_SECURITY_OPEN;
-	} else {
+		break;
+	case WIFI_SECURITY_TYPE_PSK:
 		security = WHD_SECURITY_WPA2_AES_PSK;
+		break;
+	case WIFI_SECURITY_TYPE_SAE:
+		security = WHD_SECURITY_WPA3_SAE;
+		break;
+	default:
+		goto error;
 	}
 
 	if (whd_wifi_init_ap(airoc_ap_if, &ssid, security, (const uint8_t *)params->psk,
@@ -650,6 +700,7 @@ static int airoc_mgmt_ap_enable(const struct device *dev, struct wifi_connect_re
 
 	data->is_ap_up = true;
 	airoc_if = airoc_ap_if;
+	net_if_dormant_off(data->iface);
 error:
 
 	k_sem_give(&data->sema_common);
@@ -695,6 +746,7 @@ static int airoc_mgmt_ap_disable(const struct device *dev)
 	if (whd_ret == CY_RSLT_SUCCESS) {
 		data->is_ap_up = false;
 		airoc_if = airoc_sta_if;
+		net_if_dormant_on(data->iface);
 	} else {
 		LOG_ERR("Can't stop wifi ap: %u", whd_ret);
 	}
@@ -761,7 +813,7 @@ static const struct wifi_mgmt_ops airoc_wifi_mgmt = {
 	.disconnect = airoc_mgmt_disconnect,
 	.ap_enable = airoc_mgmt_ap_enable,
 	.ap_disable = airoc_mgmt_ap_disable,
-#if defined(CONFIG_NET_STATISTICS_ETHERNET)
+#if defined(CONFIG_NET_STATISTICS_WIFI)
 	.get_stats = airoc_mgmt_wifi_stats,
 #endif
 };
@@ -769,6 +821,8 @@ static const struct wifi_mgmt_ops airoc_wifi_mgmt = {
 static const struct net_wifi_mgmt_offload airoc_api = {
 	.wifi_iface.iface_api.init = airoc_mgmt_init,
 	.wifi_iface.send = airoc_mgmt_send,
+	.wifi_iface.get_capabilities = airoc_get_capabilities,
+	.wifi_iface.set_config = airoc_set_config,
 	.wifi_mgmt_api = &airoc_wifi_mgmt,
 };
 

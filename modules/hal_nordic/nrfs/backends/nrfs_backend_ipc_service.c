@@ -54,6 +54,8 @@ static struct ipc_channel_config ipc_cpusys_channel_config = {
 	.enabled	 = true
 };
 
+static sys_slist_t nrfs_backend_info_cb_slist = SYS_SLIST_STATIC_INIT(&nrfs_backend_info_cb_slist);
+
 /**
  * @brief nrfs backend error handler
  *
@@ -95,6 +97,16 @@ static void ipc_sysctrl_ept_bound(void *priv)
 	LOG_DBG("Bound to sysctrl.");
 	k_event_post(&ipc_connected_event, IPC_INIT_DONE_EVENT);
 	atomic_set(&ipc_cpusys_channel_config.status, CONNECTED);
+
+	if (k_msgq_num_used_get(&ipc_transmit_msgq) > 0) {
+		k_work_submit(&backend_send_work);
+	}
+
+	struct nrfs_backend_bound_info_subs *subs;
+
+	SYS_SLIST_FOR_EACH_CONTAINER(&nrfs_backend_info_cb_slist, subs, node) {
+		subs->cb();
+	}
 }
 
 static void ipc_sysctrl_ept_recv(const void *data, size_t size, void *priv)
@@ -172,12 +184,10 @@ nrfs_err_t nrfs_backend_send(void *message, size_t size)
 
 nrfs_err_t nrfs_backend_send_ex(void *message, size_t size, k_timeout_t timeout, bool high_prio)
 {
-	if (atomic_get(&ipc_cpusys_channel_config.status) != CONNECTED) {
-		LOG_WRN("Backend not yet connected to sysctrl");
-		return NRFS_ERR_INVALID_STATE;
-	}
-
-	if (size <= MAX_PACKET_DATA_SIZE) {
+	if (!k_is_in_isr() && nrfs_backend_connected()) {
+		return ipc_service_send(&ipc_cpusys_channel_config.ipc_ept, message, size) ?
+			NRFS_SUCCESS : NRFS_ERR_IPC;
+	} else if (size <= MAX_PACKET_DATA_SIZE) {
 		int err;
 		struct ipc_data_packet tx_data;
 
@@ -190,7 +200,9 @@ nrfs_err_t nrfs_backend_send_ex(void *message, size_t size, k_timeout_t timeout,
 			return NRFS_ERR_IPC;
 		}
 
-		err = k_work_submit(&backend_send_work);
+		if (nrfs_backend_connected()) {
+			err = k_work_submit(&backend_send_work);
+		}
 
 		return err >= 0 ? 0 : NRFS_ERR_IPC;
 	}
@@ -216,6 +228,15 @@ int nrfs_backend_wait_for_connection(k_timeout_t timeout)
 	events = k_event_wait(&ipc_connected_event, IPC_INIT_DONE_EVENT, false, timeout);
 
 	return (events == IPC_INIT_DONE_EVENT ? 0 : (-EAGAIN));
+}
+
+void nrfs_backend_register_bound_subscribe(struct nrfs_backend_bound_info_subs *subs,
+					   nrfs_backend_bound_info_cb_t cb)
+{
+	if (cb) {
+		subs->cb = cb;
+		sys_slist_append(&nrfs_backend_info_cb_slist, &subs->node);
+	}
 }
 
 __weak void nrfs_backend_fatal_error_handler(enum nrfs_backend_error error_id)

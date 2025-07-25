@@ -4,12 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/*
- * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
- * #line marks the *next* line, so it is off by one.
- */
-#line 12
-
 /**
  * @file
  * @brief Kernel thread support
@@ -151,6 +145,10 @@ int z_impl_k_thread_name_set(k_tid_t thread, const char *str)
 	strncpy(thread->name, str, CONFIG_THREAD_MAX_NAME_LEN - 1);
 	thread->name[CONFIG_THREAD_MAX_NAME_LEN - 1] = '\0';
 
+#ifdef CONFIG_ARCH_HAS_THREAD_NAME_HOOK
+	arch_thread_name_set(thread, str);
+#endif /* CONFIG_ARCH_HAS_THREAD_NAME_HOOK */
+
 	SYS_PORT_TRACING_OBJ_FUNC(k_thread, name_set, thread, 0);
 
 	return 0;
@@ -230,19 +228,22 @@ const char *k_thread_state_str(k_tid_t thread_id, char *buf, size_t buf_size)
 	size_t      off = 0;
 	uint8_t     bit;
 	uint8_t     thread_state = thread_id->base.thread_state;
+#define SS_ENT(s) { Z_STATE_STR_##s, _THREAD_##s, sizeof(Z_STATE_STR_##s) - 1 }
 	static const struct {
 		const char *str;
-		size_t      len;
+		uint16_t    bit;
+		uint16_t    len;
 	} state_string[] = {
-		{ Z_STATE_STR_DUMMY, sizeof(Z_STATE_STR_DUMMY) - 1},
-		{ Z_STATE_STR_PENDING, sizeof(Z_STATE_STR_PENDING) - 1},
-		{ Z_STATE_STR_PRESTART, sizeof(Z_STATE_STR_PRESTART) - 1},
-		{ Z_STATE_STR_DEAD, sizeof(Z_STATE_STR_DEAD) - 1},
-		{ Z_STATE_STR_SUSPENDED, sizeof(Z_STATE_STR_SUSPENDED) - 1},
-		{ Z_STATE_STR_ABORTING, sizeof(Z_STATE_STR_ABORTING) - 1},
-		{ Z_STATE_STR_SUSPENDING, sizeof(Z_STATE_STR_SUSPENDING) - 1},
-		{ Z_STATE_STR_QUEUED, sizeof(Z_STATE_STR_QUEUED) - 1},
+		SS_ENT(DUMMY),
+		SS_ENT(PENDING),
+		SS_ENT(SLEEPING),
+		SS_ENT(DEAD),
+		SS_ENT(SUSPENDED),
+		SS_ENT(ABORTING),
+		SS_ENT(SUSPENDING),
+		SS_ENT(QUEUED),
 	};
+#undef SS_ENT
 
 	if ((buf == NULL) || (buf_size == 0)) {
 		return "";
@@ -258,7 +259,7 @@ const char *k_thread_state_str(k_tid_t thread_id, char *buf, size_t buf_size)
 
 
 	for (unsigned int index = 0; thread_state != 0; index++) {
-		bit = BIT(index);
+		bit = state_string[index].bit;
 		if ((thread_state & bit) == 0) {
 			continue;
 		}
@@ -346,22 +347,6 @@ void z_check_stack_sentinel(void)
 }
 #endif /* CONFIG_STACK_SENTINEL */
 
-void z_impl_k_thread_start(k_tid_t thread)
-{
-	SYS_PORT_TRACING_OBJ_FUNC(k_thread, start, thread);
-
-	z_sched_start(thread);
-}
-
-#ifdef CONFIG_USERSPACE
-static inline void z_vrfy_k_thread_start(k_tid_t thread)
-{
-	K_OOPS(K_SYSCALL_OBJ(thread, K_OBJ_THREAD));
-	return z_impl_k_thread_start(thread);
-}
-#include <zephyr/syscalls/k_thread_start_mrsh.c>
-#endif /* CONFIG_USERSPACE */
-
 #if defined(CONFIG_STACK_POINTER_RANDOM) && (CONFIG_STACK_POINTER_RANDOM != 0)
 int z_stack_adjust_initialized;
 
@@ -415,6 +400,7 @@ static char *setup_thread_stack(struct k_thread *new_thread,
 		stack_buf_start = K_KERNEL_STACK_BUFFER(stack);
 		stack_buf_size = stack_obj_size - K_KERNEL_STACK_RESERVED;
 
+#if defined(ARCH_KERNEL_STACK_RESERVED)
 		/* Zephyr treats stack overflow as an app bug.  But
 		 * this particular overflow can be seen by static
 		 * analysis so needs to be handled somehow.
@@ -422,7 +408,7 @@ static char *setup_thread_stack(struct k_thread *new_thread,
 		if (K_KERNEL_STACK_RESERVED > stack_obj_size) {
 			k_panic();
 		}
-
+#endif
 	}
 
 #ifdef CONFIG_THREAD_STACK_MEM_MAPPED
@@ -558,7 +544,7 @@ char *z_setup_new_thread(struct k_thread *new_thread,
 	z_waitq_init(&new_thread->join_queue);
 
 	/* Initialize various struct k_thread members */
-	z_init_thread_base(&new_thread->base, prio, _THREAD_PRESTART, options);
+	z_init_thread_base(&new_thread->base, prio, _THREAD_SLEEPING, options);
 	stack_ptr = setup_thread_stack(new_thread, stack, stack_size);
 
 #ifdef CONFIG_KERNEL_COHERENCE
@@ -614,6 +600,9 @@ char *z_setup_new_thread(struct k_thread *new_thread,
 			CONFIG_THREAD_MAX_NAME_LEN - 1);
 		/* Ensure NULL termination, truncate if longer */
 		new_thread->name[CONFIG_THREAD_MAX_NAME_LEN - 1] = '\0';
+#ifdef CONFIG_ARCH_HAS_THREAD_NAME_HOOK
+		arch_thread_name_set(new_thread, name);
+#endif /* CONFIG_ARCH_HAS_THREAD_NAME_HOOK */
 	} else {
 		new_thread->name[0] = '\0';
 	}
@@ -945,9 +934,10 @@ void z_thread_mark_switched_out(void)
 #ifdef CONFIG_TRACING
 #ifdef CONFIG_THREAD_LOCAL_STORAGE
 	/* Dummy thread won't have TLS set up to run arbitrary code */
-	if (!_current_cpu->current ||
-	    (_current_cpu->current->base.thread_state & _THREAD_DUMMY) != 0)
+	if (!_current ||
+	    (_current->base.thread_state & _THREAD_DUMMY) != 0) {
 		return;
+	}
 #endif /* CONFIG_THREAD_LOCAL_STORAGE */
 	SYS_PORT_TRACING_FUNC(k_thread, switched_out);
 #endif /* CONFIG_TRACING */
@@ -1134,3 +1124,30 @@ void k_thread_abort_cleanup_check_reuse(struct k_thread *thread)
 }
 
 #endif /* CONFIG_THREAD_ABORT_NEED_CLEANUP */
+
+void z_dummy_thread_init(struct k_thread *dummy_thread)
+{
+	dummy_thread->base.thread_state = _THREAD_DUMMY;
+#ifdef CONFIG_SCHED_CPU_MASK
+	dummy_thread->base.cpu_mask = -1;
+#endif /* CONFIG_SCHED_CPU_MASK */
+	dummy_thread->base.user_options = K_ESSENTIAL;
+#ifdef CONFIG_THREAD_STACK_INFO
+	dummy_thread->stack_info.start = 0U;
+	dummy_thread->stack_info.size = 0U;
+#endif /* CONFIG_THREAD_STACK_INFO */
+#ifdef CONFIG_USERSPACE
+	dummy_thread->mem_domain_info.mem_domain = &k_mem_domain_default;
+#endif /* CONFIG_USERSPACE */
+#if (K_HEAP_MEM_POOL_SIZE > 0)
+	k_thread_system_pool_assign(dummy_thread);
+#else
+	dummy_thread->resource_pool = NULL;
+#endif /* K_HEAP_MEM_POOL_SIZE */
+
+#ifdef CONFIG_TIMESLICE_PER_THREAD
+	dummy_thread->base.slice_ticks = 0;
+#endif /* CONFIG_TIMESLICE_PER_THREAD */
+
+	z_current_thread_set(dummy_thread);
+}

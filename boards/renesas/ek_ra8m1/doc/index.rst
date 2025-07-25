@@ -1,7 +1,4 @@
-.. _ek_ra8m1:
-
-RA8M1 Evaluation Kit
-####################
+.. zephyr:board:: ek_ra8m1
 
 Overview
 ********
@@ -61,29 +58,23 @@ The key features of the EK-RA8M1 board are categorized in three groups as follow
 - 512 Mb (64 MB) External Octo-SPI Flash (present in the MCU Native Pin Access area of the EK-RA8M1 board)
 - CAN FD (3-pin header)
 
-.. figure:: ek-ra8m1-board.jpg
-	:align: center
-	:alt: RA8M1 Evaluation Kit
-
-	EK-RA8M1 Board Functional Area Definitions (Credit: Renesas Electronics Corporation)
-
 Hardware
 ********
-Detail Hardware feature for the RA8M1 MCU group can be found at `RA8M1 Group User's Manual Hardware`_
+Detailed Hardware features for the RA8M1 MCU group can be found at `RA8M1 Group User's Manual Hardware`_
 
-.. figure:: ra8m1-block-diagram.jpg
+.. figure:: ra8m1_block_diagram.jpg
 	:width: 442px
 	:align: center
 	:alt: RA8M1 MCU group feature
 
 	RA8M1 Block diagram (Credit: Renesas Electronics Corporation)
 
-Detail Hardware feature for the EK-RA8M1 MCU can be found at `EK-RA8M1 - User's Manual`_
+Detailed Hardware features for the EK-RA8M1 MCU can be found at `EK-RA8M1 - User's Manual`_
 
 Supported Features
 ==================
 
-The below features are currently supported on Zephyr OS for EK-RA8M1 board:
+The below features are currently supported on Zephyr for EK-RA8M1 board:
 
 +-----------+------------+----------------------+
 | Interface | Controller | Driver/Component     |
@@ -98,6 +89,37 @@ The below features are currently supported on Zephyr OS for EK-RA8M1 board:
 +-----------+------------+----------------------+
 | CLOCK     | on-chip    | clock control        |
 +-----------+------------+----------------------+
+| I2C       | on-chip    | i2c                  |
++-----------+------------+----------------------+
+| ENTROPY   | on-chip    | entropy              |
++-----------+------------+----------------------+
+| SPI       | on-chip    | spi                  |
++-----------+------------+----------------------+
+| FLASH     | on-chip    | flash                |
++-----------+------------+----------------------+
+| PWM       | on-chip    | pwm                  |
++-----------+------------+----------------------+
+| COUNTER   | on-chip    | counter              |
++-----------+------------+----------------------+
+| CAN       | on-chip    | canfd                |
++-----------+------------+----------------------+
+| USBHS     | on-chip    | udc                  |
++-----------+------------+----------------------+
+| USBFS     | on-chip    | udc                  |
++-----------+------------+----------------------+
+| ETHERNET  | on-chip    | ethernet             |
++-----------+------------+----------------------+
+| ADC       | on-chip    | adc                  |
++-----------+------------+----------------------+
+| SDHC      | on-chip    | sdhc                 |
++-----------+------------+----------------------+
+| DAC       | on-chip    | dac                  |
++-----------+------------+----------------------+
+
+**Note:**
+
+- For using Ethernet module on EK-RA8M1, remove jumper J61 to enable Ethernet B
+- For using SDHC driver on EK-RA8M1, remove jumper J61 to use with channel 0
 
 Other hardware features are currently not supported by the port.
 
@@ -120,11 +142,11 @@ SEGGER J-link's drivers are avaialbe at https://www.segger.com/downloads/jlink/
 
 To flash the program to board
 
-  1. Connect to J-Link OB via USB port to host PC
+1. Connect to J-Link OB via USB port to host PC
 
-  2. Make sure J-Link OB jumper is in default configuration as describe in `EK-RA8M1 - User's Manual`_
+2. Make sure J-Link OB jumper is in default configuration as describe in `EK-RA8M1 - User's Manual`_
 
-  3. Execute west command
+3. Execute west command
 
 	.. code-block:: console
 

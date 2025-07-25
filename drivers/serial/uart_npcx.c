@@ -4,12 +4,6 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-/*
- * TODO(b/272518464): Work around coreboot GCC preprocessor bug.
- * #line marks the *next* line, so it is off by one.
- */
-#line 12
-
 #define DT_DRV_COMPAT nuvoton_npcx_uart
 
 #include <zephyr/sys/__assert.h>
@@ -981,7 +975,7 @@ static void uart_npcx_rx_refresh_timeout(struct k_work *work)
 #endif
 
 /* UART driver registration */
-static const struct uart_driver_api uart_npcx_driver_api = {
+static DEVICE_API(uart, uart_npcx_driver_api) = {
 	.poll_in = uart_npcx_poll_in,
 	.poll_out = uart_npcx_poll_out,
 	.err_check = uart_npcx_err_check,
@@ -1071,6 +1065,9 @@ static int uart_npcx_init(const struct device *dev)
 
 	/* Disable all UART tx FIFO interrupts */
 	uart_npcx_dis_all_tx_interrupts(dev);
+
+	/* Disable rx FIFO not empty interrupt */
+	uart_npcx_irq_rx_disable(dev);
 
 	/* Clear UART rx FIFO */
 	uart_npcx_clear_rx_fifo(dev);

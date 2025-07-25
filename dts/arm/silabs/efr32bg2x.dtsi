@@ -18,12 +18,85 @@
 	};
 
 	clocks {
-		clk_hfxo: clk-hfxo {
+		sysclk: sysclk {
 			#clock-cells = <0>;
-			compatible = "silabs,hfxo";
-			clock-frequency = <DT_FREQ_K(38400)>;
-			ctune = <120>;
-			precision = <50>;
+			compatible = "fixed-factor-clock";
+			clocks = <&hfrcodpll>;
+		};
+		hclk: hclk {
+			#clock-cells = <0>;
+			compatible = "fixed-factor-clock";
+			clocks = <&sysclk>;
+			/* Divisors 1, 2, 4, 8, 16 allowed */
+			clock-div = <1>;
+		};
+		pclk: pclk {
+			#clock-cells = <0>;
+			compatible = "fixed-factor-clock";
+			clocks = <&hclk>;
+			/* Divisors 1, 2 allowed */
+			clock-div = <2>;
+		};
+		lspclk: lspclk {
+			#clock-cells = <0>;
+			compatible = "fixed-factor-clock";
+			clocks = <&pclk>;
+			/* Fixed divisor of 2 */
+			clock-div = <2>;
+		};
+		hclkdiv1024: hclkdiv1024 {
+			#clock-cells = <0>;
+			compatible = "fixed-factor-clock";
+			clocks = <&hclk>;
+			/* Fixed divisor of 1024 */
+			clock-div = <1024>;
+		};
+		traceclk: traceclk {
+			#clock-cells = <0>;
+			compatible = "fixed-factor-clock";
+			clocks = <&sysclk>;
+			/* Divisors 1, 2, 3, 4 allowed */
+			clock-div = <1>;
+		};
+		em01grpaclk: em01grpaclk {
+			#clock-cells = <0>;
+			compatible = "fixed-factor-clock";
+			clocks = <&hfrcodpll>;
+		};
+		em01grpbclk: em01grpbclk {
+			#clock-cells = <0>;
+			compatible = "fixed-factor-clock";
+			clocks = <&hfrcodpll>;
+		};
+		iadcclk: iadcclk {
+			#clock-cells = <0>;
+			compatible = "fixed-factor-clock";
+			clocks = <&em01grpaclk>;
+		};
+		em23grpaclk: em23grpaclk {
+			#clock-cells = <0>;
+			compatible = "fixed-factor-clock";
+			clocks = <&lfrco>;
+		};
+		em4grpaclk: em4grpaclk {
+			#clock-cells = <0>;
+			compatible = "fixed-factor-clock";
+			clocks = <&lfrco>;
+		};
+		rtccclk: rtccclk {
+			#clock-cells = <0>;
+			compatible = "fixed-factor-clock";
+			clocks = <&lfrco>;
+		};
+		wdog0clk: wdog0clk {
+			#clock-cells = <0>;
+			compatible = "fixed-factor-clock";
+			clocks = <&lfrco>;
+		};
+		systickclk: systickclk {
+			#clock-cells = <0>;
+			compatible = "fixed-factor-clock";
+			clocks = <&hclk>;
 		};
 	};
 
@@ -45,6 +118,9 @@
 			 * Using BURTC as sys_clock instead of SysTick
 			 * has implications on system performance. Read
 			 * KConfig documentation entry before enabling it.
+			 *
+			 * The minimum residency and exit latency is
+			 * managed by sl_power_manager on S2 devices.
 			 */
 			cpu-power-states = <&pstate_em1 &pstate_em2 &pstate_em3>;
 		};
@@ -57,9 +133,7 @@
 			pstate_em1: em1 {
 				compatible = "zephyr,power-state";
 				power-state-name = "runtime-idle";
-				min-residency-us = <4>;
 				/* HFXO remains active */
-				exit-latency-us = <2>;
 			};
 
 			/*
@@ -69,8 +143,6 @@
 			pstate_em2: em2 {
 				compatible = "zephyr,power-state";
 				power-state-name = "suspend-to-idle";
-				min-residency-us = <260>;
-				exit-latency-us = <250>;
 			};
 
 			/*
@@ -82,8 +154,6 @@
 			pstate_em3: em3 {
 				compatible = "zephyr,power-state";
 				power-state-name = "standby";
-				min-residency-us = <20000>;
-				exit-latency-us = <2000>;
 			};
 		};
 	};
@@ -93,6 +163,63 @@
 	};
 
 	soc {
+		cmu: clock@50008000 {
+			compatible = "silabs,series-clock";
+			reg = <0x50008000 0x4000>;
+			interrupt-names = "cmu";
+			status = "okay";
+			#clock-cells = <2>;
+		};
+
+		fsrco: fsrco@50018000 {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			reg = <0x50018000 0x4000>;
+			clock-frequency = <DT_FREQ_M(20)>;
+		};
+
+		clk_hfxo: hfxo: hfxo@5000c000 {
+			#clock-cells = <0>;
+			compatible = "silabs,hfxo";
+			reg = <0x5000c000 0x4000>;
+			clock-frequency = <DT_FREQ_K(38400)>;
+			ctune = <140>;
+			precision = <50>;
+			status = "disabled";
+		};
+
+		lfxo: lfxo@50020000 {
+			#clock-cells = <0>;
+			compatible = "silabs,series2-lfxo";
+			reg = <0x50020000 0x4000>;
+			clock-frequency = <32768>;
+			ctune = <63>;
+			precision = <50>;
+			timeout = <4096>;
+			status = "disabled";
+		};
+
+		hfrcodpll: hfrcodpll@50010000 {
+			#clock-cells = <0>;
+			compatible = "silabs,series2-hfrcodpll";
+			reg = <0x50010000 0x4000>;
+			clock-frequency = <DT_FREQ_M(19)>;
+		};
+
+		lfrco: lfrco@50024000 {
+			#clock-cells = <0>;
+			compatible = "silabs,series2-lfrco";
+			reg = <0x50024000 0x4000>;
+			clock-frequency = <32768>;
+		};
+
+		ulfrco: ulfrco@50028000 {
+			#clock-cells = <0>;
+			compatible = "fixed-clock";
+			reg = <0x50028000 0x4000>;
+			clock-frequency = <1000>;
+		};
+
 		msc: flash-controller@50030000 {
 			compatible = "silabs,gecko-flash-controller";
 			reg = <0x50030000 0xC69>;
@@ -103,7 +230,7 @@
 		};
 
 		usart0: usart@5005c000 {
-			compatible = "silabs,gecko-spi-usart";
+			compatible = "silabs,usart-spi";
 			reg = <0x5005C000 0x400>;
 			interrupt-names = "rx", "tx";
 			#address-cells = <1>;
@@ -112,7 +239,7 @@
 		};
 
 		usart1: usart@50060000 {
-			compatible = "silabs,gecko-usart";
+			compatible = "silabs,usart-uart";
 			reg = <0x50060000 0x400>;
 			interrupt-names = "rx", "tx";
 			status = "disabled";
@@ -124,7 +251,7 @@
 			status = "disabled";
 		};
 
-		stimer0: stimer@58000000 {
+		rtcc0: stimer0: rtcc@58000000 {
 			compatible = "silabs,gecko-stimer";
 			reg = <0x58000000 0x3054>;
 			clock-frequency = <32768>;
@@ -159,7 +286,7 @@
 
 		gpio: gpio@5003c000 {
 			compatible = "silabs,gecko-gpio";
-			reg = <0x5003C000 0x3660>;
+			reg = <0x5003C000 0x440>;
 			interrupt-names = "GPIO_EVEN", "GPIO_ODD";
 
 			ranges;
@@ -208,6 +335,20 @@
 
 		};
 
+		pinctrl: pin-controller@5003c440 {
+			compatible = "silabs,dbus-pinctrl";
+			reg = <0x5003c440 0xbc0>, <0x5003c320 0x40>;
+			reg-names = "dbus", "abus";
+		};
+
+		dma0: dma@40040000{
+			compatible = "silabs,ldma";
+			reg = <0x40040000 0x4000>;
+			#dma-cells = <1>;
+			dma_channels = <8>;
+			status = "disabled";
+		};
+
 		wdog0: wdog@4a018000 {
 			compatible = "silabs,gecko-wdog";
 			reg = <0x4A018000 0x3028>;
@@ -223,21 +364,26 @@
 			status = "disabled";
 			#io-channel-cells = <1>;
 		};
-	};
 
-	bt_hci_silabs: bt_hci_silabs {
-		compatible = "silabs,bt-hci";
-		status = "disabled";
-	};
-};
+		dcdc: dcdc@50094000 {
+			compatible = "silabs,series2-dcdc";
+			reg = <0x50094000 0x4000>;
+			status = "disabled";
+		};
 
-/ {
-	pinctrl: pin-controller {
-		/* Pin controller is a "virtual" device since SiLabs SoCs do pin
-		 * control in a distributed way (GPIO registers and PSEL
-		 * registers on each peripheral).
-		 */
-		compatible = "silabs,gecko-pinctrl";
+		radio: radio@b0000000 {
+			compatible = "silabs,series2-radio";
+			reg = <0xb0000000 0x1000000>;
+			pa-initial-power-dbm = <10>;
+			pa-ramp-time-us = <2>;
+			pa-voltage-mv = <3300>;
+			pa-2p4ghz = "highest";
+
+			bt_hci_silabs: bt_hci_silabs {
+				compatible = "silabs,bt-hci-efr32";
+				status = "disabled";
+			};
+		};
 	};
 };
 

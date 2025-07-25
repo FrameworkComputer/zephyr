@@ -4,7 +4,7 @@
  */
 
 /*
- * Copyright (c) 2017 Nordic Semiconductor ASA
+ * Copyright (c) 2017-2025 Nordic Semiconductor ASA
  * Copyright (c) 2015-2016 Intel Corporation
  *
  * SPDX-License-Identifier: Apache-2.0
@@ -20,7 +20,7 @@
 #include <zephyr/bluetooth/hci.h>
 #include <zephyr/debug/stack.h>
 #include <zephyr/kernel.h>
-#include <zephyr/net/buf.h>
+#include <zephyr/net_buf.h>
 #include <zephyr/sys/__assert.h>
 #include <zephyr/sys/atomic.h>
 #include <zephyr/sys/byteorder.h>
@@ -284,7 +284,19 @@ static bool sc_oobd_present;
 static bool legacy_oobd_present;
 static bool sc_supported;
 static const uint8_t *sc_public_key;
-static K_SEM_DEFINE(sc_local_pkey_ready, 0, 1);
+
+static void bt_smp_pkey_ready(const uint8_t *pkey);
+static struct {
+	struct k_mutex lock;
+	struct k_condvar condvar;
+	struct bt_pub_key_cb cb;
+} pub_key_gen = {
+	.lock = Z_MUTEX_INITIALIZER(pub_key_gen.lock),
+	.condvar = Z_CONDVAR_INITIALIZER(pub_key_gen.condvar),
+	.cb = {
+		.func = bt_smp_pkey_ready,
+	},
+};
 
 /* Pointer to internal data is used to mark that callbacks of given SMP channel are not initialized.
  * Value of NULL represents no authentication capabilities and cannot be used for that purpose.
@@ -298,17 +310,11 @@ static K_SEM_DEFINE(sc_local_pkey_ready, 0, 1);
 
 static bool le_sc_supported(void)
 {
-	/*
-	 * If controller based ECC is to be used it must support
-	 * "LE Read Local P-256 Public Key" and "LE Generate DH Key" commands.
-	 * Otherwise LE SC are not supported.
-	 */
 	if (IS_ENABLED(CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY)) {
 		return false;
 	}
 
-	return BT_CMD_TEST(bt_dev.supported_commands, 34, 1) &&
-	       BT_CMD_TEST(bt_dev.supported_commands, 34, 2);
+	return IS_ENABLED(CONFIG_BT_ECC);
 }
 
 static const struct bt_conn_auth_cb *latch_auth_cb(struct bt_smp *smp)
@@ -1190,7 +1196,7 @@ static uint8_t smp_br_pairing_req(struct bt_smp_br *smp, struct net_buf *buf)
 	 */
 	rsp = net_buf_add(rsp_buf, sizeof(*rsp));
 
-	rsp->auth_req = 0x00;
+	rsp->auth_req = BT_SMP_AUTH_CT2;
 	rsp->io_capability = 0x00;
 	rsp->oob_flag = 0x00;
 	rsp->max_key_size = max_key_size;
@@ -1208,6 +1214,12 @@ static uint8_t smp_br_pairing_req(struct bt_smp_br *smp, struct net_buf *buf)
 	smp_br_send(smp, rsp_buf, NULL);
 
 	atomic_set_bit(smp->flags, SMP_FLAG_PAIRING);
+
+	/* If CT2 bit is set both side, set CT2 flag */
+	if ((rsp->auth_req & BT_SMP_AUTH_CT2) &&
+	    (req->auth_req & BT_SMP_AUTH_CT2)) {
+		atomic_set_bit(smp->flags, SMP_FLAG_CT2);
+	}
 
 	/* derive LTK if requested and clear distribution bits */
 	if ((smp->local_dist & BT_SMP_DIST_ENC_KEY) &&
@@ -1258,8 +1270,8 @@ static uint8_t smp_br_pairing_rsp(struct bt_smp_br *smp, struct net_buf *buf)
 	smp->local_dist &= rsp->init_key_dist;
 	smp->remote_dist &= rsp->resp_key_dist;
 
-	smp->local_dist &= SEND_KEYS_SC;
-	smp->remote_dist &= RECV_KEYS_SC;
+	smp->local_dist &= BR_SEND_KEYS_SC;
+	smp->remote_dist &= BR_RECV_KEYS_SC;
 
 	/* Peripheral distributes its keys first */
 
@@ -1267,6 +1279,14 @@ static uint8_t smp_br_pairing_rsp(struct bt_smp_br *smp, struct net_buf *buf)
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_IDENT_INFO);
 	} else if (smp->remote_dist & BT_SMP_DIST_SIGN) {
 		atomic_set_bit(smp->allowed_cmds, BT_SMP_CMD_SIGNING_INFO);
+	}
+
+	/*
+	 * CT2 flag is set in pairing req by bt_smp_br_send_pairing_req.
+	 * If CT2 bit is set both side, set CT2 flag.
+	 */
+	if (rsp->auth_req & BT_SMP_AUTH_CT2) {
+		atomic_set_bit(smp->flags, SMP_FLAG_CT2);
 	}
 
 	/* derive LTK if requested and clear distribution bits */
@@ -1587,6 +1607,12 @@ int bt_smp_br_send_pairing_req(struct bt_conn *conn)
 	struct net_buf *req_buf;
 	uint8_t max_key_size;
 	struct bt_smp_br *smp;
+	uint8_t remote_fixed_chan;
+
+	remote_fixed_chan = bt_l2cap_br_get_remote_fixed_chan(conn);
+	if (!(remote_fixed_chan & BIT(BT_L2CAP_CID_BR_SMP))) {
+		return -ENOTSUP;
+	}
 
 	smp = smp_br_chan_get(conn);
 	if (!smp) {
@@ -1637,7 +1663,7 @@ int bt_smp_br_send_pairing_req(struct bt_conn *conn)
 	 * ignored on reception.
 	 */
 
-	req->auth_req = 0x00;
+	req->auth_req = BT_SMP_AUTH_CT2;
 	req->io_capability = 0x00;
 	req->oob_flag = 0x00;
 	req->max_key_size = max_key_size;
@@ -2639,6 +2665,11 @@ void bt_set_bondable(bool enable)
 	bondable = enable;
 }
 
+bool bt_get_bondable(void)
+{
+	return bondable;
+}
+
 void bt_le_oob_set_sc_flag(bool enable)
 {
 	sc_oobd_present = enable;
@@ -2678,6 +2709,10 @@ static uint8_t get_auth(struct bt_smp *smp, uint8_t auth)
 	} else {
 		auth &= ~BT_SMP_AUTH_KEYPRESS;
 	}
+
+#if defined(CONFIG_BT_CLASSIC)
+	auth |= BT_SMP_AUTH_CT2;
+#endif /* CONFIG_BT_CLASSIC */
 
 	return auth;
 }
@@ -3611,7 +3646,6 @@ static uint8_t sc_smp_check_confirm(struct bt_smp *smp)
 	return 0;
 }
 
-#ifndef CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY
 static bool le_sc_oob_data_req_check(struct bt_smp *smp)
 {
 	struct bt_smp_pairing *req = (struct bt_smp_pairing *)&smp->preq[1];
@@ -3626,8 +3660,8 @@ static bool le_sc_oob_data_rsp_check(struct bt_smp *smp)
 	return ((rsp->oob_flag & BT_SMP_OOB_DATA_MASK) == BT_SMP_OOB_PRESENT);
 }
 
-static void le_sc_oob_config_set(struct bt_smp *smp,
-				 struct bt_conn_oob_info *info)
+__maybe_unused static void le_sc_oob_config_set(struct bt_smp *smp,
+						struct bt_conn_oob_info *info)
 {
 	bool req_oob_present = le_sc_oob_data_req_check(smp);
 	bool rsp_oob_present = le_sc_oob_data_rsp_check(smp);
@@ -3656,7 +3690,6 @@ static void le_sc_oob_config_set(struct bt_smp *smp,
 
 	info->lesc.oob_config = oob_config;
 }
-#endif /* CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY */
 
 static uint8_t smp_pairing_random(struct bt_smp *smp, struct net_buf *buf)
 {
@@ -3771,7 +3804,8 @@ static uint8_t smp_pairing_random(struct bt_smp *smp, struct net_buf *buf)
 			return BT_SMP_ERR_UNSPECIFIED;
 		}
 
-		if (smp_auth_cb && smp_auth_cb->oob_data_request) {
+		if (!IS_ENABLED(CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY) && smp_auth_cb &&
+		    smp_auth_cb->oob_data_request) {
 			struct bt_conn_oob_info info = {
 				.type = BT_CONN_OOB_LE_SC,
 				.lesc.oob_config = BT_CONN_OOB_NO_DATA,
@@ -4156,8 +4190,7 @@ static uint8_t smp_security_request(struct bt_smp *smp, struct net_buf *buf)
 }
 #endif /* CONFIG_BT_CENTRAL */
 
-#ifndef CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY
-static uint8_t generate_dhkey(struct bt_smp *smp)
+__maybe_unused static uint8_t generate_dhkey(struct bt_smp *smp)
 {
 	if (IS_ENABLED(CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY)) {
 		return BT_SMP_ERR_UNSPECIFIED;
@@ -4171,7 +4204,7 @@ static uint8_t generate_dhkey(struct bt_smp *smp)
 	return 0;
 }
 
-static uint8_t display_passkey(struct bt_smp *smp)
+__maybe_unused static uint8_t display_passkey(struct bt_smp *smp)
 {
 	struct bt_conn *conn = smp->chan.chan.conn;
 	const struct bt_conn_auth_cb *smp_auth_cb = latch_auth_cb(smp);
@@ -4198,7 +4231,6 @@ static uint8_t display_passkey(struct bt_smp *smp)
 
 	return 0;
 }
-#endif /* CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY */
 
 #if defined(CONFIG_BT_PERIPHERAL)
 static uint8_t smp_public_key_periph(struct bt_smp *smp)
@@ -4285,6 +4317,9 @@ static uint8_t smp_public_key(struct bt_smp *smp, struct net_buf *buf)
 		if (!update_debug_keys_check(smp)) {
 			return BT_SMP_ERR_AUTH_REQUIREMENTS;
 		}
+	} else if (!bt_pub_key_is_valid(smp->pkey)) {
+		LOG_WRN("Received invalid public key");
+		return BT_SMP_ERR_INVALID_PARAMS;
 	}
 
 	if (IS_ENABLED(CONFIG_BT_CENTRAL) &&
@@ -4604,6 +4639,21 @@ static int bt_smp_recv(struct bt_l2cap_chan *chan, struct net_buf *buf)
 	return 0;
 }
 
+static void pub_key_ready_notify(void)
+{
+	int err;
+
+	ARG_UNUSED(err);
+
+	err = k_mutex_lock(&pub_key_gen.lock, K_FOREVER);
+	__ASSERT_NO_MSG(err == 0);
+
+	(void)k_condvar_broadcast(&pub_key_gen.condvar);
+
+	err = k_mutex_unlock(&pub_key_gen.lock);
+	__ASSERT_NO_MSG(err == 0);
+}
+
 static void bt_smp_pkey_ready(const uint8_t *pkey)
 {
 	int i;
@@ -4612,12 +4662,12 @@ static void bt_smp_pkey_ready(const uint8_t *pkey)
 
 	sc_public_key = pkey;
 
+	pub_key_ready_notify();
+
 	if (!pkey) {
 		LOG_WRN("Public key not available");
 		return;
 	}
-
-	k_sem_give(&sc_local_pkey_ready);
 
 	for (i = 0; i < ARRAY_SIZE(bt_smp_pool); i++) {
 		struct bt_smp *smp = &bt_smp_pool[i];
@@ -5232,11 +5282,13 @@ static int smp_f6_test(void)
 	int err;
 
 	err = bt_crypto_f6(w, n1, n2, r, io_cap, &a1, &a2, res);
-	if (err)
+	if (err) {
 		return err;
+	}
 
-	if (memcmp(res, exp, 16))
+	if (memcmp(res, exp, 16)) {
 		return -EINVAL;
+	}
 
 	return 0;
 }
@@ -5415,6 +5467,21 @@ static inline int smp_self_test(void)
 int bt_conn_set_bondable(struct bt_conn *conn, bool enable)
 {
 	struct bt_smp *smp;
+
+	if (!bt_conn_is_type(conn, BT_CONN_TYPE_LE | BT_CONN_TYPE_BR)) {
+		LOG_DBG("Invalid connection type: %u for %p", conn->type, conn);
+		return -EINVAL;
+	}
+
+	if (IS_ENABLED(CONFIG_BT_CLASSIC) && (conn->type == BT_CONN_TYPE_BR)) {
+		if (enable && atomic_test_and_set_bit(conn->flags, BT_CONN_BR_BONDABLE)) {
+			return -EALREADY;
+		}
+		if (!enable && !atomic_test_and_clear_bit(conn->flags, BT_CONN_BR_BONDABLE)) {
+			return -EALREADY;
+		}
+		return 0;
+	}
 
 	smp = smp_chan_get(conn);
 	if (!smp) {
@@ -5628,9 +5695,41 @@ int bt_smp_le_oob_generate_sc_data(struct bt_le_oob_sc_data *le_sc_oob)
 	}
 
 	if (!sc_public_key) {
-		err = k_sem_take(&sc_local_pkey_ready, K_FOREVER);
-		if (err) {
+		/* Public key request has not been finished yet, or finished, but generation failed.
+		 * Retrying.
+		 */
+		err = k_mutex_lock(&pub_key_gen.lock, K_FOREVER);
+		__ASSERT_NO_MSG(err == 0);
+
+		err = bt_pub_key_gen(&pub_key_gen.cb);
+		if (err && err != -EALREADY) {
+			LOG_WRN("Public key re-generation request failed (%d)", err);
+
+			int mutex_err;
+
+			mutex_err = k_mutex_unlock(&pub_key_gen.lock);
+			__ASSERT_NO_MSG(mutex_err == 0);
+
 			return err;
+		}
+
+		/* 30 seconds is an arbitrary number. Increase if fails earlier on certain
+		 * platforms.
+		 */
+		err = k_condvar_wait(&pub_key_gen.condvar,
+				     &pub_key_gen.lock,
+				     K_SECONDS(30));
+		if (err) {
+			LOG_WRN("Public key generation timeout");
+			return err;
+		}
+
+		err = k_mutex_unlock(&pub_key_gen.lock);
+		__ASSERT_NO_MSG(err == 0);
+
+		/* Public key has been re-requested but generation failed. */
+		if (!sc_public_key) {
+			return -EAGAIN;
 		}
 	}
 
@@ -6042,10 +6141,6 @@ BT_L2CAP_BR_CHANNEL_DEFINE(smp_br_fixed_chan, BT_L2CAP_CID_BR_SMP,
 
 int bt_smp_init(void)
 {
-	static struct bt_pub_key_cb pub_key_cb = {
-		.func           = bt_smp_pkey_ready,
-	};
-
 	sc_supported = le_sc_supported();
 	if (IS_ENABLED(CONFIG_BT_SMP_SC_PAIR_ONLY) && !sc_supported) {
 		LOG_ERR("SC Pair Only Mode selected but LE SC not supported");
@@ -6060,7 +6155,7 @@ int bt_smp_init(void)
 	LOG_DBG("LE SC %s", sc_supported ? "enabled" : "disabled");
 
 	if (!IS_ENABLED(CONFIG_BT_SMP_OOB_LEGACY_PAIR_ONLY)) {
-		bt_pub_key_gen(&pub_key_cb);
+		bt_pub_key_gen(&pub_key_gen.cb);
 	}
 
 	return smp_self_test();

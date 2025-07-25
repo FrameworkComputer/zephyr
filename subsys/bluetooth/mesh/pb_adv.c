@@ -8,8 +8,8 @@
 #include <string.h>
 #include <zephyr/bluetooth/conn.h>
 #include <zephyr/bluetooth/mesh.h>
-#include <zephyr/net/buf.h>
-#include "host/testing.h"
+#include <zephyr/net_buf.h>
+#include "testing.h"
 #include "net.h"
 #include "crypto.h"
 #include "beacon.h"
@@ -637,7 +637,14 @@ static void gen_prov_start(struct prov_rx *rx, struct net_buf_simple *buf)
 
 	link.rx.last_seg = START_LAST_SEG(rx->gpc);
 
+	/* This (BIT(0) is set) can happen if we received a Transaction Continuation PDU, before
+	 * receiving a Transaction Start PDU (see `gen_prov_cont`). Now we received the Transaction
+	 * Start PDU and we can extract the last segment number. Knowing this, we check if
+	 * previously received segment exceeds the last segment number. If so, we reject the
+	 * Transaction Start PDU.
+	 */
 	if ((link.rx.seg & BIT(0)) &&
+	    ((link.rx.seg & SEG_NVAL) != SEG_NVAL) &&
 	    (find_msb_set((~link.rx.seg) & SEG_NVAL) - 1 > link.rx.last_seg)) {
 		LOG_ERR("Invalid segment index %u", seg);
 		prov_failed(PROV_ERR_NVAL_FMT);
@@ -683,7 +690,7 @@ static void gen_prov_ctl(struct prov_rx *rx, struct net_buf_simple *buf)
 		LOG_ERR("Unknown bearer opcode: 0x%02x", BEARER_CTL(rx->gpc));
 
 		if (IS_ENABLED(CONFIG_BT_TESTING)) {
-			bt_test_mesh_prov_invalid_bearer(BEARER_CTL(rx->gpc));
+			bt_mesh_test_prov_invalid_bearer(BEARER_CTL(rx->gpc));
 		}
 
 		return;

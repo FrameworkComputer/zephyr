@@ -32,6 +32,14 @@
 		cpu0: cpu@0 {
 			compatible = "arm,cortex-m4f";
 			reg = <0>;
+			#address-cells = <1>;
+			#size-cells = <1>;
+
+			itm: itm@e0000000 {
+				compatible = "arm,armv7m-itm";
+				reg = <0xe0000000 0x1000>;
+				swo-ref-frequency = <DT_FREQ_M(48)>;
+			};
 		};
 	};
 
@@ -127,6 +135,7 @@
 		};
 
 		spi0: spi@40050000 {
+			compatible = "ambiq,spi";
 			reg = <0x40050000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -136,6 +145,7 @@
 		};
 
 		spi1: spi@40051000 {
+			compatible = "ambiq,spi";
 			reg = <0x40051000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -145,6 +155,7 @@
 		};
 
 		spi2: spi@40052000 {
+			compatible = "ambiq,spi";
 			reg = <0x40052000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -154,6 +165,7 @@
 		};
 
 		spi3: spi@40053000 {
+			compatible = "ambiq,spi";
 			reg = <0x40053000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -185,6 +197,7 @@
 		};
 
 		spi5: spi@40055000 {
+			compatible = "ambiq,spi";
 			reg = <0x40055000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -194,6 +207,7 @@
 		};
 
 		spi6: spi@40056000 {
+			compatible = "ambiq,spi";
 			reg = <0x40056000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -203,6 +217,7 @@
 		};
 
 		spi7: spi@40057000 {
+			compatible = "ambiq,spi";
 			reg = <0x40057000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -212,6 +227,7 @@
 		};
 
 		i2c0: i2c@40050000 {
+			compatible = "ambiq,i2c";
 			reg = <0x40050000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -221,6 +237,7 @@
 		};
 
 		i2c1: i2c@40051000 {
+			compatible = "ambiq,i2c";
 			reg = <0x40051000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -230,6 +247,7 @@
 		};
 
 		i2c2: i2c@40052000 {
+			compatible = "ambiq,i2c";
 			reg = <0x40052000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -239,6 +257,7 @@
 		};
 
 		i2c3: i2c@40053000 {
+			compatible = "ambiq,i2c";
 			reg = <0x40053000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -248,6 +267,7 @@
 		};
 
 		i2c4: i2c@40054000 {
+			compatible = "ambiq,i2c";
 			reg = <0x40054000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -257,6 +277,7 @@
 		};
 
 		i2c5: i2c@40055000 {
+			compatible = "ambiq,i2c";
 			reg = <0x40055000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -266,6 +287,7 @@
 		};
 
 		i2c6: i2c@40056000 {
+			compatible = "ambiq,i2c";
 			reg = <0x40056000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -275,6 +297,7 @@
 		};
 
 		i2c7: i2c@40057000 {
+			compatible = "ambiq,i2c";
 			reg = <0x40057000 0x1000>;
 			#address-cells = <1>;
 			#size-cells = <0>;
@@ -311,6 +334,24 @@
 			#size-cells = <0>;
 			status = "disabled";
 			ambiq,pwrcfg = <&pwrcfg 0x4 0x10000>;
+		};
+
+		usb: usb@400b0000 {
+			compatible = "ambiq,usb";
+			reg = <0x400B0000 0x4100>;
+			interrupts = <27 0>;
+			num-bidir-endpoints = <6>;
+			maximum-speed = "full-speed";
+			status = "disabled";
+			ambiq,pwrcfg = <&pwrcfg 0x4 0x400000>;
+		};
+
+		rtc0: rtc@40004800 {
+			compatible = "ambiq,rtc";
+			reg = <0x40004800 0x210>;
+			interrupts = <2 0>;
+			alarms-count = <1>;
+			status = "disabled";
 		};
 
 		pinctrl: pin-controller@40010000 {

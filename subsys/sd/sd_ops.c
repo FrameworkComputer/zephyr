@@ -260,7 +260,7 @@ static int sdmmc_read_cxd(struct sd_card *card, uint32_t opcode, uint32_t rca, u
 int sdmmc_read_csd(struct sd_card *card)
 {
 	int ret;
-	uint32_t csd[4] = {0};
+	uint32_t csd[4];
 	/* Keep CSD on stack for reduced RAM usage */
 	struct sd_csd card_csd = {0};
 
@@ -283,7 +283,7 @@ int sdmmc_read_csd(struct sd_card *card)
 /* Reads card identification register, and decodes it */
 int card_read_cid(struct sd_card *card)
 {
-	uint32_t cid[4] = {0};
+	uint32_t cid[4];
 	int ret;
 #if defined(CONFIG_SDMMC_STACK) || defined(CONFIG_SDIO_STACK)
 	/* Keep CID on stack for reduced RAM usage */
@@ -794,6 +794,16 @@ int card_ioctl(struct sd_card *card, uint8_t cmd, void *buf)
 		 * cache flush is not required here
 		 */
 		ret = sdmmc_wait_ready(card);
+		break;
+	case DISK_IOCTL_CTRL_DEINIT:
+		/* Ensure card is not busy with data write */
+		ret = sdmmc_wait_ready(card);
+		if (ret < 0) {
+			LOG_WRN("Card busy when powering off");
+		}
+		/* Power down the card */
+		card->bus_io.power_mode = SDHC_POWER_OFF;
+		ret = sdhc_set_io(card->sdhc, &card->bus_io);
 		break;
 	default:
 		ret = -ENOTSUP;

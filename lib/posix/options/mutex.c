@@ -12,10 +12,11 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/posix/pthread.h>
 #include <zephyr/sys/bitarray.h>
+#include <zephyr/sys/sem.h>
 
 LOG_MODULE_REGISTER(pthread_mutex, CONFIG_PTHREAD_MUTEX_LOG_LEVEL);
 
-static struct k_spinlock pthread_mutex_spinlock;
+static SYS_SEM_DEFINE(lock, 1, 1);
 
 int64_t timespec_to_timeoutms(const struct timespec *abstime);
 
@@ -28,7 +29,9 @@ static const struct pthread_mutexattr def_attr = {
 	.type = PTHREAD_MUTEX_DEFAULT,
 };
 
+__pinned_bss
 static struct k_mutex posix_mutex_pool[CONFIG_MAX_PTHREAD_MUTEX_COUNT];
+
 static uint8_t posix_mutex_type[CONFIG_MAX_PTHREAD_MUTEX_COUNT];
 SYS_BITARRAY_DEFINE_STATIC(posix_mutex_bitarray, CONFIG_MAX_PTHREAD_MUTEX_COUNT);
 
@@ -106,35 +109,42 @@ struct k_mutex *to_posix_mutex(pthread_mutex_t *mu)
 
 static int acquire_mutex(pthread_mutex_t *mu, k_timeout_t timeout)
 {
-	int type;
-	size_t bit;
-	int ret = 0;
-	struct k_mutex *m;
-	k_spinlock_key_t key;
+	int type = -1;
+	size_t bit = -1;
+	int ret = EINVAL;
+	size_t lock_count = -1;
+	struct k_mutex *m = NULL;
+	struct k_thread *owner = NULL;
 
-	key = k_spin_lock(&pthread_mutex_spinlock);
+	SYS_SEM_LOCK(&lock) {
+		m = to_posix_mutex(mu);
+		if (m == NULL) {
+			ret = EINVAL;
+			SYS_SEM_LOCK_BREAK;
+		}
 
-	m = to_posix_mutex(mu);
-	if (m == NULL) {
-		k_spin_unlock(&pthread_mutex_spinlock, key);
-		return EINVAL;
+		LOG_DBG("Locking mutex %p with timeout %llx", m, timeout.ticks);
+
+		ret = 0;
+		bit = posix_mutex_to_offset(m);
+		type = posix_mutex_type[bit];
+		owner = m->owner;
+		lock_count = m->lock_count;
 	}
 
-	LOG_DBG("Locking mutex %p with timeout %llx", m, timeout.ticks);
+	if (ret != 0) {
+		goto handle_error;
+	}
 
-	bit = posix_mutex_to_offset(m);
-	type = posix_mutex_type[bit];
-
-	if (m->owner == k_current_get()) {
+	if (owner == k_current_get()) {
 		switch (type) {
 		case PTHREAD_MUTEX_NORMAL:
 			if (K_TIMEOUT_EQ(timeout, K_NO_WAIT)) {
-				k_spin_unlock(&pthread_mutex_spinlock, key);
 				LOG_DBG("Timeout locking mutex %p", m);
-				return EBUSY;
+				ret = EBUSY;
+				break;
 			}
 			/* On most POSIX systems, this usually results in an infinite loop */
-			k_spin_unlock(&pthread_mutex_spinlock, key);
 			LOG_DBG("Attempt to relock non-recursive mutex %p", m);
 			do {
 				(void)k_sleep(K_FOREVER);
@@ -142,7 +152,7 @@ static int acquire_mutex(pthread_mutex_t *mu, k_timeout_t timeout)
 			CODE_UNREACHABLE;
 			break;
 		case PTHREAD_MUTEX_RECURSIVE:
-			if (m->lock_count >= MUTEX_MAX_REC_LOCK) {
+			if (lock_count >= MUTEX_MAX_REC_LOCK) {
 				LOG_DBG("Mutex %p locked recursively too many times", m);
 				ret = EAGAIN;
 			}
@@ -157,7 +167,6 @@ static int acquire_mutex(pthread_mutex_t *mu, k_timeout_t timeout)
 			break;
 		}
 	}
-	k_spin_unlock(&pthread_mutex_spinlock, key);
 
 	if (ret == 0) {
 		ret = k_mutex_lock(m, timeout);
@@ -171,6 +180,7 @@ static int acquire_mutex(pthread_mutex_t *mu, k_timeout_t timeout)
 		}
 	}
 
+handle_error:
 	if (ret < 0) {
 		LOG_DBG("k_mutex_unlock() failed: %d", ret);
 		ret = -ret;
@@ -443,6 +453,7 @@ int pthread_mutexattr_setprioceiling(pthread_mutexattr_t *attr, int prioceiling)
 
 #endif /* CONFIG_POSIX_THREAD_PRIO_PROTECT */
 
+__boot_func
 static int pthread_mutex_pool_init(void)
 {
 	int err;

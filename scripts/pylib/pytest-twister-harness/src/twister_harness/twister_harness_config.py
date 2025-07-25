@@ -19,6 +19,7 @@ class DeviceConfig:
     type: str
     build_dir: Path
     base_timeout: float = 60.0  # [s]
+    flash_timeout: float = 60.0  # [s]
     platform: str = ''
     serial: str = ''
     baud: int = 115200
@@ -35,6 +36,7 @@ class DeviceConfig:
     post_flash_script: Path | None = None
     fixtures: list[str] = None
     app_build_dir: Path | None = None
+    extra_test_args: str = ''
 
     def __post_init__(self):
         domains = self.build_dir / 'domains.yaml'
@@ -65,6 +67,7 @@ class TwisterHarnessConfig:
             type=config.option.device_type,
             build_dir=_cast_to_path(config.option.build_dir),
             base_timeout=config.option.base_timeout,
+            flash_timeout=config.option.flash_timeout,
             platform=config.option.platform,
             serial=config.option.device_serial,
             baud=config.option.device_serial_baud,
@@ -79,6 +82,7 @@ class TwisterHarnessConfig:
             post_script=_cast_to_path(config.option.post_script),
             post_flash_script=_cast_to_path(config.option.post_flash_script),
             fixtures=config.option.fixtures,
+            extra_test_args=config.option.extra_test_args
         )
 
         devices.append(device_from_cli)

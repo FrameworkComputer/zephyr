@@ -1,7 +1,4 @@
-.. _mimxrt1040_evk:
-
-NXP MIMXRT1040-EVK
-##################
+.. zephyr:board:: mimxrt1040_evk
 
 Overview
 ********
@@ -11,10 +8,6 @@ extended temperature range up to 125° C. The i.MX RT1040 MCU has a compact
 9x9 mm package, as well as the 11x11 mm package that supports implementing a
 2-layer PCB design. The i.MX RT1040 MCUs run on the Arm® Cortex®-M7 core at
 600 MHz.
-
-.. image:: mimxrt1040_evk.jpg
-   :align: center
-   :alt: MIMXRT1040-EVK
 
 Hardware
 ********
@@ -91,39 +84,42 @@ Supported Features
 
 The mimxrt1040_evk board configuration supports the hardware features listed
 below.  For additional features not yet supported, please also refer to the
-:ref:`mimxrt1064_evk` , which is the superset board in NXP's i.MX RT10xx family.
+:zephyr:board:`mimxrt1064_evk` , which is the superset board in NXP's i.MX RT10xx family.
 NXP prioritizes enabling the superset board with NXP's Full Platform Support for
 Zephyr.  Therefore, the mimxrt1064_evk board may have additional features
 already supported, which can also be re-used on this mimxrt1040_evk board:
 
-+-----------+------------+-------------------------------------+
-| Interface | Controller | Driver/Component                    |
-+===========+============+=====================================+
-| NVIC      | on-chip    | nested vector interrupt controller  |
-+-----------+------------+-------------------------------------+
-| SYSTICK   | on-chip    | systick                             |
-+-----------+------------+-------------------------------------+
-| GPIO      | on-chip    | gpio                                |
-+-----------+------------+-------------------------------------+
-| UART      | on-chip    | serial port-polling;                |
-|           |            | serial port-interrupt               |
-+-----------+------------+-------------------------------------+
-| PWM       | on-chip    | pwm                                 |
-+-----------+------------+-------------------------------------+
-| ADC       | on-chip    | adc                                 |
-+-----------+------------+-------------------------------------+
-| SPI       | on-chip    | spi                                 |
-+-----------+------------+-------------------------------------+
-| DMA       | on-chip    | dma                                 |
-+-----------+------------+-------------------------------------+
-| I2C       | on-chip    | i2c                                 |
-+-----------+------------+-------------------------------------+
-| DISPLAY   | on-chip    | eLCDIF. Tested with                 |
-|           |            | :ref:`rk043fn02h_ct`, and           |
-|           |            | :ref:`rk043fn66hs_ctg` shields      |
-+-----------+------------+-------------------------------------+
-| UART      | NXP NW61x  | M.2 WIFI/BT module                  |
-+-----------+------------+-------------------------------------+
++-----------+------------+-------------------------------------------------+
+| Interface | Controller | Driver/Component                                |
++===========+============+=================================================+
+| NVIC      | on-chip    | nested vector interrupt controller              |
++-----------+------------+-------------------------------------------------+
+| SYSTICK   | on-chip    | systick                                         |
++-----------+------------+-------------------------------------------------+
+| GPIO      | on-chip    | gpio                                            |
++-----------+------------+-------------------------------------------------+
+| UART      | on-chip    | serial port-polling;                            |
+|           |            | serial port-interrupt                           |
++-----------+------------+-------------------------------------------------+
+| PWM       | on-chip    | pwm                                             |
++-----------+------------+-------------------------------------------------+
+| ADC       | on-chip    | adc                                             |
++-----------+------------+-------------------------------------------------+
+| SPI       | on-chip    | spi                                             |
++-----------+------------+-------------------------------------------------+
+| DMA       | on-chip    | dma                                             |
++-----------+------------+-------------------------------------------------+
+| I2C       | on-chip    | i2c                                             |
++-----------+------------+-------------------------------------------------+
+| GPT       | on-chip    | gpt                                             |
++-----------+------------+-------------------------------------------------+
+| DISPLAY   | on-chip    | eLCDIF. Tested with                             |
+|           |            | :ref:`rk043fn02h_ct`, and                       |
+|           |            | :ref:`rk043fn66hs_ctg` shields                  |
++-----------+------------+-------------------------------------------------+
+| UART      | NXP IW61x  | M.2 WIFI/BT module                              |
+|           |            | (select :kconfig:option:`CONFIG_BT_NXP_NW612`)  |
++-----------+------------+-------------------------------------------------+
 
 The default configuration can be found in
 :zephyr_file:`boards/nxp/mimxrt1040_evk/mimxrt1040_evk_defconfig`
@@ -252,7 +248,7 @@ etc.):
 Flashing
 ========
 
-Here is an example for the :ref:`hello_world` application.
+Here is an example for the :zephyr:code-sample:`hello_world` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/hello_world
@@ -270,7 +266,7 @@ see the following message in the terminal:
 Debugging
 =========
 
-Here is an example for the :ref:`hello_world` application.
+Here is an example for the :zephyr:code-sample:`hello_world` application.
 
 .. zephyr-app-commands::
    :zephyr-app: samples/hello_world
@@ -335,7 +331,7 @@ Remove resistors from R497, R498, R456 and R457.
 
 And due to pin conflict issue, the PCM interface of Bluetooth module cannot be supported.
 
-For the debugger fails to connect with the following error, please refer to section `WiFi Module`.
+For the debugger fails to connect with the following error, please refer to the next section.
 
 WiFi Module
 -----------

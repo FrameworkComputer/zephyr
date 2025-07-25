@@ -61,9 +61,13 @@ struct stream_flash_ctx {
 	size_t bytes_written; /* Number of bytes written to flash */
 	size_t offset; /* Offset from base of flash device to write area */
 	size_t available; /* Available bytes in write area */
+#ifdef CONFIG_STREAM_FLASH_POST_WRITE_CALLBACK
 	stream_flash_callback_t callback; /* Callback invoked after write op */
+#endif
 #ifdef CONFIG_STREAM_FLASH_ERASE
-	off_t last_erased_page_start_offset; /* Last erased offset */
+	size_t erased_up_to;		/* Offset of last erased byte, relative to
+					 * offset in this context.
+					 */
 #endif
 	size_t write_block_size;	/* Offset/size device write alignment */
 	uint8_t erase_value;
@@ -79,9 +83,9 @@ struct stream_flash_ctx {
  *                Must be multiple of the flash device write-block-size.
  * @param offset Offset within flash device to start writing to
  * @param size Number of bytes available for performing buffered write.
- *             If this is '0', the size will be set to the total size
- *             of the flash device minus the offset.
  * @param cb Callback to be invoked on completed flash write operations.
+ *           Callback is supported when CONFIG_STREAM_FLASH_POST_WRITE_CALLBACK
+ *           is enabled.
  *
  * @return non-negative on success, negative errno code on fail
  */
@@ -97,7 +101,7 @@ int stream_flash_init(struct stream_flash_ctx *ctx, const struct device *fdev,
  *
  * @return Number of payload bytes written to flash.
  */
-size_t stream_flash_bytes_written(struct stream_flash_ctx *ctx);
+size_t stream_flash_bytes_written(const struct stream_flash_ctx *ctx);
 
 /**
  * @brief Process input buffers to be written to flash device in single blocks.
@@ -126,6 +130,9 @@ int stream_flash_buffered_write(struct stream_flash_ctx *ctx, const uint8_t *dat
 /**
  * @brief Erase the flash page to which a given offset belongs.
  *
+ * @deprecated Use @a flash_area_erase() or flash_erase(). Note that there
+ * is no Stream Flash API equivalent for that.
+ *
  * This function erases a flash page to which an offset belongs if this page
  * is not the page previously erased by the provided ctx
  * (ctx->last_erased_page_start_offset).
@@ -135,7 +142,7 @@ int stream_flash_buffered_write(struct stream_flash_ctx *ctx, const uint8_t *dat
  *
  * @return non-negative on success, negative errno code on fail
  */
-int stream_flash_erase_page(struct stream_flash_ctx *ctx, off_t off);
+__deprecated int stream_flash_erase_page(struct stream_flash_ctx *ctx, off_t off);
 
 /**
  * @brief Load persistent stream write progress stored with key
@@ -149,7 +156,8 @@ int stream_flash_erase_page(struct stream_flash_ctx *ctx, off_t off);
  * @param settings_key key to use with the settings module for loading
  *                     the stream write progress
  *
- * @return non-negative on success, negative errno code on fail
+ * @return non-negative on success, -ERANGE in case when @p off is out
+ * of area designated for stream or negative errno code on fail
  */
 int stream_flash_progress_load(struct stream_flash_ctx *ctx,
 			       const char *settings_key);
@@ -163,7 +171,7 @@ int stream_flash_progress_load(struct stream_flash_ctx *ctx,
  *
  * @return non-negative on success, negative errno code on fail
  */
-int stream_flash_progress_save(struct stream_flash_ctx *ctx,
+int stream_flash_progress_save(const struct stream_flash_ctx *ctx,
 			       const char *settings_key);
 
 /**
@@ -175,7 +183,7 @@ int stream_flash_progress_save(struct stream_flash_ctx *ctx,
  *
  * @return non-negative on success, negative errno code on fail
  */
-int stream_flash_progress_clear(struct stream_flash_ctx *ctx,
+int stream_flash_progress_clear(const struct stream_flash_ctx *ctx,
 				const char *settings_key);
 
 #ifdef __cplusplus
