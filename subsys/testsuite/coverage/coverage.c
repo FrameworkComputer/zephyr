@@ -320,6 +320,11 @@ void gcov_coverage_dump(void)
 #endif
 	printk("\nGCOV_COVERAGE_DUMP_START");
 	while (gcov_list) {
+		if ((strlen(CONFIG_COVERAGE_DUMP_PATH_EXCLUDE) > 0) &&
+		    (fnmatch(CONFIG_COVERAGE_DUMP_PATH_EXCLUDE, gcov_list->filename, 0) == 0)) {
+			/* Don't print a note here, it would be interpreted as dump data */
+			goto file_dump_end;
+		}
 
 		dump_on_console_start(gcov_list->filename);
 		size = gcov_calculate_buff_size(gcov_list);
@@ -341,6 +346,7 @@ void gcov_coverage_dump(void)
 		dump_on_console_data(buffer, size);
 
 		k_heap_free(&gcov_heap, buffer);
+file_dump_end:
 		gcov_list = gcov_list->next;
 		if (gcov_list_first == gcov_list) {
 			goto coverage_dump_end;
