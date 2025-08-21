@@ -15,6 +15,7 @@
 #define SEQUENCE_LEN_2_BYTE 0xC0
 #define SEQUENCE_LEN_3_BYTE 0xE0
 #define SEQUENCE_LEN_4_BYTE 0xF0
+#define MSB_SET 0x80
 
 char *utf8_trunc(char *utf8_str)
 {
