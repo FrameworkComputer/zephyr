@@ -661,49 +661,6 @@ static inline int64_t sign_extend_64(uint64_t value, uint8_t index)
 	return (int64_t)(value << shift) >> shift;
 }
 
-/**
- * @brief Properly truncate a NULL-terminated UTF-8 string
- *
- * Take a NULL-terminated UTF-8 string and ensure that if the string has been
- * truncated (by setting the NULL terminator) earlier by other means, that
- * the string ends with a properly formatted UTF-8 character (1-4 bytes).
- *
- * Example:
- *
- * @code{.c}
- *      char test_str[] = "€€€";
- *      char trunc_utf8[8];
- *
- *      printf("Original : %s\n", test_str); // €€€
- *      strncpy(trunc_utf8, test_str, sizeof(trunc_utf8));
- *      trunc_utf8[sizeof(trunc_utf8) - 1] = '\0';
- *      printf("Bad      : %s\n", trunc_utf8); // €€�
- *      utf8_trunc(trunc_utf8);
- *      printf("Truncated: %s\n", trunc_utf8); // €€
- * @endcode
- *
- * @param utf8_str NULL-terminated string
- *
- * @return Pointer to the @p utf8_str
- */
-char *utf8_trunc(char *utf8_str);
-
-/**
- * @brief Copies a UTF-8 encoded string from @p src to @p dst
- *
- * The resulting @p dst will always be NULL terminated if @p n is larger than 0,
- * and the @p dst string will always be properly UTF-8 truncated.
- *
- * @param dst The destination of the UTF-8 string.
- * @param src The source string
- * @param n   The size of the @p dst buffer. Maximum number of characters copied
- *            is @p n - 1. If 0 nothing will be done, and the @p dst will not be
- *            NULL terminated.
- *
- * @return Pointer to the @p dst
- */
-char *utf8_lcpy(char *dst, const char *src, size_t n);
-
 #define __z_log2d(x) (32 - __builtin_clz(x) - 1)
 #define __z_log2q(x) (64 - __builtin_clzll(x) - 1)
 #define __z_log2(x) (sizeof(__typeof__(x)) > 4 ? __z_log2q(x) : __z_log2d(x))
