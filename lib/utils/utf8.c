@@ -8,7 +8,6 @@
 #include <string.h>
 #include <zephyr/sys/__assert.h>
 #include <errno.h>
-#include <sys/types.h>
 #include <zephyr/sys/util_utf8.h>
 
 #define ASCII_CHAR 0x7F
@@ -81,4 +80,46 @@ char *utf8_lcpy(char *dst, const char *src, size_t n)
 	}
 
 	return dst;
+}
+
+int utf8_count_chars(const char *s)
+{
+	int count = 0;
+	const char *p = s; /* getting a pointer to increment */
+
+	while (*p != '\0') {
+		if ((*p & MSB_SET) == 0) { /* 1-byte character: 0xxxxxxx */
+			p += 1;
+		} else if ((*p & SEQUENCE_LEN_3_BYTE) == SEQUENCE_FIRST_MASK) {
+			/* 2-byte character: 110xxxxx */
+			if ((p[1] & SEQUENCE_FIRST_MASK) != MSB_SET) {
+				/* invalid continuation */
+				return -EINVAL;
+			}
+			p += 2;
+		} else if ((*p & SEQUENCE_LEN_4_BYTE) == SEQUENCE_LEN_3_BYTE) {
+			/* 3-byte character: 1110xxxx */
+			if ((p[1] & SEQUENCE_FIRST_MASK) != MSB_SET
+				|| (p[2] & SEQUENCE_FIRST_MASK) != MSB_SET) {
+				/* invalid continuation */
+				return -EINVAL;
+			}
+			p += 3;
+		} else if ((*p & 0xF8) == SEQUENCE_LEN_4_BYTE) {
+			/* 4-byte character: 11110xxx */
+			if ((p[1] & SEQUENCE_FIRST_MASK) != MSB_SET
+				|| (p[2] & SEQUENCE_FIRST_MASK) != MSB_SET
+				|| (p[3] & SEQUENCE_FIRST_MASK) != MSB_SET) {
+				/* invalid continuation */
+				return -EINVAL;
+			}
+			p += 4;
+		} else {
+			/* Invalid UTF-8 byte (return) */
+			return -EINVAL;
+		}
+		count++;
+	}
+
+	return count;
 }
