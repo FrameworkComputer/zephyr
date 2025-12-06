@@ -1,0 +1,48 @@
+# Copyright 2023 Daniel DeGrasse <daniel@degrasse.com>
+# Copyright 2025 Framework Computer Inc
+# SPDX-License-Identifier: Apache-2.0
+description: ISSI IS31FL3741 LED Matrix Driver
+
+compatible: "issi,is31fl3741"
+
+include: "i2c-device.yaml"
+
+properties:
+  sdb-gpios:
+    type: phandle-array
+    description: |
+      Hardware shutdown pin. If routed on the board, this property must be
+      present. Set to a logical 1 at boot to exit the device from hardware
+      shutdown.
+
+  pwm-frequency:
+    type: int
+    default: 29000
+    description: |
+      PWM frequency used to drive the LEDs.
+
+  current-limit:
+    type: int
+    default: 0xFF
+    description: |
+      Global current limit. Sets the global current control register of LED
+      driver (set table 14). Limits global current based on the following
+      formula: (840/R_ISET) * (current-limit/256). Defaults to max value
+      of 0xFF, so led output will still be enabled if property is
+      not provided.
+
+  current-sources:
+    type: int
+    default: 9
+    enum:
+      - 9
+      - 8
+      - 7
+      - 6
+      - 5
+      - 4
+      - 3
+      - 2
+      - 0
+    description: |
+      Control which rows are active, default all.
