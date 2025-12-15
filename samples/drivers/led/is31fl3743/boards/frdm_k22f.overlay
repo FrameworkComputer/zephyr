@@ -1,0 +1,14 @@
+/*
+ * Copyright 2023 Daniel DeGrasse <daniel@degrasse.com>
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+&i2c0 {
+	led_ctrl1: is31fl3743@20 {
+		/* Default address with ADDR1 and ADDR2 connected to GND - 0b0100000 */
+		reg = <0x20>;
+		compatible = "issi,is31fl3743";
+		sdb-gpios = <&gpioc 2 GPIO_ACTIVE_HIGH>;
+	};
+};
