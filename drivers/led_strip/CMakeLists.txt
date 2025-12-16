@@ -4,6 +4,7 @@ zephyr_library()
 
 # zephyr-keep-sorted-start
 zephyr_library_sources_ifdef(CONFIG_APA102_STRIP apa102.c)
+zephyr_library_sources_ifdef(CONFIG_LED_TO_LED_STRIP led_to_led_strip.c)
 zephyr_library_sources_ifdef(CONFIG_LPD880X_STRIP lpd880x.c)
 zephyr_library_sources_ifdef(CONFIG_MODULINO_PIXELS modulino_pixels.c)
 zephyr_library_sources_ifdef(CONFIG_TLC5971_STRIP tlc5971.c)

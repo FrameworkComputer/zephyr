@@ -1,0 +1,24 @@
+description: Adapter to expose a generic LED controller as an LED Strip
+
+compatible: "led-to-led-strip"
+
+include: base.yaml
+
+properties:
+  led-controller:
+    type: phandle
+    required: true
+    description: Reference to the underlying generic LED device (e.g., IS31FL3743A)
+
+  chain-length:
+    type: int
+    required: true
+    description: Number of "virtual pixels" this strip exposes
+
+#  color-map:
+#    type: array
+#    required: true
+#    description: |
+#      An array mapping virtual pixels to physical LED channels.
+#      Format: <P0_Red P0_Green P0_Blue P1_Red P1_Green P1_Blue ...>
+#      The length must be chain-length * 3.

@@ -1,0 +1,6 @@
+config LED_TO_LED_STRIP
+    bool "LED to LED Strip Adapter"
+    default y
+    depends on DT_HAS_LED_TO_LED_STRIP_ENABLED
+    help
+      Enable the adapter that maps the LED API to the LED Strip API.
