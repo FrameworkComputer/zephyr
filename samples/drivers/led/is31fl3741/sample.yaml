@@ -7,4 +7,4 @@ tests:
     tags: LED
     depends_on: i2c
     integration_platforms:
-      - frdm_k22f
+      - framework_ledmatrix
