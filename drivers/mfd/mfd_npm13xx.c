@@ -245,7 +245,7 @@ int mfd_npm13xx_set_timer(const struct device *dev, uint32_t time_ms)
 	uint8_t buff[5] = {NPM13XX_TIME_BASE, TIME_OFFSET_TIMER};
 	uint32_t ticks = time_ms / TIMER_PRESCALER_MS;
 
-	if (ticks > NPM13XX_TIMER_MAX) {
+	if (ticks > NPM13XX_TIMER_MAX || ticks == 0U) {
 		return -EINVAL;
 	}
 

@@ -107,7 +107,7 @@ int mfd_npm13xx_reg_update(const struct device *dev, uint8_t base, uint8_t offse
  * @param dev npm13xx mfd device
  * @param time_ms timer value in ms
  * @return 0 on success, negative errno value on failure (see i2c_write_dt()).
- * @retval -EINVAL Time value is too large.
+ * @retval -EINVAL Time value is too large or 0.
  */
 int mfd_npm13xx_set_timer(const struct device *dev, uint32_t time_ms);
 
