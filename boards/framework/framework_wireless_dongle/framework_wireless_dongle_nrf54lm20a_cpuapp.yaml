@@ -1,0 +1,19 @@
+# Copyright (c) 2026 Framework Computer Inc
+# SPDX-License-Identifier: Apache-2.0
+
+identifier: framework_wireless_dongle/nrf54lm20a/cpuapp
+name: Framework Wireless Dongle nRF54LM20A Application
+type: mcu
+arch: arm
+toolchain:
+  - gnuarmemb
+  - zephyr
+sysbuild: true
+ram: 511
+flash: 1828
+supported:
+  - counter
+  - gpio
+  - usbd
+  - watchdog
+vendor: framework
