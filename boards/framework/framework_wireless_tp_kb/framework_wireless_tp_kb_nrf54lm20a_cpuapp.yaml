@@ -1,0 +1,22 @@
+# Copyright (c) 2026 Framework Computer Inc
+# SPDX-License-Identifier: Apache-2.0
+
+identifier: framework_wireless_tp_kb/nrf54lm20a/cpuapp
+name: Framework Wireless Touchpad Keyboard nRF54LM20A Application
+type: mcu
+arch: arm
+toolchain:
+  - gnuarmemb
+  - zephyr
+sysbuild: true
+ram: 511
+flash: 1828
+supported:
+  - counter
+  - gpio
+  - i2c
+  - pwm
+  - regulator
+  - usbd
+  - watchdog
+vendor: framework

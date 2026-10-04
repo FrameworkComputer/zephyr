@@ -1,0 +1,34 @@
+board:
+  name: framework_wireless_tp_kb
+  full_name: Framework Wireless Touchpad Keyboard
+  vendor: framework
+  socs:
+  - name: nrf54lm20a
+runners:
+  run_once:
+    '--recover':
+    - runners:
+      - nrfjprog
+      - nrfutil
+      run: first
+      groups:
+      - boards:
+        - framework_wireless_tp_kb/nrf54lm20a/cpuapp
+    '--erase':
+    - runners:
+      - nrfjprog
+      - jlink
+      - nrfutil
+      run: first
+      groups:
+      - boards:
+        - framework_wireless_tp_kb/nrf54lm20a/cpuapp
+    '--reset':
+    - runners:
+      - nrfjprog
+      - jlink
+      - nrfutil
+      run: last
+      groups:
+      - boards:
+        - framework_wireless_tp_kb/nrf54lm20a/cpuapp

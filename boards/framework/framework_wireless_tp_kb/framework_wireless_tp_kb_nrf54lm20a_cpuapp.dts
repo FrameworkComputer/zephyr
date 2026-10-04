@@ -1,0 +1,393 @@
+/*
+ * Copyright (c) 2026 Framework Computer Inc
+ *
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/dts-v1/;
+
+#include <nordic/nrf54lm20a_cpuapp.dtsi>
+#include <zephyr/dt-bindings/i2c/i2c.h>
+#include "framework_wireless_tp_kb-pinctrl.dtsi"
+
+/ {
+	compatible = "framework,wireless_tp_kb_nrf54lm20a-cpuapp";
+	model = "Framework Wireless Touchpad Keyboard";
+
+	chosen {
+		zephyr,console = &uart00;
+		zephyr,shell-uart = &uart00;
+		zephyr,uart-mcumgr = &uart00;
+		zephyr,bt-mon-uart = &uart00;
+		zephyr,bt-c2h-uart = &uart00;
+		zephyr,flash-controller = &rram_controller;
+		zephyr,flash = &cpuapp_rram;
+		zephyr,code-partition = &slot0_partition;
+		zephyr,sram = &cpuapp_sram_app;
+		zephyr,ieee802154 = &ieee802154;
+	};
+
+	leds {
+		compatible = "gpio-leds";
+
+		/*
+		 * The pull-ups keep the active-low white LEDs off while the pins
+		 * are not driven, for example while &pwm20 owns them.
+		 */
+		led_w1: led-w1 {
+			gpios = <&gpio1 22 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "White LED 1";
+		};
+
+		led_w2: led-w2 {
+			gpios = <&gpio1 23 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "White LED 2";
+		};
+
+		led_w3: led-w3 {
+			gpios = <&gpio1 24 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "White LED 3";
+		};
+
+		led_w4: led-w4 {
+			gpios = <&gpio1 25 (GPIO_ACTIVE_LOW | GPIO_PULL_UP)>;
+			label = "White LED 4";
+		};
+
+		led_g: led-g {
+			gpios = <&gpio1 29 GPIO_ACTIVE_HIGH>;
+			label = "Green LED";
+		};
+
+		led_b: led-b {
+			gpios = <&gpio1 30 GPIO_ACTIVE_HIGH>;
+			label = "Blue LED";
+		};
+
+		led_r: led-r {
+			gpios = <&gpio1 31 GPIO_ACTIVE_HIGH>;
+			label = "Red LED";
+		};
+
+		caps_led: caps-led {
+			gpios = <&gpio3 7 GPIO_ACTIVE_HIGH>;
+			label = "Caps Lock LED";
+		};
+	};
+
+	/*
+	 * The four white LEDs indicate the Bluetooth pairing/profile state.
+	 * They share pins with &led_w1 .. &led_w4.
+	 */
+	pairing_leds: pairing-leds {
+		compatible = "pwm-leds";
+
+		pwm_led_w1: pwm-led-w1 {
+			pwms = <&pwm20 0 PWM_HZ(4096) PWM_POLARITY_INVERTED>;
+		};
+
+		pwm_led_w2: pwm-led-w2 {
+			pwms = <&pwm20 1 PWM_HZ(4096) PWM_POLARITY_INVERTED>;
+		};
+
+		pwm_led_w3: pwm-led-w3 {
+			pwms = <&pwm20 2 PWM_HZ(4096) PWM_POLARITY_INVERTED>;
+		};
+
+		pwm_led_w4: pwm-led-w4 {
+			pwms = <&pwm20 3 PWM_HZ(4096) PWM_POLARITY_INVERTED>;
+		};
+	};
+
+	/* RGB status LED, shares pins with &led_r / &led_g / &led_b. */
+	rgb_pwmleds: rgb-pwmleds {
+		compatible = "pwm-leds";
+
+		pwm_led_g: pwm-led-g {
+			pwms = <&pwm21 0 PWM_HZ(4096) PWM_POLARITY_NORMAL>;
+		};
+
+		pwm_led_b: pwm-led-b {
+			pwms = <&pwm21 1 PWM_HZ(4096) PWM_POLARITY_NORMAL>;
+		};
+
+		pwm_led_r: pwm-led-r {
+			pwms = <&pwm21 2 PWM_HZ(4096) PWM_POLARITY_NORMAL>;
+		};
+	};
+
+	/* Keyboard backlight, powered from the PMIC's BUCK1 (&npm1300_buck1). */
+	backlight_pwm: backlight-pwm {
+		compatible = "pwm-leds";
+
+		backlight_led: backlight-led {
+			pwms = <&pwm22 0 PWM_HZ(4096) PWM_POLARITY_NORMAL>;
+		};
+	};
+
+	buttons {
+		compatible = "gpio-keys";
+
+		/* External pull-up */
+		pairing_button: pairing-button {
+			gpios = <&gpio3 10 GPIO_ACTIVE_LOW>;
+			label = "Pairing button";
+			zephyr,code = <INPUT_KEY_0>;
+		};
+
+		/* Slide switch selecting USB (wired) or Bluetooth operation */
+		protocol_switch: protocol-switch {
+			gpios = <&gpio3 5 GPIO_ACTIVE_HIGH>;
+			label = "USB/Bluetooth mode switch";
+			zephyr,code = <INPUT_KEY_1>;
+		};
+	};
+
+	/*
+	 * Touchpad power rail. Enabled at boot so that a touchpad driver on
+	 * &i2c22 finds the device during its initialization.
+	 */
+	tp_power: tp-power {
+		compatible = "regulator-fixed";
+		regulator-name = "tp-power";
+		enable-gpios = <&gpio3 12 GPIO_ACTIVE_HIGH>;
+		regulator-boot-on;
+	};
+
+	aliases {
+		led0 = &led_r;
+		led1 = &led_g;
+		led2 = &led_b;
+		pwm-led0 = &pwm_led_w1;
+		sw0 = &pairing_button;
+		watchdog0 = &wdt31;
+		mcuboot-button0 = &pairing_button;
+		mcuboot-led0 = &led_g;
+	};
+};
+
+&cpuapp_sram {
+	status = "okay";
+};
+
+&hfpll {
+	clock-frequency = <DT_FREQ_M(128)>;
+};
+
+&lfxo {
+	load-capacitors = "internal";
+	load-capacitance-femtofarad = <17000>;
+};
+
+&hfxo {
+	load-capacitors = "internal";
+	load-capacitance-femtofarad = <15000>;
+};
+
+&vregmain {
+	status = "okay";
+	regulator-initial-mode = <NRF5X_REG_MODE_DCDC>;
+};
+
+&vregusb {
+	status = "okay";
+};
+
+&grtc {
+	owned-channels = <0 1 2 3 4 5 6 7 8 9 10 11>;
+	/* Channels 7-11 reserved for Zero Latency IRQs, 3-4 for FLPR */
+	child-owned-channels = <3 4 7 8 9 10 11>;
+	status = "okay";
+};
+
+/* Debug UART on the pin header */
+&uart00 {
+	status = "okay";
+	current-speed = <115200>;
+	pinctrl-0 = <&uart00_default>;
+	pinctrl-1 = <&uart00_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+/*
+ * nPM1300 PMIC without charger definition.
+ * Add npm1300_charger based on the connected battery.
+ */
+&i2c21 {
+	status = "okay";
+	pinctrl-0 = <&i2c21_default>;
+	pinctrl-1 = <&i2c21_sleep>;
+	pinctrl-names = "default", "sleep";
+
+	npm1300: pmic@6b {
+		compatible = "nordic,npm1300";
+		reg = <0x6b>;
+
+		npm1300_regulators: regulators {
+			compatible = "nordic,npm1300-regulator";
+
+			/*
+			 * Keyboard backlight rail. The PMIC enables it at power-on
+			 * (VSET1 resistor); it is switched off at boot to save the
+			 * buck's quiescent current until an application turns the
+			 * backlight on.
+			 */
+			npm1300_buck1: BUCK1 {
+				regulator-min-microvolt = <3300000>;
+				regulator-init-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-boot-off;
+			};
+
+			/* 3.3 V rail supplying the nRF54LM20A */
+			npm1300_buck2: BUCK2 {
+				regulator-min-microvolt = <3300000>;
+				regulator-init-microvolt = <3300000>;
+				regulator-max-microvolt = <3300000>;
+				regulator-boot-on;
+			};
+		};
+	};
+};
+
+/*
+ * Touchpad connector,  power rail controlled by &tp_power.
+ */
+&i2c22 {
+	status = "okay";
+	pinctrl-0 = <&i2c22_default>;
+	pinctrl-1 = <&i2c22_sleep>;
+	pinctrl-names = "default", "sleep";
+	clock-frequency = <I2C_BITRATE_FAST>;
+};
+
+/* I2C on the pin header */
+&i2c23 {
+	status = "okay";
+	pinctrl-0 = <&i2c23_default>;
+	pinctrl-1 = <&i2c23_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+/* White Pairing LEDs */
+&pwm20 {
+	status = "okay";
+	pinctrl-0 = <&pwm20_default>;
+	pinctrl-1 = <&pwm20_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+/* RGB status LED */
+&pwm21 {
+	status = "okay";
+	pinctrl-0 = <&pwm21_default>;
+	pinctrl-1 = <&pwm21_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+/* Backlight PWM */
+&pwm22 {
+	status = "okay";
+	pinctrl-0 = <&pwm22_default>;
+	pinctrl-1 = <&pwm22_sleep>;
+	pinctrl-names = "default", "sleep";
+};
+
+&gpio0 {
+	status = "okay";
+};
+
+&gpio1 {
+	status = "okay";
+};
+
+&gpio2 {
+	status = "okay";
+};
+
+&gpio3 {
+	status = "okay";
+};
+
+&gpiote20 {
+	status = "okay";
+};
+
+&gpiote30 {
+	status = "okay";
+};
+
+&radio {
+	status = "okay";
+};
+
+&ieee802154 {
+	status = "okay";
+};
+
+&temp {
+	status = "okay";
+};
+
+&clock {
+	status = "okay";
+};
+
+&xo {
+	status = "okay";
+};
+
+&lfclk {
+	status = "okay";
+};
+
+&xo24m {
+	status = "okay";
+};
+
+&usbhs_wrapper {
+	status = "okay";
+};
+
+zephyr_udc0: &usbhs {
+	status = "okay";
+};
+
+/*
+ * P1.01/P1.02 power up as NFC1/NFC2. The startup code reconfigures them as
+ * plain GPIOs so that the key matrix and the header I2C can use them.
+ */
+&nfct {
+	nfct-pins-as-gpios;
+};
+
+/*
+ * Flash layout matching the factory MCUboot bootloader: 96 kB bootloader
+ * with USB serial recovery, a single application slot and 16 kB of settings
+ * storage. The last 96 kB of RRAM are reserved for the FLPR core.
+ */
+&cpuapp_rram {
+	partitions {
+		ranges;
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		boot_partition: partition@0 {
+			compatible = "zephyr,mapped-partition";
+			label = "mcuboot";
+			reg = <0x0 DT_SIZE_K(96)>;
+		};
+
+		slot0_partition: partition@18000 {
+			compatible = "zephyr,mapped-partition";
+			label = "image-0";
+			reg = <0x18000 DT_SIZE_K(1828)>;
+		};
+
+		storage_partition: partition@1e1000 {
+			compatible = "zephyr,mapped-partition";
+			label = "storage";
+			reg = <0x1e1000 DT_SIZE_K(16)>;
+		};
+	};
+};
