@@ -1,0 +1,19 @@
+# Copyright (c) 2026 Framework Computer Inc
+# SPDX-License-Identifier: Apache-2.0
+
+if BOARD_FRAMEWORK_WIRELESS_TP_KB_NRF54LM20A_CPUAPP
+
+config HW_STACK_PROTECTION
+	default ARCH_HAS_STACK_PROTECTION
+
+# The nPM1300 PMIC supplies the SoC (BUCK2) and the keyboard backlight
+# (BUCK1), and a fixed regulator switches the touchpad power rail. The
+# bootloader does not need them.
+if !MCUBOOT
+
+config REGULATOR
+	default y
+
+endif # !MCUBOOT
+
+endif # BOARD_FRAMEWORK_WIRELESS_TP_KB_NRF54LM20A_CPUAPP

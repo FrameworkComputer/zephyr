@@ -1,0 +1,17 @@
+# Copyright (c) 2026 Framework Computer Inc
+# SPDX-License-Identifier: Apache-2.0
+
+# Match the factory bootloader: the flash layout has a single application
+# slot, so MCUboot can only run in single application mode, and images are
+# verified with ED25519 signatures.
+if BOOTLOADER_MCUBOOT
+
+choice MCUBOOT_MODE
+	default MCUBOOT_MODE_SINGLE_APP
+endchoice
+
+choice BOOT_SIGNATURE_TYPE
+	default BOOT_SIGNATURE_TYPE_ED25519
+endchoice
+
+endif # BOOTLOADER_MCUBOOT
