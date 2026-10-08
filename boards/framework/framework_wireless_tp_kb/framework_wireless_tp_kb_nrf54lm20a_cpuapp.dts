@@ -263,7 +263,7 @@
 
 /* I2C on the pin header */
 &i2c23 {
-	status = "okay";
+	status = "disabled";
 	pinctrl-0 = <&i2c23_default>;
 	pinctrl-1 = <&i2c23_sleep>;
 	pinctrl-names = "default", "sleep";
